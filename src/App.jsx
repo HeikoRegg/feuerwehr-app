@@ -4,11 +4,22 @@ import {
   UserCheck, UserX, ChevronRight, ShieldCheck, AlertTriangle, KeyRound, ArrowLeft,
   RotateCcw, Megaphone, Users, EyeOff, Eye, HandHelping, ClipboardCheck, Car, Truck,
   Stethoscope, Download, Sparkles, Pencil as PencilIcon, ChevronDown, Search, Landmark,
-  Printer, ShieldAlert, RefreshCw, UserCog
+  Printer, ShieldAlert, RefreshCw, UserCog, LayoutGrid
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const APP_NAME = "Feuerwehr Regglisweiler";
+const APP_VERSION = "2.0";
+const CHANGELOG = [
+  "Neue Kachel-Übersicht für Führerschein, Atemschutz, Ausschuss und mehr",
+  "Aus der G26-Kontrolle wurde \"Atemschutz\" mit Streckendurchgang, Übungsnachweis und Ampel-Status",
+  "Fahrzeugeinweisung: Fahrzeuge anlegen und Einweisungen bestätigen lassen",
+  "Anmeldeschluss bei Kameradschafts-Terminen mit Erinnerung",
+  "Ausschusssitzungen erscheinen jetzt auch im Hauptkalender (nur für Ausschussmitglieder)",
+  "Echtzeit-Aktualisierung statt Warten auf den nächsten Abruf",
+  "Man bleibt jetzt auf dem Gerät dauerhaft angemeldet",
+  "Drucken/Excel-Export laufen jetzt über eine Vorschau-Seite zum Teilen/Speichern",
+];
 const LION_ICON = "data:image/png;base64,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";
 const JF_ICON = "data:image/png;base64,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";
 
@@ -31,6 +42,7 @@ const BEREICHE = {
   einsatzabteilung: { label: "Einsatzabteilung", short: "EA", color: "#C1272D" },
   altersabteilung: { label: "Altersabteilung", short: "AA", color: "#5C5F58" },
   wettkampfgruppe: { label: "Wettkampfgruppe", short: "WK", color: "#1F6F5C" },
+  atemschutz: { label: "Atemschutz", short: "AS", color: "#2C6E8F" },
 };
 const BEREICH_KEYS = Object.keys(BEREICHE);
 
@@ -48,6 +60,16 @@ function BereichIcon({ bereich, size = 18 }) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={BEREICHE.altersabteilung.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M5 12a7 7 0 0 1 14 0v3H5v-3z" /><path d="M4 17h16" /><path d="M12 5v0" /><circle cx="12" cy="4" r="1.2" fill={BEREICHE.altersabteilung.color} stroke="none" />
+      </svg>
+    );
+  }
+  if (bereich === "atemschutz") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={BEREICHE.atemschutz.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 10a5 5 0 0 1 10 0v4a5 5 0 0 1-10 0v-4z" />
+        <circle cx="9.5" cy="12" r="1.1" fill={BEREICHE.atemschutz.color} stroke="none" />
+        <circle cx="14.5" cy="12" r="1.1" fill={BEREICHE.atemschutz.color} stroke="none" />
+        <path d="M12 16v2M9 20h6" />
       </svg>
     );
   }
@@ -72,13 +94,16 @@ function daysUntil(iso) {
   return Math.round((target - today) / 86400000);
 }
 function daysSince(iso) { return -daysUntil(iso); }
+function addDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 function fmtDate(iso) { if (!iso) return "—"; const { day } = formatDateParts(iso); const d = new Date(iso + "T00:00:00"); return `${day}.${(d.getMonth()+1).toString().padStart(2,"0")}.${d.getFullYear()}`; }
 
 const emptyDraft = (bereich) => ({
   id: null, title: "", date: todayISO(), time: bereich === "jugendfeuerwehr" ? "18:00" : "20:00", location: "", category: "uebung", notes: "", bereich: bereich || "",
   capacityMode: false, capacityNeeded: 3, namesVisible: true, gruppenfuehrer: "",
+  anmeldeschluss: "", anmeldeschlussReminderDays: 3,
 });
 const GRUPPENFUEHRER_CATEGORIES = ["uebung", "brandwache"];
+const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", warm: "Warmer Einsatz", einsatznah: "Einsatznahe Übung" };
 const emptyNoticeDraft = () => ({ id: null, text: "", priority: "info", expiryDate: inNDays(7), bereich: "" });
 const emptyRosterEntry = (name, pin) => ({
   name, pin, bereiche: [],
@@ -88,12 +113,31 @@ const emptyRosterEntry = (name, pin) => ({
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },
   g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null },
+  streckendurchgang: { date: null, confirmedBy: null },
+  atemschutzUebung: { type: null, date: null },
   fuehrerschein: {
     pkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
     lkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
   },
+  fahrzeuge: {},
 });
 const emptySitzungDraft = () => ({ id: null, title: "", date: todayISO(), time: "20:00", location: "", tagesordnung: [""], links: "", protokoll: {} });
+const emptyVehicle = (name) => ({ id: uid(), name });
+
+function atemschutzStatus(entry) {
+  const g26Valid = !!(entry.g26 && entry.g26.dueDate && daysUntil(entry.g26.dueDate) >= 0);
+  const strecke = entry.streckendurchgang || {};
+  const streckeValid = !!(strecke.date && daysSince(strecke.date) <= 365);
+  const uebung = entry.atemschutzUebung || {};
+  const uebungValid = !!(uebung.date && daysSince(uebung.date) <= 365);
+  const allValid = g26Valid && streckeValid && uebungValid;
+  let bis = null;
+  if (allValid) {
+    const dates = [entry.g26.dueDate, addDays(strecke.date, 365), addDays(uebung.date, 365)];
+    bis = dates.sort()[0];
+  }
+  return { g26Valid, streckeValid, uebungValid, allValid, bis };
+}
 
 async function storageSetWithRetry(key, jsonString, shared = true, retries = 2) {
   let lastErr = null;
@@ -132,18 +176,25 @@ function normalizeRosterEntry(r) {
     rechte,
     ausschussRechte: { ...base.ausschussRechte, ...(r.ausschussRechte || {}) },
     g26: { ...base.g26, ...(r.g26 || {}) },
+    streckendurchgang: { ...base.streckendurchgang, ...(r.streckendurchgang || {}) },
+    atemschutzUebung: { ...base.atemschutzUebung, ...(r.atemschutzUebung || {}) },
     fuehrerschein: {
       pkw: { ...base.fuehrerschein.pkw, ...((r.fuehrerschein && r.fuehrerschein.pkw) || {}) },
       lkw: { ...base.fuehrerschein.lkw, ...((r.fuehrerschein && r.fuehrerschein.lkw) || {}) },
     },
+    fahrzeuge: r.fahrzeuge || {},
     bereiche: r.bereiche || [],
   };
 }
 function normalizeEvent(e) {
   const ts = e.createdAt || Date.now();
-  return { responses: {}, signups: {}, capacityNeeded: 1, anwesenheit: {}, guests: {}, ...e, createdAt: ts, updatedAt: e.updatedAt || ts };
+  return { responses: {}, signups: {}, capacityNeeded: 1, anwesenheit: {}, guests: {}, anmeldeschluss: "", anmeldeschlussReminderDays: 3, ...e, createdAt: ts, updatedAt: e.updatedAt || ts };
 }
-function normalizeSitzung(s) { return { protokoll: {}, anwesenheit: {}, links: "", tagesordnung: [], abstimmungen: {}, ...s }; }
+function normalizeSitzung(s) {
+  const ts = s.createdAt || Date.now();
+  return { protokoll: {}, anwesenheit: {}, links: "", tagesordnung: [], abstimmungen: {}, ...s, createdAt: ts };
+}
+function normalizeVehicle(v) { return { id: v.id || uid(), name: v.name || "" }; }
 function normalizeConfig(cfg) {
   if (!cfg) return cfg;
   // Ältere Konfigurationen hatten ein einzelnes "adminName" statt einer Admin-Liste.
@@ -193,8 +244,13 @@ export default function App() {
   const [loginSearch, setLoginSearch] = useState("");
   const [confirmTargetSearch, setConfirmTargetSearch] = useState("");
   const [confirmTargetType, setConfirmTargetType] = useState(null); // 'pkw' | 'lkw' | null — controls colleague picker
+  const [confirmVehicleSearch, setConfirmVehicleSearch] = useState("");
+  const [confirmVehicleTarget, setConfirmVehicleTarget] = useState(null); // vehicleId | null
+  const [newVehicleName, setNewVehicleName] = useState("");
+  const [confirmDeleteVehicleId, setConfirmDeleteVehicleId] = useState(null);
   const [showSitzungen, setShowSitzungen] = useState(false);
   const [sitzungen, setSitzungen] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
   const [sitzungDraft, setSitzungDraft] = useState(emptySitzungDraft());
   const [sitzungError, setSitzungError] = useState("");
@@ -211,7 +267,9 @@ export default function App() {
   const [saveBanner, setSaveBanner] = useState(null);
   const [dismissedReminders, setDismissedReminders] = useState({});
 
-  const [showKontrollen, setShowKontrollen] = useState(null); // null | 'fuehrerschein' | 'g26'
+  const [showKontrollen, setShowKontrollen] = useState(null); // null | 'fuehrerschein' | 'atemschutz'
+  const [showTileMenu, setShowTileMenu] = useState(false);
+  const [seenSitzungIds, setSeenSitzungIds] = useState(() => new Set());
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
 
@@ -230,14 +288,15 @@ export default function App() {
   const editableCalendarBereiche = myBereiche.filter((b) => canEditCalendarFor(b));
   const editableNewsBereiche = myBereiche.filter((b) => canEditNewsFor(b));
 
-  const configRef = useRef(null); const rosterRef = useRef([]); const eventsRef = useRef([]); const noticesRef = useRef([]); const sitzungenRef = useRef([]);
-  const lastEditRef = useRef({ config: 0, roster: 0, events: 0, notices: 0, sitzungen: 0 });
+  const configRef = useRef(null); const rosterRef = useRef([]); const eventsRef = useRef([]); const noticesRef = useRef([]); const sitzungenRef = useRef([]); const vehiclesRef = useRef([]);
+  const lastEditRef = useRef({ config: 0, roster: 0, events: 0, notices: 0, sitzungen: 0, vehicles: 0 });
   const EDIT_COOLDOWN_MS = 8000;
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { rosterRef.current = roster; }, [roster]);
   useEffect(() => { eventsRef.current = events; }, [events]);
   useEffect(() => { noticesRef.current = notices; }, [notices]);
   useEffect(() => { sitzungenRef.current = sitzungen; }, [sitzungen]);
+  useEffect(() => { vehiclesRef.current = vehicles; }, [vehicles]);
 
   async function fetchAllData(isInitial = false) {
     const cfgRaw = await storageGetSafe("config", true);
@@ -245,18 +304,17 @@ export default function App() {
     const eventsRaw = await storageGetSafe("events", true);
     const noticesRaw = await storageGetSafe("notices", true);
     const sitzungenRaw = await storageGetSafe("sitzungen", true);
+    const vehiclesRaw = await storageGetSafe("vehicles", true);
 
-    // Bei Folge-Abrufen (Auto-Refresh) NIE mit leeren Ergebnissen überschreiben, falls
+    // Bei Folge-Abrufen NIE mit leeren Ergebnissen überschreiben, falls
     // ein Abruf mal fehlschlägt — nur beim allerersten Laden gilt "nichts gefunden" = leer.
     let cfg = cfgRaw ? normalizeConfig(JSON.parse(cfgRaw)) : (isInitial ? null : configRef.current);
     let rst = rosterRaw ? JSON.parse(rosterRaw).map(normalizeRosterEntry) : (isInitial ? [] : rosterRef.current);
     let evs = eventsRaw ? JSON.parse(eventsRaw).map(normalizeEvent) : (isInitial ? [] : eventsRef.current);
     let nts = noticesRaw ? JSON.parse(noticesRaw) : (isInitial ? [] : noticesRef.current);
     let szg = sitzungenRaw ? JSON.parse(sitzungenRaw).map(normalizeSitzung) : (isInitial ? [] : sitzungenRef.current);
+    let vhs = vehiclesRaw ? JSON.parse(vehiclesRaw).map(normalizeVehicle) : (isInitial ? [] : vehiclesRef.current);
 
-    // Schutzfrist: Wurde gerade selbst was geändert, ignoriert der Auto-Refresh die frisch
-    // abgerufenen Daten für diesen Bereich kurz, damit der eigene Speichervorgang nicht
-    // durch einen zwischenzeitlich noch veralteten Lese-Zugriff überschrieben wird.
     if (!isInitial) {
       const now = Date.now();
       if (now - lastEditRef.current.config < EDIT_COOLDOWN_MS) cfg = configRef.current;
@@ -264,10 +322,10 @@ export default function App() {
       if (now - lastEditRef.current.events < EDIT_COOLDOWN_MS) evs = eventsRef.current;
       if (now - lastEditRef.current.notices < EDIT_COOLDOWN_MS) nts = noticesRef.current;
       if (now - lastEditRef.current.sitzungen < EDIT_COOLDOWN_MS) szg = sitzungenRef.current;
+      if (now - lastEditRef.current.vehicles < EDIT_COOLDOWN_MS) vhs = vehiclesRef.current;
     }
 
     // Automatische Endlöschung: Termine, die länger als 3 Jahre zurückliegen, werden endgültig entfernt.
-    // Bis dahin bleiben sie im Archiv einsehbar (siehe Terminliste: anstehend/vergangen).
     if (cfg) {
       const cutoff = `${currentYear() - 3}-01-01`;
       const before = evs.length;
@@ -275,21 +333,68 @@ export default function App() {
       if (evs.length !== before) storageSetWithRetry("events", JSON.stringify(evs), true);
     }
 
-    setConfig(cfg); setRoster(rst); setEvents(evs); setNotices(nts); setSitzungen(szg);
+    setConfig(cfg); setRoster(rst); setEvents(evs); setNotices(nts); setSitzungen(szg); setVehicles(vhs);
     return cfg;
   }
 
   useEffect(() => {
-    (async () => { await fetchAllData(true); setPhase("gate"); })();
+    (async () => {
+      const cfg = await fetchAllData(true);
+      // Dauerhaft angemeldet bleiben: prüfen, ob dieses Gerät sich schon einmal erfolgreich angemeldet hat.
+      try {
+        const saved = JSON.parse(localStorage.getItem("ffw_auth") || "null");
+        if (saved && cfg && saved.code === cfg.accessCode && saved.name) {
+          setMe(saved.name); setPhase("app"); return;
+        }
+      } catch (e) { /* localStorage evtl. nicht verfügbar — normal weiter zum Code-Bildschirm */ }
+      setPhase("gate");
+    })();
   }, []);
+  function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
+  function clearAuth() { try { localStorage.removeItem("ffw_auth"); } catch (e) {} }
+  function logout() { clearAuth(); setMe(null); setCodeInput(""); setPhase("gate"); }
 
+  // Echtzeit-Updates: Statt regelmäßig nachzufragen, meldet sich Supabase von selbst,
+  // sobald sich in der Datenbank etwas ändert (Realtime). Deutlich schneller als Polling.
   useEffect(() => {
     if (phase !== "app") return;
-    const interval = setInterval(() => { fetchAllData(); }, 20000);
-    return () => clearInterval(interval);
+    const applyRow = (key, rawValue) => {
+      const now = Date.now();
+      if (now - (lastEditRef.current[key] || 0) < EDIT_COOLDOWN_MS) return; // eigene, gerade erst gespeicherte Änderung nicht überschreiben
+      try {
+        if (key === "config") setConfig(normalizeConfig(rawValue));
+        else if (key === "roster") setRoster((rawValue || []).map(normalizeRosterEntry));
+        else if (key === "events") setEvents((rawValue || []).map(normalizeEvent));
+        else if (key === "notices") setNotices(rawValue || []);
+        else if (key === "sitzungen") setSitzungen((rawValue || []).map(normalizeSitzung));
+        else if (key === "vehicles") setVehicles((rawValue || []).map(normalizeVehicle));
+      } catch (e) { /* ignorieren, nächste Änderung kommt sicher */ }
+    };
+    const channel = supabase
+      .channel("kv_store_live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "kv_store" }, (payload) => {
+        const row = payload.new && payload.new.key ? payload.new : payload.old;
+        if (!row || !row.key) return;
+        applyRow(row.key, payload.new ? payload.new.value : undefined);
+      })
+      .subscribe();
+    // Sicherheitsnetz: falls die Echtzeit-Verbindung mal kurz ausfällt (z.B. Netzwechsel),
+    // beim Zurückkommen in den Vordergrund trotzdem einmal nachladen.
+    const onVisible = () => { if (document.visibilityState === "visible") fetchAllData(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { supabase.removeChannel(channel); document.removeEventListener("visibilitychange", onVisible); };
   }, [phase]);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  useEffect(() => {
+    if (phase !== "app") return;
+    try {
+      const seen = localStorage.getItem("ffw_seen_version");
+      if (seen !== APP_VERSION) setShowWhatsNew(true);
+    } catch (e) {}
+  }, [phase]);
+  function dismissWhatsNew() { try { localStorage.setItem("ffw_seen_version", APP_VERSION); } catch (e) {} setShowWhatsNew(false); }
   async function manualRefresh() { setManualRefreshing(true); await fetchAllData(); setTimeout(() => setManualRefreshing(false), 500); }
 
   function flashError(text) { setSaveBanner({ type: "error", text }); setTimeout(() => setSaveBanner(null), 4500); }
@@ -304,7 +409,7 @@ export default function App() {
       const newConfig = { accessCode: codeInput.trim(), adminNames: [adminNameInput.trim()], mainAdminName: adminNameInput.trim(), doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear() };
       const newRoster = [{ ...emptyRosterEntry(adminNameInput.trim(), adminPinInput), bereiche: [...BEREICH_KEYS] }];
       setConfig(newConfig); setRoster(newRoster); setMe(adminNameInput.trim());
-      setGateBusy(false); setPhase("app");
+      setGateBusy(false); setPhase("app"); saveAuth(newConfig.accessCode, adminNameInput.trim());
       storageSetWithRetry("config", JSON.stringify(newConfig), true).then((res) => { if (!res.ok) flashError("Einrichtung evtl. nicht dauerhaft gespeichert."); });
       storageSetWithRetry("roster", JSON.stringify(newRoster), true);
       return;
@@ -330,7 +435,7 @@ export default function App() {
   }
   function submitPinEntry() {
     const entry = roster.find((r) => r.name === pendingName);
-    if (entry && pinInput === entry.pin) { setMe(pendingName); setSelectedBereiche(null); setPhase("app"); }
+    if (entry && pinInput === entry.pin) { setMe(pendingName); setSelectedBereiche(null); setPhase("app"); saveAuth(config.accessCode, pendingName); }
     else setPinError("PIN stimmt nicht. Nochmal versuchen.");
   }
   function submitPinSetup() {
@@ -340,7 +445,7 @@ export default function App() {
     const next = exists
       ? roster.map((r) => (r.name === pendingName ? { ...r, pin: pinInput } : r))
       : [...roster, emptyRosterEntry(pendingName, pinInput)].sort((a, b) => a.name.localeCompare(b.name, "de"));
-    persistRoster(next); setMe(pendingName); setSelectedBereiche(null); setPhase("app");
+    persistRoster(next); setMe(pendingName); setSelectedBereiche(null); setPhase("app"); saveAuth(config.accessCode, pendingName);
   }
   function resetPin(name) { updateRosterEntry(name, (r) => ({ ...r, pin: null })); }
   function togglePermission(name, bereich, field) { updateRosterEntry(name, (r) => ({ ...r, rechte: { ...r.rechte, [bereich]: { ...r.rechte[bereich], [field]: !r.rechte[bereich][field] } } })); }
@@ -355,6 +460,7 @@ export default function App() {
   function toggleAusschuss(name) { updateRosterEntry(name, (r) => ({ ...r, ausschuss: !r.ausschuss })); }
   function toggleAusschussRecht(name, field) { updateRosterEntry(name, (r) => ({ ...r, ausschussRechte: { ...r.ausschussRechte, [field]: !r.ausschussRechte[field] } })); }
   async function persistSitzungen(next) { lastEditRef.current.sitzungen = Date.now(); setSitzungen(next); const r = await storageSetWithRetry("sitzungen", JSON.stringify(next), true); if (!r.ok) flashError("Sitzung evtl. nicht dauerhaft gespeichert."); }
+  async function persistVehicles(next) { lastEditRef.current.vehicles = Date.now(); setVehicles(next); const r = await storageSetWithRetry("vehicles", JSON.stringify(next), true); if (!r.ok) flashError("Fahrzeugliste evtl. nicht dauerhaft gespeichert."); }
 
   const effectiveBereiche = selectedBereiche === null ? myBereiche : selectedBereiche;
   function toggleBereichFilter(b) {
@@ -528,8 +634,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
 </body></html>`;
     const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `Protokoll_${s.title.replace(/[^a-z0-9äöüß]+/gi, "_")}_${s.date}.html`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    window.open(url, "_blank");
   }
 
   // --- Führerschein ---
@@ -554,6 +659,30 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
   }
   function fuehrerscheinDue(entry, type) { const f = entry.fuehrerschein[type]; return f.hasLicense && f.confirmedYear !== currentYear(); }
 
+  // --- Fahrzeuge / Fahrzeugeinweisung ---
+  function addVehicle(name) {
+    const trimmed = name.trim(); if (!trimmed || !isAdmin) return;
+    persistVehicles([...vehicles, emptyVehicle(trimmed)]);
+  }
+  function deleteVehicle(id) { if (!isAdmin) return; persistVehicles(vehicles.filter((v) => v.id !== id)); }
+  function getVehicleStatus(entry, vehicleId) { return (entry.fahrzeuge || {})[vehicleId] || { confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null }; }
+  function requestVehicleConfirmation(vehicleId, colleagueName) {
+    updateMyRosterEntry((r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { ...getVehicleStatus(r, vehicleId), confirmRequestTo: colleagueName, requestDate: todayISO() } } }));
+    setConfirmVehicleTarget(null); setConfirmVehicleSearch("");
+  }
+  function cancelVehicleRequest(vehicleId) {
+    updateMyRosterEntry((r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { ...getVehicleStatus(r, vehicleId), confirmRequestTo: null, requestDate: null } } }));
+  }
+  function confirmVehicleInstruction(subjectName, vehicleId) {
+    updateRosterEntry(subjectName, (r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { confirmedBy: me, confirmedDate: todayISO(), confirmRequestTo: null, requestDate: null } } }));
+  }
+
+  // --- Atemschutz: Streckendurchgang & Übungstyp (nur Admin trägt ein) ---
+  function setStreckendurchgang(name, date) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date, confirmedBy: me } })); }
+  function resetStreckendurchgang(name) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date: null, confirmedBy: null } })); }
+  function setAtemschutzUebung(name, type, date) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type, date } })); }
+  function resetAtemschutzUebung(name) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type: null, date: null } })); }
+
   // --- G26 ---
   function saveG26Date(newDate) {
     updateMyRosterEntry((r) => ({ ...r, g26: { dueDate: newDate, pendingConfirmation: true, enteredDate: todayISO(), confirmedByAdmin: false, confirmedAdminDate: null } }));
@@ -563,11 +692,25 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
   function resetG26Date(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null } })); setConfirmResetG26Name(null); }
   function g26ReminderActive(entry) { if (!entry.atemschutz || !entry.g26.dueDate) return false; return daysUntil(entry.g26.dueDate) <= 122; }
 
-  function exportCSV(rows, filename) {
-    const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  function openPreviewPage(bodyHtml, title) {
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#2C2F2A;}
+table{border-collapse:collapse;width:100%;margin-top:12px;}
+th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left;}
+th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
+</head><body>${bodyHtml}
+<p style="margin-top:24px;font-size:12px;color:#8A8C86;">Über das Teilen-Symbol deines Browsers kannst du diese Seite drucken, als PDF sichern oder weiterleiten.</p>
+</body></html>`;
+    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    window.open(url, "_blank");
+  }
+  function exportCSV(rows, filename) {
+    const title = filename.replace(/\.csv$/i, "").replace(/_/g, " ");
+    const [header, ...body] = rows;
+    const theadHtml = `<tr>${header.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
+    const tbodyHtml = body.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
+    openPreviewPage(`<h2>${escapeHtml(title)}</h2><table><thead>${theadHtml}</thead><tbody>${tbodyHtml}</tbody></table>`, title);
   }
   function exportFuehrerschein() {
     const rows = [["Name", "PKW Status", "PKW bestätigt von", "PKW Datum", "LKW Status", "LKW bestätigt von", "LKW Datum"]];
@@ -578,12 +721,22 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
     });
     exportCSV(rows, `Fuehrerschein_${currentYear()}.csv`);
   }
-  function exportG26() {
-    const rows = [["Name", "Nächster G26-Termin", "Status", "Von Admin bestätigt am"]];
+  function exportAtemschutz() {
+    const rows = [["Name", "G26 Termin", "G26 Status", "Streckendurchgang", "Übung Typ", "Übung Datum", "Einsatztauglich", "Tauglich bis"]];
     roster.filter((r) => r.atemschutz).forEach((r) => {
-      rows.push([r.name, r.g26.dueDate ? fmtDate(r.g26.dueDate) : "nicht eingetragen", r.g26.pendingConfirmation ? "Wartet auf Bestätigung" : "OK", r.g26.confirmedAdminDate ? fmtDate(r.g26.confirmedAdminDate) : ""]);
+      const st = atemschutzStatus(r);
+      rows.push([
+        r.name,
+        r.g26.dueDate ? fmtDate(r.g26.dueDate) : "nicht eingetragen",
+        r.g26.pendingConfirmation ? "Wartet auf Bestätigung" : "OK",
+        r.streckendurchgang.date ? fmtDate(r.streckendurchgang.date) : "offen",
+        r.atemschutzUebung.type ? ATEMSCHUTZ_UEBUNG_TYPES[r.atemschutzUebung.type] : "offen",
+        r.atemschutzUebung.date ? fmtDate(r.atemschutzUebung.date) : "",
+        st.allValid ? "Ja" : "Nein",
+        st.bis ? fmtDate(st.bis) : "",
+      ]);
     });
-    exportCSV(rows, `G26_Uebersicht_${currentYear()}.csv`);
+    exportCSV(rows, `Atemschutz_Uebersicht_${currentYear()}.csv`);
   }
 
   // --- derived data ---
@@ -625,19 +778,31 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
     if (!myEntry) return [];
     const list = [];
     if (inEinsatzabteilung) {
-      if (fuehrerscheinDue(myEntry, "pkw")) list.push({ key: "fs-pkw", text: "Bitte deinen PKW-Führerschein einem Kameraden zur Kontrolle zeigen." });
-      if (fuehrerscheinDue(myEntry, "lkw")) list.push({ key: "fs-lkw", text: "Bitte deinen LKW-Führerschein einem Kameraden zur Kontrolle zeigen." });
+      if (fuehrerscheinDue(myEntry, "pkw")) list.push({ key: "fs-pkw", text: "Bitte deinen PKW-Führerschein einem Kameraden zur Kontrolle zeigen.", target: "fuehrerschein" });
+      if (fuehrerscheinDue(myEntry, "lkw")) list.push({ key: "fs-lkw", text: "Bitte deinen LKW-Führerschein einem Kameraden zur Kontrolle zeigen.", target: "fuehrerschein" });
     }
     if (myEntry.atemschutz) {
-      if (!myEntry.g26.dueDate) list.push({ key: "g26-missing", text: "Bitte trage deinen nächsten G26.3-Untersuchungstermin ein." });
+      if (!myEntry.g26.dueDate) list.push({ key: "g26-missing", text: "Bitte trage deinen nächsten G26.3-Untersuchungstermin ein.", target: "atemschutz" });
       else if (g26ReminderActive(myEntry)) {
         const d = daysUntil(myEntry.g26.dueDate);
         const when = d < 0 ? `vor ${Math.abs(d)} Tagen abgelaufen` : d === 0 ? "heute fällig" : `noch ${d} Tage`;
-        list.push({ key: "g26-due", text: `G26.3-Untersuchung ${when} (${fmtDate(myEntry.g26.dueDate)}).`, doctor: true });
+        list.push({ key: "g26-due", text: `G26.3-Untersuchung ${when} (${fmtDate(myEntry.g26.dueDate)}).`, doctor: true, target: "atemschutz" });
       }
     }
     return list.filter((r) => !dismissedReminders[r.key]);
   }, [myEntry, inEinsatzabteilung, dismissedReminders]);
+
+  const anmeldeschlussReminders = useMemo(() => {
+    if (!me) return [];
+    return events.filter((ev) => {
+      if (ev.category !== "sonstiges" || !ev.anmeldeschluss) return false;
+      if (!effectiveBereiche.includes(ev.bereich)) return false;
+      const d = daysUntil(ev.anmeldeschluss);
+      if (d < 0 || d > (ev.anmeldeschlussReminderDays || 0)) return false;
+      return !((ev.responses || {})[me]);
+    }).map((ev) => ({ key: `anmeldeschluss-${ev.id}`, text: `Anmeldeschluss für "${ev.title}" in ${daysUntil(ev.anmeldeschluss)} Tag(en) (${fmtDate(ev.anmeldeschluss)}).` }))
+      .filter((r) => !dismissedReminders[r.key]);
+  }, [events, me, effectiveBereiche, dismissedReminders]);
 
   const adminPendingG26 = useMemo(() => { if (!isAdmin) return []; return roster.filter((r) => r.atemschutz && r.g26.pendingConfirmation); }, [roster, isAdmin]);
 
@@ -649,6 +814,20 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
     });
     return list;
   }, [roster, me]);
+
+  const incomingVehicleRequests = useMemo(() => {
+    if (!me) return [];
+    const list = [];
+    roster.forEach((r) => {
+      Object.entries(r.fahrzeuge || {}).forEach(([vehicleId, status]) => {
+        if (status.confirmRequestTo === me) { const v = vehicles.find((x) => x.id === vehicleId); list.push({ name: r.name, vehicleId, vehicleName: v ? v.name : "Fahrzeug" }); }
+      });
+    });
+    return list;
+  }, [roster, vehicles, me]);
+
+  const neueSitzungenCount = useMemo(() => sitzungen.filter((s) => !seenSitzungIds.has(s.id)).length, [sitzungen, seenSitzungIds]);
+  const upcomingSitzungenTeaser = useMemo(() => sitzungen.filter((s) => s.date >= todayISO()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)), [sitzungen]);
 
   const fontImport = (
     <style>{`
@@ -771,10 +950,12 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
-            {(inEinsatzabteilung || isAtemschutz) && (
-              <button style={styles.settingsBtn} onClick={() => setShowKontrollen(inEinsatzabteilung ? "fuehrerschein" : "g26")} aria-label="Kontrollen"><ClipboardCheck size={18} color="#8FA0A6" /></button>
+            {(inEinsatzabteilung || isAtemschutz || canSeeAusschuss || isAdmin) && (
+              <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => { setShowTileMenu(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }} aria-label="Funktionen">
+                <LayoutGrid size={18} color="#8FA0A6" />
+                {neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
+              </button>
             )}
-            {canSeeAusschuss && <button style={styles.settingsBtn} onClick={() => setShowSitzungen(true)} aria-label="Ausschuss"><Landmark size={18} color="#8FA0A6" /></button>}
             {isAdmin && <button style={styles.settingsBtn} onClick={() => setShowSettings(true)} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
           </div>
         </div>
@@ -782,6 +963,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
           <User size={12} /> Angemeldet als <strong>{me}</strong>
           {isAdmin && <span style={styles.adminTagHeader}>Admin</span>}
           <button style={styles.switchLink} onClick={() => setPhase("name")}>wechseln</button>
+          <button style={styles.switchLink} onClick={logout}>abmelden</button>
         </div>
         {myBereiche.length > 0 && (
           <div style={styles.bereichRow}>
@@ -797,7 +979,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
         )}
       </header>
 
-      {(myReminders.length > 0 || incomingFsRequests.length > 0) && (
+      {(myReminders.length > 0 || incomingFsRequests.length > 0 || incomingVehicleRequests.length > 0 || anmeldeschlussReminders.length > 0) && (
         <div style={styles.remindersSection}>
           {incomingFsRequests.map((req) => (
             <div key={`${req.name}-${req.type}`} style={styles.reminderCard} className="card-enter">
@@ -809,15 +991,29 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
               </div>
             </div>
           ))}
+          {incomingVehicleRequests.map((req) => (
+            <div key={`veh-${req.name}-${req.vehicleId}`} style={styles.reminderCard} className="card-enter">
+              <Truck size={16} color="#4A6670" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ flex: 1 }}><div style={styles.reminderText}>{req.name} bittet dich, die Einweisung für "{req.vehicleName}" zu bestätigen.</div></div>
+              <button style={styles.tinyBtnPrimary} onClick={() => confirmVehicleInstruction(req.name, req.vehicleId)}>Bestätigen</button>
+            </div>
+          ))}
           {myReminders.map((r) => (
             <div key={r.key} style={styles.reminderCard} className="card-enter">
               <AlertTriangle size={16} color="#B8791A" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) setShowKontrollen(r.target); }}>
                 <div style={styles.reminderText}>{r.text}</div>
                 {r.doctor && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
                   <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
                 )}
               </div>
+              <button style={styles.reminderOk} onClick={() => setDismissedReminders({ ...dismissedReminders, [r.key]: true })}>OK</button>
+            </div>
+          ))}
+          {anmeldeschlussReminders.map((r) => (
+            <div key={r.key} style={styles.reminderCard} className="card-enter">
+              <AlertTriangle size={16} color="#B8791A" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ flex: 1 }}><div style={styles.reminderText}>{r.text}</div></div>
               <button style={styles.reminderOk} onClick={() => setDismissedReminders({ ...dismissedReminders, [r.key]: true })}>OK</button>
             </div>
           ))}
@@ -859,6 +1055,21 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
         <div style={styles.hero}>
           <div style={styles.heroLabel}><Bell size={13} /><span>NÄCHSTER TERMIN</span></div>
           <HeroCard ev={nextEvent} me={me} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(nextEvent)} />
+        </div>
+      )}
+
+      {canSeeAusschuss && upcomingSitzungenTeaser.length > 0 && (
+        <div style={styles.teaserSection}>
+          {upcomingSitzungenTeaser.map((s) => (
+            <button key={s.id} style={styles.teaserCard} onClick={() => { setShowSitzungen(true); setExpandedSitzung(s.id); setSeenSitzungIds(new Set(sitzungen.map((x) => x.id))); }}>
+              <Landmark size={15} color="#7A3B9E" style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2C2F2A" }}>{s.title}</div>
+                <div style={{ fontSize: 11, color: "#8A8C86" }}>{fmtDate(s.date)} · {s.time} Uhr — Ausschusssitzung</div>
+              </div>
+              <ChevronRight size={15} color="#A5A79F" />
+            </button>
+          ))}
         </div>
       )}
 
@@ -946,6 +1157,20 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                 )}
               </div>
 
+              {draft.category === "sonstiges" && (
+                <div style={styles.capacityBox}>
+                  <label style={styles.label}>Anmeldeschluss (optional)</label>
+                  <input style={styles.input} type="date" value={draft.anmeldeschluss || ""} onChange={(e) => setDraft({ ...draft, anmeldeschluss: e.target.value })} />
+                  {draft.anmeldeschluss && (
+                    <>
+                      <label style={{ ...styles.label, marginTop: 10 }}>Erinnerung wie viele Tage vorher?</label>
+                      <input style={{ ...styles.input, width: 90 }} type="number" min="0" value={draft.anmeldeschlussReminderDays} onChange={(e) => { const v = e.target.value; setDraft({ ...draft, anmeldeschlussReminderDays: v === "" ? "" : parseInt(v) || "" }); }} onBlur={(e) => { if (!e.target.value) setDraft({ ...draft, anmeldeschlussReminderDays: 3 }); }} />
+                    </>
+                  )}
+                  <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Nach dem Anmeldeschluss ist Zu-/Absage für alle gesperrt. Kann hier jederzeit geändert werden.</div>
+                </div>
+              )}
+
               {draft.bereich === "einsatzabteilung" && GRUPPENFUEHRER_CATEGORIES.includes(draft.category) && (
                 <div style={{ marginTop: 12 }}>
                   <label style={styles.label}><UserCog size={13} style={{ verticalAlign: -2 }} /> Gruppenführer</label>
@@ -1000,6 +1225,48 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
         </div>
       )}
 
+      {showTileMenu && (
+        <div style={styles.modalBackdrop} onClick={() => setShowTileMenu(false)}>
+          <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <div style={styles.modalHeader}>
+              <span style={styles.modalTitle}>Funktionen</span>
+              <button style={styles.iconBtn} onClick={() => setShowTileMenu(false)}><X size={20} color="#5C5F58" /></button>
+            </div>
+            <div style={styles.tileGrid}>
+              {(inEinsatzabteilung || isAdmin) && (
+                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowKontrollen("fuehrerschein"); }}>
+                  <Car size={26} color="#4A6670" />
+                  <span style={styles.tileLabel}>Führerschein</span>
+                </button>
+              )}
+              {(isAtemschutz) && (
+                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowKontrollen("atemschutz"); }}>
+                  <BereichIcon bereich="atemschutz" size={26} />
+                  <span style={styles.tileLabel}>Atemschutz</span>
+                </button>
+              )}
+              {canSeeAusschuss && (
+                <button style={{ ...styles.tile, position: "relative" }} onClick={() => { setShowTileMenu(false); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }}>
+                  <Landmark size={26} color="#7A3B9E" />
+                  <span style={styles.tileLabel}>Ausschuss</span>
+                  {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
+                </button>
+              )}
+              {isAdmin && (
+                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowSettings(true); }}>
+                  <Settings size={26} color="#5C5F58" />
+                  <span style={styles.tileLabel}>Einstellungen</span>
+                </button>
+              )}
+              <div style={styles.tilePlaceholder}>
+                <Plus size={20} color="#A5A79F" />
+                <span style={{ fontSize: 11, color: "#8A8C86" }}>bald mehr</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showKontrollen && (
         <div style={styles.modalBackdrop} onClick={() => { setShowKontrollen(null); setG26EditOpen(false); }}>
           <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
@@ -1009,7 +1276,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {inEinsatzabteilung && <button onClick={() => setShowKontrollen("fuehrerschein")} style={{ ...styles.kontrollTab, ...(showKontrollen === "fuehrerschein" ? styles.kontrollTabActive : {}) }}><Car size={14} /> Führerschein</button>}
-              {isAtemschutz && <button onClick={() => setShowKontrollen("g26")} style={{ ...styles.kontrollTab, ...(showKontrollen === "g26" ? styles.kontrollTabActive : {}) }}><Stethoscope size={14} /> G26.3</button>}
+              {isAtemschutz && <button onClick={() => setShowKontrollen("atemschutz")} style={{ ...styles.kontrollTab, ...(showKontrollen === "atemschutz" ? styles.kontrollTabActive : {}) }}><Stethoscope size={14} /> Atemschutz</button>}
             </div>
 
             {showKontrollen === "fuehrerschein" && (
@@ -1058,6 +1325,42 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                   </div>
                 )}
 
+                {myEntry && inEinsatzabteilung && vehicles.length > 0 && (
+                  <div style={styles.kontrollRow}>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Meine Fahrzeugeinweisungen</div>
+                    {vehicles.map((v) => {
+                      const status = getVehicleStatus(myEntry, v.id);
+                      const eingewiesen = !!status.confirmedBy;
+                      return (
+                        <div key={v.id} style={{ marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#5C5F58" }}>
+                              <Truck size={13} /> {v.name}: {eingewiesen ? <span style={{ color: "#1F6F5C", fontWeight: 600 }}>eingewiesen ({status.confirmedBy})</span> : status.confirmRequestTo ? <span style={{ color: "#4A6670", fontWeight: 600 }}>Anfrage an {status.confirmRequestTo}</span> : <span style={{ color: "#B8791A", fontWeight: 600 }}>offen</span>}
+                            </div>
+                          </div>
+                          {!eingewiesen && (
+                            status.confirmRequestTo ? (
+                              <button style={{ ...styles.tinyBtn, marginTop: 4 }} onClick={() => cancelVehicleRequest(v.id)}>Anfrage zurückziehen</button>
+                            ) : (
+                              <button style={{ ...styles.smallAddBtn, marginTop: 4 }} onClick={() => { setConfirmVehicleTarget(v.id); setConfirmVehicleSearch(""); }}><Search size={12} /> Kameraden zur Bestätigung auswählen</button>
+                            )
+                          )}
+                          {confirmVehicleTarget === v.id && (
+                            <div style={{ marginTop: 6, background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: 8 }}>
+                              <SearchBox value={confirmVehicleSearch} onChange={setConfirmVehicleSearch} placeholder="Name suchen …" />
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 140, overflowY: "auto" }}>
+                                {roster.filter((r) => r.bereiche.includes("einsatzabteilung") && r.name !== me && matchesSearch(r.name, confirmVehicleSearch)).map((r) => (
+                                  <button key={r.name} style={styles.rosterItem} onClick={() => requestVehicleConfirmation(v.id, r.name)}>{r.name}</button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {isAdmin && (
                   <>
                     <button style={styles.exportBtn} onClick={exportFuehrerschein}><Download size={14} /> Als Excel-Liste exportieren</button>
@@ -1069,12 +1372,34 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                         <FuehrerscheinLine label="LKW" icon={<Truck size={13} />} data={r.fuehrerschein.lkw} isSelf={r.name === me} onConfirm={() => confirmFuehrerschein(r.name, "lkw")} onToggleHas={() => toggleHasLicense(r.name, "lkw")} />
                       </div>
                     ))}
+
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "16px 0 6px", letterSpacing: "0.04em" }}>FAHRZEUGE VERWALTEN</div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                      <input style={{ ...styles.input, flex: 1 }} placeholder="Neues Fahrzeug (z. B. LF 20)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newVehicleName.trim()) { addVehicle(newVehicleName); setNewVehicleName(""); } }} />
+                      <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => { if (newVehicleName.trim()) { addVehicle(newVehicleName); setNewVehicleName(""); } }}><Plus size={16} /></button>
+                    </div>
+                    {vehicles.map((v) => (
+                      <div key={v.id} style={styles.kontrollRow}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v.name}</div>
+                          <button style={styles.rosterRemoveBtn} onClick={() => setConfirmDeleteVehicleId(v.id)}><Trash2 size={13} /></button>
+                        </div>
+                        {roster.filter((r) => r.bereiche.includes("einsatzabteilung")).map((r) => {
+                          const status = getVehicleStatus(r, v.id);
+                          return (
+                            <div key={r.name} style={{ fontSize: 11.5, color: status.confirmedBy ? "#1F6F5C" : "#8A8C86", marginBottom: 2 }}>
+                              {r.name}: {status.confirmedBy ? `eingewiesen (${status.confirmedBy}, ${fmtDate(status.confirmedDate)})` : "offen"}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
                   </>
                 )}
               </div>
             )}
 
-            {showKontrollen === "g26" && (
+            {showKontrollen === "atemschutz" && (
               <div>
                 {myEntry && myEntry.atemschutz && (
                   <div style={styles.kontrollRow}>
@@ -1082,6 +1407,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                     <div style={{ fontSize: 13, color: "#5C5F58", marginBottom: 8 }}>Nächster Termin: <strong>{fmtDate(myEntry.g26.dueDate)}</strong>{myEntry.g26.pendingConfirmation && <span style={styles.pinPendingTag}> wartet auf Bestätigung</span>}</div>
                     {!g26EditOpen ? (
                       <button style={styles.smallAddBtn} onClick={() => { setG26EditOpen(true); setG26DateInput(myEntry.g26.dueDate || ""); }}><Pencil size={12} /> Neuen Termin eintragen</button>
+
                     ) : (
                       <div style={{ display: "flex", gap: 6 }}>
                         <input style={{ ...styles.input, flex: 1 }} type="date" value={g26DateInput} onChange={(e) => setG26DateInput(e.target.value)} />
@@ -1094,9 +1420,24 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                   </div>
                 )}
 
+                {myEntry && myEntry.atemschutz && (() => {
+                  const st = atemschutzStatus(myEntry);
+                  return (
+                    <div style={styles.kontrollRow}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: "50%", background: st.allValid ? "#1F6F5C" : "#C1272D", flexShrink: 0 }} />
+                        <div style={{ fontWeight: 700, fontSize: 13.5 }}>{st.allValid ? `Einsatztauglich bis ${fmtDate(st.bis)}` : "Nicht einsatztauglich"}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: st.g26Valid ? "#1F6F5C" : "#C1272D", marginBottom: 3 }}>G26.3: {st.g26Valid ? "aktuell" : "abgelaufen/fehlt"}</div>
+                      <div style={{ fontSize: 12, color: st.streckeValid ? "#1F6F5C" : "#C1272D", marginBottom: 3 }}>Streckendurchgang: {myEntry.streckendurchgang.date ? `${fmtDate(myEntry.streckendurchgang.date)}${st.streckeValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen (durch Admin)"}</div>
+                      <div style={{ fontSize: 12, color: st.uebungValid ? "#1F6F5C" : "#C1272D" }}>Übung (Container/Warmer Einsatz/Einsatznah): {myEntry.atemschutzUebung.date ? `${ATEMSCHUTZ_UEBUNG_TYPES[myEntry.atemschutzUebung.type] || ""} am ${fmtDate(myEntry.atemschutzUebung.date)}${st.uebungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen (durch Admin)"}</div>
+                    </div>
+                  );
+                })()}
+
                 {isAdmin && (
                   <>
-                    <button style={styles.exportBtn} onClick={exportG26}><Download size={14} /> Als Excel-Liste exportieren</button>
+                    <button style={styles.exportBtn} onClick={exportAtemschutz}><Download size={14} /> Als Excel-Liste exportieren</button>
                     {adminPendingG26.length > 0 && (
                       <div style={styles.reminderCard}><AlertTriangle size={14} color="#B8791A" /><div style={{ fontSize: 12, color: "#5C5F58" }}>{adminPendingG26.length} Bestätigung(en) offen — bitte Nachweis zeigen lassen.</div></div>
                     )}
@@ -1106,20 +1447,43 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                     <input key={`docphone-${config.doctorPhone}`} style={{ ...styles.input, marginTop: 6 }} placeholder="Telefonnummer" defaultValue={config.doctorPhone || ""} onBlur={(e) => { if (e.target.value !== config.doctorPhone) persistConfig({ ...config, doctorPhone: e.target.value }); }} />
                     <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 4 }}>Wird beim Verlassen des Feldes gespeichert.</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "16px 0 6px", letterSpacing: "0.04em" }}>ATEMSCHUTZTRÄGER ÜBERSICHT</div>
-                    {roster.filter((r) => r.atemschutz).map((r) => (
+                    {roster.filter((r) => r.atemschutz).map((r) => {
+                      const st = atemschutzStatus(r);
+                      return (
                       <div key={r.name} style={styles.kontrollRow}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.name}</div>
-                            <div style={{ fontSize: 12, color: "#8A8C86" }}>{fmtDate(r.g26.dueDate)}{r.g26.pendingConfirmation && <span style={styles.pinPendingTag}>offen</span>}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: "50%", background: st.allValid ? "#1F6F5C" : "#C1272D", flexShrink: 0 }} />
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{r.name}</div>
+                              <div style={{ fontSize: 11, color: "#8A8C86" }}>{st.allValid ? `tauglich bis ${fmtDate(st.bis)}` : "nicht tauglich"}</div>
+                            </div>
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
-                            {r.g26.pendingConfirmation && <button style={styles.tinyBtn} onClick={() => setConfirmResetG26Name(r.name)}>Zurücksetzen</button>}
-                            {r.g26.pendingConfirmation && <button style={styles.smallAddBtn} onClick={() => adminConfirmG26(r.name)}><Check size={12} /> Bestätigen</button>}
+                            {r.g26.pendingConfirmation && <button style={styles.tinyBtn} onClick={() => setConfirmResetG26Name(r.name)}>G26 zurücksetzen</button>}
+                            {r.g26.pendingConfirmation && <button style={styles.smallAddBtn} onClick={() => adminConfirmG26(r.name)}><Check size={12} /> G26 bestätigen</button>}
                           </div>
                         </div>
+                        <div style={{ fontSize: 11.5, color: "#5C5F58", marginBottom: 6 }}>G26.3: {fmtDate(r.g26.dueDate)}{r.g26.pendingConfirmation && <span style={styles.pinPendingTag}>offen</span>}</div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11.5, color: "#5C5F58", width: 130 }}>Streckendurchgang:</span>
+                          <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={r.streckendurchgang.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== r.streckendurchgang.date) setStreckendurchgang(r.name, e.target.value); }} />
+                          {r.streckendurchgang.date && <button style={styles.tinyBtn} onClick={() => resetStreckendurchgang(r.name)}>zurücksetzen</button>}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11.5, color: "#5C5F58", width: 130 }}>Übung:</span>
+                          <select style={{ ...styles.input, width: 140, padding: "5px 8px", fontSize: 11.5 }} defaultValue={r.atemschutzUebung.type || ""} onChange={(e) => { const type = e.target.value; if (type) setAtemschutzUebung(r.name, type, r.atemschutzUebung.date || todayISO()); }}>
+                            <option value="">— wählen —</option>
+                            {Object.entries(ATEMSCHUTZ_UEBUNG_TYPES).map(([k, label]) => (<option key={k} value={k}>{label}</option>))}
+                          </select>
+                          <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={r.atemschutzUebung.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== r.atemschutzUebung.date) setAtemschutzUebung(r.name, r.atemschutzUebung.type || "einsatznah", e.target.value); }} />
+                          {r.atemschutzUebung.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUebung(r.name)}>zurücksetzen</button>}
+                        </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
               </div>
@@ -1230,8 +1594,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
                 })}
                 {s.links && <div style={{ fontSize: 11.5, color: "#4A6670", marginTop: 4, wordBreak: "break-all" }}>Anhänge: {s.links}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <button style={styles.exportBtn} onClick={() => exportSitzungFile(s.id)}><Download size={14} /> Als Datei speichern</button>
-                  <button style={styles.exportBtn} onClick={() => triggerPrint(s.id)}><Printer size={14} /> Direkt drucken</button>
+                  <button style={styles.exportBtn} onClick={() => exportSitzungFile(s.id)}><Printer size={14} /> Als PDF anzeigen / drucken</button>
                   {canEditSitzung && <button style={styles.deleteBtn} onClick={() => deleteSitzung(s.id)}><Trash2 size={14} /> Löschen</button>}
                 </div>
               </div>
@@ -1330,6 +1693,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
         <div style={styles.modalBackdrop} onClick={() => setShowSettings(false)}>
           <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
             <div style={styles.modalHeader}><span style={styles.modalTitle}>Einstellungen</span><button style={styles.iconBtn} onClick={() => setShowSettings(false)}><X size={20} color="#5C5F58" /></button></div>
+            <div style={{ fontSize: 10.5, color: "#A5A79F", marginBottom: 10 }}>Version {APP_VERSION}</div>
             <div style={styles.formBody}>
               <label style={styles.label}>Mitgliederliste, Bereiche & Rechte</label>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -1410,6 +1774,19 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmResetG26Name(null)}>Abbrechen</button>
               <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => resetG26Date(confirmResetG26Name)}>Zurücksetzen</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showWhatsNew && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={dismissWhatsNew}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <Sparkles size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Was ist neu</div>
+            <ul style={{ textAlign: "left", fontSize: 12.5, color: "#5C5F58", lineHeight: 1.6, paddingLeft: 18, marginBottom: 14 }}>
+              {CHANGELOG.map((item, idx) => (<li key={idx}>{item}</li>))}
+            </ul>
+            <button style={{ ...styles.saveBtn, width: "100%" }} onClick={dismissWhatsNew}>Verstanden</button>
           </div>
         </div>
       )}
@@ -1532,22 +1909,27 @@ function matchesSearch(name, query) { if (!query.trim()) return true; return nam
 
 function ResponseButtons({ ev, me, onRespond, size = "normal" }) {
   const myStatus = (ev.responses || {})[me]; const small = size === "small";
+  const locked = ev.anmeldeschluss && todayISO() > ev.anmeldeschluss;
   return (
-    <div style={{ display: "flex", gap: 6 }}>
-      <button onClick={() => onRespond(ev.id, "zu")} style={{ ...styles.respBtn, ...(small ? styles.respBtnSmall : {}), background: myStatus === "zu" ? "#2E7D46" : "white", color: myStatus === "zu" ? "white" : "#2E7D46", borderColor: "#2E7D46" }}><UserCheck size={small ? 12 : 14} /> Zusage</button>
-      <button onClick={() => onRespond(ev.id, "ab")} style={{ ...styles.respBtn, ...(small ? styles.respBtnSmall : {}), background: myStatus === "ab" ? "#C1272D" : "white", color: myStatus === "ab" ? "white" : "#C1272D", borderColor: "#C1272D" }}><UserX size={small ? 12 : 14} /> Absage</button>
+    <div style={{ display: "flex", gap: 6, flexDirection: "column" }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button disabled={locked} onClick={() => onRespond(ev.id, "zu")} style={{ ...styles.respBtn, ...(small ? styles.respBtnSmall : {}), background: myStatus === "zu" ? "#2E7D46" : "white", color: myStatus === "zu" ? "white" : "#2E7D46", borderColor: "#2E7D46" }}><UserCheck size={small ? 12 : 14} /> Zusage</button>
+        <button disabled={locked} onClick={() => onRespond(ev.id, "ab")} style={{ ...styles.respBtn, ...(small ? styles.respBtnSmall : {}), background: myStatus === "ab" ? "#C1272D" : "white", color: myStatus === "ab" ? "white" : "#C1272D", borderColor: "#C1272D" }}><UserX size={small ? 12 : 14} /> Absage</button>
+      </div>
+      {locked && <span style={{ fontSize: 10.5, color: "#C1272D" }}>Anmeldeschluss ({fmtDate(ev.anmeldeschluss)}) erreicht</span>}
     </div>
   );
 }
 function GuestStepper({ ev, me, onChange }) {
   if ((ev.responses || {})[me] !== "zu") return null;
   const guests = (ev.guests || {})[me] || 0;
+  const locked = ev.anmeldeschluss && todayISO() > ev.anmeldeschluss;
   return (
     <div style={styles.guestStepper}>
       <span style={{ fontSize: 11, color: "#8A8C86" }}>+ Begleitung:</span>
-      <button style={styles.tinyBtn} onClick={() => onChange(ev.id, guests - 1)}>−</button>
+      <button style={styles.tinyBtn} disabled={locked} onClick={() => onChange(ev.id, guests - 1)}>−</button>
       <span style={{ fontSize: 12.5, fontWeight: 700, minWidth: 14, textAlign: "center" }}>{guests}</span>
-      <button style={styles.tinyBtn} onClick={() => onChange(ev.id, guests + 1)}>+</button>
+      <button style={styles.tinyBtn} disabled={locked} onClick={() => onChange(ev.id, guests + 1)}>+</button>
     </div>
   );
 }
@@ -1812,6 +2194,14 @@ const styles = {
   exportBtn: { display: "flex", alignItems: "center", gap: 6, background: "#4A6670", color: "white", border: "none", borderRadius: 6, padding: "9px 14px", fontSize: 12.5, fontWeight: 600, marginBottom: 4 },
   tinyBtn: { fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 4, border: "1px solid #E2DFD6", background: "#F3F1EC", color: "#5C5F58" },
   tinyBtnPrimary: { fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, border: "1px solid #1F6F5C", background: "#1F6F5C", color: "white" },
+  tileGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "white", border: "0.5px solid #E2DFD6", borderRadius: 12, padding: "18px 10px", position: "relative" },
+  tileLabel: { fontSize: 12.5, fontWeight: 600, color: "#2C2F2A" },
+  tileBadge: { position: "absolute", top: 8, right: 8, minWidth: 18, height: 18, borderRadius: 9, background: "#E8A33D", color: "white", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" },
+  tilePlaceholder: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#F3F1EC", border: "1px dashed #C7C4BC", borderRadius: 12, padding: "18px 10px" },
+  tileHeaderDot: { position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: "#E8A33D" },
+  teaserSection: { padding: "0 16px 4px" },
+  teaserCard: { display: "flex", alignItems: "center", gap: 10, width: "100%", background: "#F1E9F6", border: "1px solid #DCC8EA", borderRadius: 8, padding: "10px 12px", marginBottom: 8 },
   confirmDialog: { background: "#F3F1EC", borderRadius: 10, padding: "22px 20px", width: "100%", maxWidth: 320, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", margin: "auto" },
   advancedToggle: { display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none", color: "#8A8C86", fontSize: 11.5, fontWeight: 600, padding: 0 },
   expandSitzungBtn: { display: "flex", alignItems: "center", gap: 4, background: "#EAF0F1", border: "1px solid #C7D4D8", color: "#4A6670", fontSize: 11, fontWeight: 700, padding: "5px 9px", borderRadius: 14, whiteSpace: "nowrap" },
