@@ -9,18 +9,19 @@ import {
 import { supabase } from "./supabaseClient";
 
 const APP_NAME = "Feuerwehr Regglisweiler";
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 const CHANGELOG = [
-  "Neue Kachel-Übersicht für Führerschein, Atemschutz, Ausschuss und mehr",
-  "Aus der G26-Kontrolle wurde \"Atemschutz\" mit Streckendurchgang, Übungsnachweis und Ampel-Status",
-  "Fahrzeugeinweisung: Fahrzeuge anlegen und Einweisungen bestätigen lassen",
-  "Anmeldeschluss bei Kameradschafts-Terminen mit Erinnerung",
-  "Ausschusssitzungen erscheinen jetzt auch im Hauptkalender (nur für Ausschussmitglieder)",
-  "Echtzeit-Aktualisierung statt Warten auf den nächsten Abruf",
-  "Man bleibt jetzt auf dem Gerät dauerhaft angemeldet",
-  "Drucken/Excel-Export laufen jetzt über eine Vorschau-Seite zum Teilen/Speichern",
+  "Atemschutzunterweisung als vierte Voraussetzung für Einsatztauglichkeit (wird von Admin/Berechtigten eingetragen)",
+  "Fahrzeuge können jetzt PKW oder LKW zugeordnet werden – wer den Führerschein nicht hat, muss auch nicht eingewiesen werden",
+  "Kategorie-Filter im Kalender merkt sich jetzt dauerhaft, was schon gesehen wurde (kein Punkt mehr nach jedem Neustart)",
+  "Zahl bei der Ausschuss-Kachel bleibt jetzt korrekt gespeichert, statt bei jedem Neuladen wieder zu erscheinen",
+  "Kategorien im Kalender jetzt kompakt auf einen Blick sichtbar, ohne seitliches Scrollen",
 ];
-const LION_ICON = "data:image/png;base64,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";
+// WICHTIG (Heiko): Diese beiden Zeilen NICHT aus dieser Datei übernehmen — bitte die
+// Original-Werte für LION_ICON und JF_ICON aus deiner aktuellen App.jsx bei GitHub
+// hier einsetzen (einfach die beiden kompletten Zeilen von dort rüberkopieren), damit
+// die Wappen-Icons nicht beschädigt werden. Alles andere in dieser Datei ist neu/aktualisiert.
+const LION_ICON = "data:image/png;base64,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";
 const JF_ICON = "data:image/png;base64,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";
 
 const CATEGORIES = {
@@ -115,6 +116,7 @@ const emptyRosterEntry = (name, pin) => ({
   g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null },
   streckendurchgang: { date: null, confirmedBy: null },
   atemschutzUebung: { type: null, date: null },
+  atemschutzUnterweisung: { date: null, confirmedBy: null },
   fuehrerschein: {
     pkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
     lkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
@@ -122,7 +124,7 @@ const emptyRosterEntry = (name, pin) => ({
   fahrzeuge: {},
 });
 const emptySitzungDraft = () => ({ id: null, title: "", date: todayISO(), time: "20:00", location: "", tagesordnung: [""], links: "", protokoll: {}, attachments: [] });
-const emptyVehicle = (name) => ({ id: uid(), name });
+const emptyVehicle = (name, type) => ({ id: uid(), name, type: type === "lkw" ? "lkw" : "pkw" });
 
 function atemschutzStatus(entry) {
   const g26Valid = !!(entry.g26 && entry.g26.dueDate && daysUntil(entry.g26.dueDate) >= 0);
@@ -130,13 +132,15 @@ function atemschutzStatus(entry) {
   const streckeValid = !!(strecke.date && daysSince(strecke.date) <= 365);
   const uebung = entry.atemschutzUebung || {};
   const uebungValid = !!(uebung.date && daysSince(uebung.date) <= 365);
-  const allValid = g26Valid && streckeValid && uebungValid;
+  const unterweisung = entry.atemschutzUnterweisung || {};
+  const unterweisungValid = !!(unterweisung.date && daysSince(unterweisung.date) <= 365);
+  const allValid = g26Valid && streckeValid && uebungValid && unterweisungValid;
   let bis = null;
   if (allValid) {
-    const dates = [entry.g26.dueDate, addDays(strecke.date, 365), addDays(uebung.date, 365)];
+    const dates = [entry.g26.dueDate, addDays(strecke.date, 365), addDays(uebung.date, 365), addDays(unterweisung.date, 365)];
     bis = dates.sort()[0];
   }
-  return { g26Valid, streckeValid, uebungValid, allValid, bis };
+  return { g26Valid, streckeValid, uebungValid, unterweisungValid, allValid, bis };
 }
 
 async function storageSetWithRetry(key, jsonString, shared = true, retries = 2) {
@@ -178,6 +182,7 @@ function normalizeRosterEntry(r) {
     g26: { ...base.g26, ...(r.g26 || {}) },
     streckendurchgang: { ...base.streckendurchgang, ...(r.streckendurchgang || {}) },
     atemschutzUebung: { ...base.atemschutzUebung, ...(r.atemschutzUebung || {}) },
+    atemschutzUnterweisung: { ...base.atemschutzUnterweisung, ...(r.atemschutzUnterweisung || {}) },
     fuehrerschein: {
       pkw: { ...base.fuehrerschein.pkw, ...((r.fuehrerschein && r.fuehrerschein.pkw) || {}) },
       lkw: { ...base.fuehrerschein.lkw, ...((r.fuehrerschein && r.fuehrerschein.lkw) || {}) },
@@ -194,7 +199,7 @@ function normalizeSitzung(s) {
   const ts = s.createdAt || Date.now();
   return { protokoll: {}, anwesenheit: {}, links: "", tagesordnung: [], abstimmungen: {}, attachments: [], ...s, createdAt: ts };
 }
-function normalizeVehicle(v) { return { id: v.id || uid(), name: v.name || "" }; }
+function normalizeVehicle(v) { return { id: v.id || uid(), name: v.name || "", type: v.type === "lkw" ? "lkw" : "pkw" }; }
 function normalizeConfig(cfg) {
   if (!cfg) return cfg;
   // Ältere Konfigurationen hatten ein einzelnes "adminName" statt einer Admin-Liste.
@@ -228,7 +233,9 @@ export default function App() {
   const [notices, setNotices] = useState([]);
   const [filter, setFilter] = useState("alle");
   const [selectedBereiche, setSelectedBereiche] = useState(null); // null = init from myEntry
-  const [seenCategories, setSeenCategories] = useState({});
+  const [seenCategories, setSeenCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ffw_seen_categories") || "{}"); } catch (e) { return {}; }
+  });
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState(emptyDraft());
   const [formError, setFormError] = useState("");
@@ -247,10 +254,12 @@ export default function App() {
   const [confirmVehicleSearch, setConfirmVehicleSearch] = useState("");
   const [confirmVehicleTarget, setConfirmVehicleTarget] = useState(null); // vehicleId | null
   const [newVehicleName, setNewVehicleName] = useState("");
+  const [newVehicleType, setNewVehicleType] = useState("pkw");
   const [confirmDeleteVehicleId, setConfirmDeleteVehicleId] = useState(null);
   const [confirmDeleteSitzungId, setConfirmDeleteSitzungId] = useState(null);
   const [editVehicleId, setEditVehicleId] = useState(null);
   const [editVehicleName, setEditVehicleName] = useState("");
+  const [editVehicleType, setEditVehicleType] = useState("pkw");
   const [showSitzungen, setShowSitzungen] = useState(false);
   const [sitzungen, setSitzungen] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -273,9 +282,16 @@ export default function App() {
   const [showKontrollen, setShowKontrollen] = useState(null); // null | 'fuehrerschein' | 'atemschutz'
   const [showTileMenu, setShowTileMenu] = useState(false);
   const [kachelReturnTo, setKachelReturnTo] = useState("calendar"); // 'calendar' | 'tiles'
-  const [seenSitzungIds, setSeenSitzungIds] = useState(() => new Set());
+  const [seenSitzungIds, setSeenSitzungIds] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("ffw_seen_sitzungen") || "[]")); } catch (e) { return new Set(); }
+  });
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
+
+  // Beide "gesehen"-Listen dauerhaft im Browser sichern, damit der Neu-Punkt/die Zahl
+  // nach dem Neuladen der App nicht wieder fälschlich auftaucht.
+  useEffect(() => { try { localStorage.setItem("ffw_seen_categories", JSON.stringify(seenCategories)); } catch (e) {} }, [seenCategories]);
+  useEffect(() => { try { localStorage.setItem("ffw_seen_sitzungen", JSON.stringify([...seenSitzungIds])); } catch (e) {} }, [seenSitzungIds]);
 
   const myEntry = roster.find((r) => r.name === me);
   const isAdmin = !!(me && config && config.adminNames && config.adminNames.includes(me));
@@ -291,6 +307,7 @@ export default function App() {
   function canEditNewsFor(bereich) { if (isAdmin) return true; if (!myEntry || !bereich) return false; return !!(myEntry.rechte[bereich] && myEntry.rechte[bereich].news); }
   const editableCalendarBereiche = myBereiche.filter((b) => canEditCalendarFor(b));
   const editableNewsBereiche = myBereiche.filter((b) => canEditNewsFor(b));
+  const canEditAtemschutzUnterweisung = isAdmin || canEditCalendarFor("atemschutz");
 
   const configRef = useRef(null); const rosterRef = useRef([]); const eventsRef = useRef([]); const noticesRef = useRef([]); const sitzungenRef = useRef([]); const vehiclesRef = useRef([]);
   const lastEditRef = useRef({ config: 0, roster: 0, events: 0, notices: 0, sitzungen: 0, vehicles: 0 });
@@ -680,12 +697,12 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
   function fuehrerscheinDue(entry, type) { const f = entry.fuehrerschein[type]; return f.hasLicense && f.confirmedYear !== currentYear(); }
 
   // --- Fahrzeuge / Fahrzeugeinweisung ---
-  function addVehicle(name) {
+  function addVehicle(name, type) {
     const trimmed = name.trim(); if (!trimmed || !isAdmin) return;
-    persistVehicles([...vehicles, emptyVehicle(trimmed)]);
+    persistVehicles([...vehicles, emptyVehicle(trimmed, type)]);
   }
   function deleteVehicle(id) { if (!isAdmin) return; persistVehicles(vehicles.filter((v) => v.id !== id)); }
-  function renameVehicle(id, name) { if (!isAdmin) return; persistVehicles(vehicles.map((v) => (v.id === id ? { ...v, name } : v))); }
+  function renameVehicle(id, name, type) { if (!isAdmin) return; persistVehicles(vehicles.map((v) => (v.id === id ? { ...v, name, type: type === "lkw" ? "lkw" : "pkw" } : v))); }
   function getVehicleStatus(entry, vehicleId) { return (entry.fahrzeuge || {})[vehicleId] || { confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null }; }
   function requestVehicleConfirmation(vehicleId, colleagueName) {
     updateMyRosterEntry((r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { ...getVehicleStatus(r, vehicleId), confirmRequestTo: colleagueName, requestDate: todayISO() } } }));
@@ -698,11 +715,13 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
     updateRosterEntry(subjectName, (r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { confirmedBy: me, confirmedDate: todayISO(), confirmRequestTo: null, requestDate: null } } }));
   }
 
-  // --- Atemschutz: Streckendurchgang & Übungstyp (nur Admin trägt ein) ---
+  // --- Atemschutz: Streckendurchgang, Übungstyp (Admin oder Träger selbst) & Unterweisung (Admin/Berechtigter) ---
   function setStreckendurchgang(name, date) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date, confirmedBy: me } })); }
   function resetStreckendurchgang(name) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date: null, confirmedBy: null } })); }
   function setAtemschutzUebung(name, type, date) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type, date } })); }
   function resetAtemschutzUebung(name) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type: null, date: null } })); }
+  function setAtemschutzUnterweisung(name, date) { if (!canEditAtemschutzUnterweisung) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUnterweisung: { date, confirmedBy: me } })); }
+  function resetAtemschutzUnterweisung(name) { if (!canEditAtemschutzUnterweisung) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUnterweisung: { date: null, confirmedBy: null } })); }
 
   // --- G26 ---
   function saveG26Date(newDate) {
@@ -776,7 +795,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     exportCSV(rows, `Fuehrerschein_${currentYear()}.csv`);
   }
   function exportAtemschutz() {
-    const rows = [["Name", "G26 Termin", "G26 Status", "Streckendurchgang", "Übung Typ", "Übung Datum", "Einsatztauglich", "Tauglich bis"]];
+    const rows = [["Name", "G26 Termin", "G26 Status", "Streckendurchgang", "Übung Typ", "Übung Datum", "Unterweisung", "Einsatztauglich", "Tauglich bis"]];
     roster.filter((r) => r.atemschutz).forEach((r) => {
       const st = atemschutzStatus(r);
       rows.push([
@@ -786,6 +805,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
         r.streckendurchgang.date ? fmtDate(r.streckendurchgang.date) : "offen",
         r.atemschutzUebung.type ? ATEMSCHUTZ_UEBUNG_TYPES[r.atemschutzUebung.type] : "offen",
         r.atemschutzUebung.date ? fmtDate(r.atemschutzUebung.date) : "",
+        r.atemschutzUnterweisung && r.atemschutzUnterweisung.date ? fmtDate(r.atemschutzUnterweisung.date) : "offen",
         st.allValid ? "Ja" : "Nein",
         st.bis ? fmtDate(st.bis) : "",
       ]);
@@ -882,6 +902,10 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
 
   const neueSitzungenCount = useMemo(() => sitzungen.filter((s) => !seenSitzungIds.has(s.id)).length, [sitzungen, seenSitzungIds]);
   const upcomingSitzungenTeaser = useMemo(() => sitzungen.filter((s) => s.date >= todayISO()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).slice(0, 1), [sitzungen]);
+  const myRelevantVehicles = useMemo(() => {
+    if (!myEntry) return [];
+    return vehicles.filter((v) => (v.type === "lkw" ? myEntry.fuehrerschein.lkw.hasLicense : myEntry.fuehrerschein.pkw.hasLicense));
+  }, [vehicles, myEntry]);
 
   const fontImport = (
     <style>{`
@@ -1375,10 +1399,10 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                   </div>
                 )}
 
-                {myEntry && inEinsatzabteilung && vehicles.length > 0 && (
+                {myEntry && inEinsatzabteilung && myRelevantVehicles.length > 0 && (
                   <div style={styles.kontrollRow}>
                     <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Meine Fahrzeugeinweisungen</div>
-                    {vehicles.map((v) => {
+                    {myRelevantVehicles.map((v) => {
                       const status = getVehicleStatus(myEntry, v.id);
                       const eingewiesen = !!status.confirmedBy;
                       return (
@@ -1425,8 +1449,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
 
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "16px 0 6px", letterSpacing: "0.04em" }}>FAHRZEUGE VERWALTEN</div>
                     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                      <input style={{ ...styles.input, flex: 1 }} placeholder="Neues Fahrzeug (z. B. LF 20)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newVehicleName.trim()) { addVehicle(newVehicleName); setNewVehicleName(""); } }} />
-                      <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => { if (newVehicleName.trim()) { addVehicle(newVehicleName); setNewVehicleName(""); } }}><Plus size={16} /></button>
+                      <input style={{ ...styles.input, flex: 1 }} placeholder="Neues Fahrzeug (z. B. LF 20)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newVehicleName.trim()) { addVehicle(newVehicleName, newVehicleType); setNewVehicleName(""); } }} />
+                      <select style={{ ...styles.input, width: 88 }} value={newVehicleType} onChange={(e) => setNewVehicleType(e.target.value)}>
+                        <option value="pkw">PKW</option>
+                        <option value="lkw">LKW</option>
+                      </select>
+                      <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => { if (newVehicleName.trim()) { addVehicle(newVehicleName, newVehicleType); setNewVehicleName(""); } }}><Plus size={16} /></button>
                     </div>
                     {vehicles.map((v) => (
                       <div key={v.id} style={styles.kontrollRow}>
@@ -1434,17 +1462,21 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                           {editVehicleId === v.id ? (
                             <div style={{ display: "flex", gap: 6, flex: 1 }}>
                               <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 13 }} value={editVehicleName} onChange={(e) => setEditVehicleName(e.target.value)} autoFocus />
-                              <button style={styles.tinyBtnPrimary} onClick={() => { if (editVehicleName.trim()) { renameVehicle(v.id, editVehicleName.trim()); setEditVehicleId(null); } }}><Check size={13} /></button>
+                              <select style={{ ...styles.input, width: 80, padding: "6px 9px", fontSize: 13 }} value={editVehicleType} onChange={(e) => setEditVehicleType(e.target.value)}>
+                                <option value="pkw">PKW</option>
+                                <option value="lkw">LKW</option>
+                              </select>
+                              <button style={styles.tinyBtnPrimary} onClick={() => { if (editVehicleName.trim()) { renameVehicle(v.id, editVehicleName.trim(), editVehicleType); setEditVehicleId(null); } }}><Check size={13} /></button>
                             </div>
                           ) : (
-                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v.name}</div>
+                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v.name} <span style={{ fontSize: 10, fontWeight: 700, color: "#8A8C86" }}>({v.type === "lkw" ? "LKW" : "PKW"})</span></div>
                           )}
                           <div style={{ display: "flex", gap: 4 }}>
-                            {editVehicleId !== v.id && <button style={styles.rosterRemoveBtn} onClick={() => { setEditVehicleId(v.id); setEditVehicleName(v.name); }}><Pencil size={13} /></button>}
+                            {editVehicleId !== v.id && <button style={styles.rosterRemoveBtn} onClick={() => { setEditVehicleId(v.id); setEditVehicleName(v.name); setEditVehicleType(v.type || "pkw"); }}><Pencil size={13} /></button>}
                             <button style={styles.rosterRemoveBtn} onClick={() => setConfirmDeleteVehicleId(v.id)}><Trash2 size={13} /></button>
                           </div>
                         </div>
-                        {roster.filter((r) => r.bereiche.includes("einsatzabteilung")).map((r) => {
+                        {roster.filter((r) => r.bereiche.includes("einsatzabteilung") && (v.type === "lkw" ? r.fuehrerschein.lkw.hasLicense : r.fuehrerschein.pkw.hasLicense)).map((r) => {
                           const status = getVehicleStatus(r, v.id);
                           return (
                             <div key={r.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11.5, color: status.confirmedBy ? "#1F6F5C" : "#8A8C86", marginBottom: 2 }}>
@@ -1462,39 +1494,6 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
 
             {showKontrollen === "atemschutz" && (
               <div>
-                {myEntry && myEntry.atemschutz && (
-                  <div style={styles.kontrollRow}>
-                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Meine G26.3-Untersuchung</div>
-                    <div style={{ fontSize: 13, color: "#5C5F58", marginBottom: 8 }}>Nächster Termin: <strong>{fmtDate(myEntry.g26.dueDate)}</strong>{myEntry.g26.pendingConfirmation && <span style={styles.pinPendingTag}> wartet auf Bestätigung</span>}</div>
-                    {!g26EditOpen ? (
-                      <button style={styles.smallAddBtn} onClick={() => { setG26EditOpen(true); setG26DateInput(myEntry.g26.dueDate || ""); }}><Pencil size={12} /> Neuen Termin eintragen</button>
-
-                    ) : (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <input style={{ ...styles.input, flex: 1 }} type="date" value={g26DateInput} onChange={(e) => setG26DateInput(e.target.value)} />
-                        <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => g26DateInput && saveG26Date(g26DateInput)}><Check size={15} /></button>
-                      </div>
-                    )}
-                    {g26ReminderActive(myEntry) && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
-                      <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
-                    )}
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #E2DFD6" }}>
-                      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>NACHWEIS-FOTO (nur du und Admin sehen das)</div>
-                      {myEntry.g26.photoUrl ? (
-                        <div>
-                          <img src={myEntry.g26.photoUrl} alt="G26-Nachweis" style={{ maxWidth: 160, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6 }} />
-                          <button style={styles.tinyBtn} onClick={removeG26Photo}>Foto entfernen</button>
-                        </div>
-                      ) : (
-                        <label style={styles.smallAddBtn}>
-                          {g26PhotoUploading ? "Lädt hoch …" : <><Plus size={12} /> Foto hochladen</>}
-                          <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadG26Photo(e.target.files[0]); }} />
-                        </label>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {myEntry && myEntry.atemschutz && (() => {
                   const st = atemschutzStatus(myEntry);
                   return (
@@ -1512,7 +1511,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                       </div>
 
                       <div style={{ fontSize: 12, color: st.uebungValid ? "#1F6F5C" : "#C1272D", marginBottom: 4 }}>Übung (Container/Warmer Einsatz/Einsatznah): {myEntry.atemschutzUebung.date ? `${ATEMSCHUTZ_UEBUNG_TYPES[myEntry.atemschutzUebung.type] || ""} am ${fmtDate(myEntry.atemschutzUebung.date)}${st.uebungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}</div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                         <select style={{ ...styles.input, width: 150, padding: "6px 9px", fontSize: 12 }} defaultValue={myEntry.atemschutzUebung.type || ""} onChange={(e) => { const type = e.target.value; if (type) setAtemschutzUebung(me, type, myEntry.atemschutzUebung.date || todayISO()); }}>
                           <option value="">— Art wählen —</option>
                           {Object.entries(ATEMSCHUTZ_UEBUNG_TYPES).map(([k, label]) => (<option key={k} value={k}>{label}</option>))}
@@ -1520,9 +1519,32 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                         <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 12 }} type="date" defaultValue={myEntry.atemschutzUebung.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== myEntry.atemschutzUebung.date) setAtemschutzUebung(me, myEntry.atemschutzUebung.type || "einsatznah", e.target.value); }} />
                         {myEntry.atemschutzUebung.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUebung(me)}>zurücksetzen</button>}
                       </div>
+
+                      <div style={{ fontSize: 12, color: st.unterweisungValid ? "#1F6F5C" : "#C1272D" }}>
+                        Atemschutzunterweisung: {myEntry.atemschutzUnterweisung && myEntry.atemschutzUnterweisung.date ? `${fmtDate(myEntry.atemschutzUnterweisung.date)}${st.unterweisungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}
+                        <span style={{ fontSize: 10.5, color: "#8A8C86", display: "block", marginTop: 2 }}>(wird von Admin/Berechtigten eingetragen)</span>
+                      </div>
                     </div>
                   );
                 })()}
+
+                {canEditAtemschutzUnterweisung && roster.filter((r) => r.atemschutz).length > 0 && (
+                  <div style={styles.kontrollRow}>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Atemschutzunterweisung eintragen</div>
+                    {roster.filter((r) => r.atemschutz).map((r) => {
+                      const u = r.atemschutzUnterweisung || {};
+                      const valid = !!(u.date && daysSince(u.date) <= 365);
+                      return (
+                        <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                          <span style={{ fontSize: 11.5, color: "#5C5F58", width: 110 }}>{r.name}:</span>
+                          <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={u.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== u.date) setAtemschutzUnterweisung(r.name, e.target.value); }} />
+                          <span style={{ fontSize: 11, color: valid ? "#1F6F5C" : "#C1272D", fontWeight: 600 }}>{u.date ? (valid ? "gültig" : "abgelaufen") : "offen"}</span>
+                          {u.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUnterweisung(r.name)}>zurücksetzen</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {isAdmin && (
                   <>
@@ -1646,7 +1668,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                         {!ab && canEditProtokoll && !(voteStartDraft && voteStartDraft.sitzungId === s.id && voteStartDraft.idx === idx) && (
                           <button style={styles.smallAddBtn} onClick={() => setVoteStartDraft({ sitzungId: s.id, idx, text: "" })}><HandHelping size={12} /> Abstimmung starten</button>
                         )}
-                        {ab && ab.text && <div style={styles.voteAntrag}>„{ab.text}“</div>}
+                        {ab && ab.text && <div style={styles.voteAntrag}>„{ab.text}"</div>}
                         {ab && ab.active && (
                           <>
                             {canVote && (
@@ -2272,8 +2294,8 @@ const styles = {
   heroRespRow: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid #3A3F3B", flexWrap: "wrap", gap: 8 },
   heroCounts: { fontSize: 11.5, color: "#8FA0A6" },
 
-  tabRow: { display: "flex", gap: 7, padding: "16px 16px 4px", overflowX: "auto" },
-  tabBtn: { fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 20, border: "1.5px solid", whiteSpace: "nowrap", flexShrink: 0 },
+  tabRow: { display: "flex", flexWrap: "wrap", gap: 6, padding: "16px 16px 4px" },
+  tabBtn: { fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 16, border: "1.5px solid", whiteSpace: "nowrap" },
   tabDot: { position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: "50%", background: "#E8A33D", border: "1.5px solid #F3F1EC" },
 
   main: { padding: "18px 16px 0" },
