@@ -112,7 +112,7 @@ const emptyRosterEntry = (name, pin) => ({
   gruppenfuehrer: false,
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },
-  g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null },
+  g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null },
   streckendurchgang: { date: null, confirmedBy: null },
   atemschutzUebung: { type: null, date: null },
   fuehrerschein: {
@@ -121,7 +121,7 @@ const emptyRosterEntry = (name, pin) => ({
   },
   fahrzeuge: {},
 });
-const emptySitzungDraft = () => ({ id: null, title: "", date: todayISO(), time: "20:00", location: "", tagesordnung: [""], links: "", protokoll: {} });
+const emptySitzungDraft = () => ({ id: null, title: "", date: todayISO(), time: "20:00", location: "", tagesordnung: [""], links: "", protokoll: {}, attachments: [] });
 const emptyVehicle = (name) => ({ id: uid(), name });
 
 function atemschutzStatus(entry) {
@@ -192,7 +192,7 @@ function normalizeEvent(e) {
 }
 function normalizeSitzung(s) {
   const ts = s.createdAt || Date.now();
-  return { protokoll: {}, anwesenheit: {}, links: "", tagesordnung: [], abstimmungen: {}, ...s, createdAt: ts };
+  return { protokoll: {}, anwesenheit: {}, links: "", tagesordnung: [], abstimmungen: {}, attachments: [], ...s, createdAt: ts };
 }
 function normalizeVehicle(v) { return { id: v.id || uid(), name: v.name || "" }; }
 function normalizeConfig(cfg) {
@@ -248,6 +248,9 @@ export default function App() {
   const [confirmVehicleTarget, setConfirmVehicleTarget] = useState(null); // vehicleId | null
   const [newVehicleName, setNewVehicleName] = useState("");
   const [confirmDeleteVehicleId, setConfirmDeleteVehicleId] = useState(null);
+  const [confirmDeleteSitzungId, setConfirmDeleteSitzungId] = useState(null);
+  const [editVehicleId, setEditVehicleId] = useState(null);
+  const [editVehicleName, setEditVehicleName] = useState("");
   const [showSitzungen, setShowSitzungen] = useState(false);
   const [sitzungen, setSitzungen] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -269,6 +272,7 @@ export default function App() {
 
   const [showKontrollen, setShowKontrollen] = useState(null); // null | 'fuehrerschein' | 'atemschutz'
   const [showTileMenu, setShowTileMenu] = useState(false);
+  const [kachelReturnTo, setKachelReturnTo] = useState("calendar"); // 'calendar' | 'tiles'
   const [seenSitzungIds, setSeenSitzungIds] = useState(() => new Set());
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
@@ -353,6 +357,14 @@ export default function App() {
   function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
   function clearAuth() { try { localStorage.removeItem("ffw_auth"); } catch (e) {} }
   function logout() { clearAuth(); setMe(null); setCodeInput(""); setPhase("gate"); }
+  function closeKachelView() {
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false);
+    if (kachelReturnTo === "tiles") setShowTileMenu(true);
+  }
+  function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
+  function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
+  function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
+  function openTileSettings() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSettings(true); }
 
   // Echtzeit-Updates: Statt regelmäßig nachzufragen, meldet sich Supabase von selbst,
   // sobald sich in der Datenbank etwas ändert (Realtime). Deutlich schneller als Polling.
@@ -619,18 +631,26 @@ export default function App() {
         const votesList = Object.entries(ab.votes).map(([n, v]) => `${escapeHtml(n)}: ${v === "dafuer" ? "dafür" : "dagegen"}`).join(", ");
         voteHtml = `<p style="margin-top:6px;">${ab.text ? `<em>„${escapeHtml(ab.text)}“</em><br/>` : ""}<strong>Abstimmung:</strong> ${r.dafuer} dafür · ${r.dagegen} dagegen — ${r.label}<br/><span style="font-size:12px;color:#5C5F58;">${votesList}</span></p>`;
       }
-      return `<div style="margin-bottom:16px"><strong>${idx + 1}. ${escapeHtml(point)}</strong><p style="white-space:pre-wrap;">${escapeHtml(s.protokoll[idx] || "—")}</p>${voteHtml}</div>`;
+      const divider = idx > 0 ? `<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>` : "";
+      return `${divider}<div style="margin-bottom:6px"><strong>${idx + 1}. ${escapeHtml(point)}</strong><p style="white-space:pre-wrap;">${escapeHtml(s.protokoll[idx] || "—")}</p>${voteHtml}</div>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(s.title)}</title></head>
 <body style="font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#2C2F2A;line-height:1.5;">
+<div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:14px;margin-bottom:18px;">
+  <img src="${LION_ICON}" alt="" style="width:48px;height:48px;object-fit:contain;" />
+  <div><div style="font-size:20px;font-weight:700;letter-spacing:0.03em;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">Ausschuss-Protokoll</div></div>
+</div>
 <h2 style="margin-bottom:4px;">${escapeHtml(s.title)}</h2>
 <p style="color:#5C5F58;margin-top:0;">${fmtDate(s.date)} · ${s.time} Uhr ${s.location ? "· " + escapeHtml(s.location) : ""}</p>
-<hr/>
+<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>
 <p><strong>Anwesenheit</strong></p>
 <ul>${anwesenheitRows || "<li>Keine Ausschussmitglieder eingetragen.</li>"}</ul>
-<hr/>
+<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>
 ${agendaRows}
-${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
+${s.links ? `<p><strong>Link:</strong> ${escapeHtml(s.links)}</p>` : ""}
+${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.attachments.map((a) => `<li><a href="${escapeHtml(a.url)}">${escapeHtml(a.name)}</a></li>`).join("")}</ul>` : ""}
+<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);" class="no-print">🖨️ Drucken / Als PDF sichern</button>
+<style>@media print { .no-print { display:none; } }</style>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -665,6 +685,7 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
     persistVehicles([...vehicles, emptyVehicle(trimmed)]);
   }
   function deleteVehicle(id) { if (!isAdmin) return; persistVehicles(vehicles.filter((v) => v.id !== id)); }
+  function renameVehicle(id, name) { if (!isAdmin) return; persistVehicles(vehicles.map((v) => (v.id === id ? { ...v, name } : v))); }
   function getVehicleStatus(entry, vehicleId) { return (entry.fahrzeuge || {})[vehicleId] || { confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null }; }
   function requestVehicleConfirmation(vehicleId, colleagueName) {
     updateMyRosterEntry((r) => ({ ...r, fahrzeuge: { ...(r.fahrzeuge || {}), [vehicleId]: { ...getVehicleStatus(r, vehicleId), confirmRequestTo: colleagueName, requestDate: todayISO() } } }));
@@ -678,10 +699,10 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
   }
 
   // --- Atemschutz: Streckendurchgang & Übungstyp (nur Admin trägt ein) ---
-  function setStreckendurchgang(name, date) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date, confirmedBy: me } })); }
-  function resetStreckendurchgang(name) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date: null, confirmedBy: null } })); }
-  function setAtemschutzUebung(name, type, date) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type, date } })); }
-  function resetAtemschutzUebung(name) { if (!isAdmin) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type: null, date: null } })); }
+  function setStreckendurchgang(name, date) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date, confirmedBy: me } })); }
+  function resetStreckendurchgang(name) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, streckendurchgang: { date: null, confirmedBy: null } })); }
+  function setAtemschutzUebung(name, type, date) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type, date } })); }
+  function resetAtemschutzUebung(name) { if (!isAdmin && me !== name) return; updateRosterEntry(name, (r) => ({ ...r, atemschutzUebung: { type: null, date: null } })); }
 
   // --- G26 ---
   function saveG26Date(newDate) {
@@ -689,17 +710,50 @@ ${s.links ? `<p><strong>Anhänge:</strong> ${escapeHtml(s.links)}</p>` : ""}
     setG26EditOpen(false); setG26DateInput("");
   }
   function adminConfirmG26(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { ...r.g26, pendingConfirmation: false, confirmedByAdmin: true, confirmedAdminDate: todayISO() } })); }
-  function resetG26Date(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null } })); setConfirmResetG26Name(null); }
+  function resetG26Date(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null } })); setConfirmResetG26Name(null); }
+
+  // --- Datei-Uploads (Supabase Storage, Bucket "anhaenge") ---
+  const [g26PhotoUploading, setG26PhotoUploading] = useState(false);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  async function uploadG26Photo(file) {
+    if (!file || !me) return;
+    setG26PhotoUploading(true);
+    try {
+      const path = `g26/${me.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`;
+      const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from("anhaenge").getPublicUrl(path);
+      updateMyRosterEntry((r) => ({ ...r, g26: { ...r.g26, photoUrl: data.publicUrl } }));
+    } catch (e) { flashError("Foto-Upload fehlgeschlagen."); }
+    setG26PhotoUploading(false);
+  }
+  function removeG26Photo() { updateMyRosterEntry((r) => ({ ...r, g26: { ...r.g26, photoUrl: null } })); }
+  async function uploadSitzungAttachment(file) {
+    if (!file) return;
+    setAttachmentUploading(true);
+    try {
+      const path = `ausschuss/${Date.now()}_${file.name.replace(/[^a-z0-9.\-_]+/gi, "_")}`;
+      const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from("anhaenge").getPublicUrl(path);
+      setSitzungDraft((d) => ({ ...d, attachments: [...(d.attachments || []), { name: file.name, url: data.publicUrl }] }));
+    } catch (e) { flashError("Datei-Upload fehlgeschlagen."); }
+    setAttachmentUploading(false);
+  }
+  function removeSitzungAttachmentDraft(idx) { setSitzungDraft((d) => ({ ...d, attachments: d.attachments.filter((_, i) => i !== idx) })); }
   function g26ReminderActive(entry) { if (!entry.atemschutz || !entry.g26.dueDate) return false; return daysUntil(entry.g26.dueDate) <= 122; }
 
   function openPreviewPage(bodyHtml, title) {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#2C2F2A;}
+<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px 60px;color:#2C2F2A;}
 table{border-collapse:collapse;width:100%;margin-top:12px;}
 th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left;}
-th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
+th{background:#F3F1EC;} h2{margin-bottom:4px;}
+.print-btn{position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);}
+@media print { .print-btn { display:none; } }</style>
 </head><body>${bodyHtml}
-<p style="margin-top:24px;font-size:12px;color:#8A8C86;">Über das Teilen-Symbol deines Browsers kannst du diese Seite drucken, als PDF sichern oder weiterleiten.</p>
+<p style="margin-top:24px;font-size:12px;color:#8A8C86;">Am Handy: über das Teilen-Symbol deines Browsers zusätzlich speichern/weiterleiten möglich.</p>
+<button class="print-btn" onclick="window.print()">🖨️ Drucken / Als PDF sichern</button>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -827,7 +881,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
   }, [roster, vehicles, me]);
 
   const neueSitzungenCount = useMemo(() => sitzungen.filter((s) => !seenSitzungIds.has(s.id)).length, [sitzungen, seenSitzungIds]);
-  const upcomingSitzungenTeaser = useMemo(() => sitzungen.filter((s) => s.date >= todayISO()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)), [sitzungen]);
+  const upcomingSitzungenTeaser = useMemo(() => sitzungen.filter((s) => s.date >= todayISO()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).slice(0, 1), [sitzungen]);
 
   const fontImport = (
     <style>{`
@@ -951,12 +1005,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
             {(inEinsatzabteilung || isAtemschutz || canSeeAusschuss || isAdmin) && (
-              <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => { setShowTileMenu(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }} aria-label="Funktionen">
+              <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
                 {neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
               </button>
             )}
-            {isAdmin && <button style={styles.settingsBtn} onClick={() => setShowSettings(true)} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
+            {isAdmin && <button style={styles.settingsBtn} onClick={() => { setKachelReturnTo("calendar"); setShowSettings(true); }} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
           </div>
         </div>
         <div style={styles.headerMe}>
@@ -1001,7 +1055,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
           {myReminders.map((r) => (
             <div key={r.key} style={styles.reminderCard} className="card-enter">
               <AlertTriangle size={16} color="#B8791A" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) setShowKontrollen(r.target); }}>
+              <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) { setKachelReturnTo("calendar"); setShowKontrollen(r.target); } }}>
                 <div style={styles.reminderText}>{r.text}</div>
                 {r.doctor && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
                   <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
@@ -1061,7 +1115,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
       {canSeeAusschuss && upcomingSitzungenTeaser.length > 0 && (
         <div style={styles.teaserSection}>
           {upcomingSitzungenTeaser.map((s) => (
-            <button key={s.id} style={styles.teaserCard} onClick={() => { setShowSitzungen(true); setExpandedSitzung(s.id); setSeenSitzungIds(new Set(sitzungen.map((x) => x.id))); }}>
+            <button key={s.id} style={styles.teaserCard} onClick={() => { setKachelReturnTo("calendar"); setShowSitzungen(true); setExpandedSitzung(s.id); setSeenSitzungIds(new Set(sitzungen.map((x) => x.id))); }}>
               <Landmark size={15} color="#7A3B9E" style={{ flexShrink: 0 }} />
               <div style={{ flex: 1, textAlign: "left" }}>
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "#2C2F2A" }}>{s.title}</div>
@@ -1152,7 +1206,9 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                   <div style={{ marginTop: 10 }}>
                     <label style={styles.label}>Benötigte Personen</label>
                     <input style={{ ...styles.input, width: 90 }} type="number" min="1" value={draft.capacityNeeded} onChange={(e) => { const v = e.target.value; setDraft({ ...draft, capacityNeeded: v === "" ? "" : parseInt(v) || "" }); }} onBlur={(e) => { if (!e.target.value) setDraft({ ...draft, capacityNeeded: 1 }); }} />
-                    <label style={{ ...styles.checkboxRow, marginTop: 10 }}><input type="checkbox" checked={draft.namesVisible} onChange={(e) => setDraft({ ...draft, namesVisible: e.target.checked })} /><span>{draft.namesVisible ? <Eye size={13} style={{ verticalAlign: -2 }} /> : <EyeOff size={13} style={{ verticalAlign: -2 }} />} Namen für alle sichtbar</span></label>
+                    {!["wettkampfgruppe", "atemschutz"].includes(draft.bereich) && (
+                      <label style={{ ...styles.checkboxRow, marginTop: 10 }}><input type="checkbox" checked={draft.namesVisible} onChange={(e) => setDraft({ ...draft, namesVisible: e.target.checked })} /><span>{draft.namesVisible ? <Eye size={13} style={{ verticalAlign: -2 }} /> : <EyeOff size={13} style={{ verticalAlign: -2 }} />} Namen für alle sichtbar</span></label>
+                    )}
                   </div>
                 )}
               </div>
@@ -1226,58 +1282,52 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
       )}
 
       {showTileMenu && (
-        <div style={styles.modalBackdrop} onClick={() => setShowTileMenu(false)}>
-          <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
-            <div style={styles.modalHeader}>
-              <span style={styles.modalTitle}>Funktionen</span>
-              <button style={styles.iconBtn} onClick={() => setShowTileMenu(false)}><X size={20} color="#5C5F58" /></button>
-            </div>
-            <div style={styles.tileGrid}>
-              {(inEinsatzabteilung || isAdmin) && (
-                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowKontrollen("fuehrerschein"); }}>
-                  <Car size={26} color="#4A6670" />
-                  <span style={styles.tileLabel}>Führerschein</span>
-                </button>
-              )}
-              {(isAtemschutz) && (
-                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowKontrollen("atemschutz"); }}>
-                  <BereichIcon bereich="atemschutz" size={26} />
-                  <span style={styles.tileLabel}>Atemschutz</span>
-                </button>
-              )}
-              {canSeeAusschuss && (
-                <button style={{ ...styles.tile, position: "relative" }} onClick={() => { setShowTileMenu(false); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }}>
-                  <Landmark size={26} color="#7A3B9E" />
-                  <span style={styles.tileLabel}>Ausschuss</span>
-                  {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
-                </button>
-              )}
-              {isAdmin && (
-                <button style={styles.tile} onClick={() => { setShowTileMenu(false); setShowSettings(true); }}>
-                  <Settings size={26} color="#5C5F58" />
-                  <span style={styles.tileLabel}>Einstellungen</span>
-                </button>
-              )}
-              <div style={styles.tilePlaceholder}>
-                <Plus size={20} color="#A5A79F" />
-                <span style={{ fontSize: 11, color: "#8A8C86" }}>bald mehr</span>
-              </div>
+        <div style={styles.fullscreenPage}>
+          <div style={styles.fullscreenHeader}>
+            <button style={styles.fullscreenBackBtn} onClick={() => setShowTileMenu(false)}><ArrowLeft size={18} /> Kalender</button>
+          </div>
+          <div style={styles.modalTitle}>Funktionen</div>
+          <div style={{ ...styles.tileGrid, marginTop: 14 }}>
+            {(inEinsatzabteilung || isAdmin) && (
+              <button style={styles.tile} onClick={openTileFuehrerschein}>
+                <Car size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Führerschein</span>
+              </button>
+            )}
+            {(isAtemschutz) && (
+              <button style={styles.tile} onClick={openTileAtemschutz}>
+                <Stethoscope size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Atemschutz</span>
+              </button>
+            )}
+            {canSeeAusschuss && (
+              <button style={{ ...styles.tile, position: "relative" }} onClick={openTileAusschuss}>
+                <Landmark size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Ausschuss</span>
+                {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
+              </button>
+            )}
+            {isAdmin && (
+              <button style={styles.tile} onClick={openTileSettings}>
+                <Settings size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Einstellungen</span>
+              </button>
+            )}
+            <div style={styles.tilePlaceholder}>
+              <Plus size={20} color="#A5A79F" />
+              <span style={{ fontSize: 11, color: "#8A8C86" }}>bald mehr</span>
             </div>
           </div>
         </div>
       )}
 
       {showKontrollen && (
-        <div style={styles.modalBackdrop} onClick={() => { setShowKontrollen(null); setG26EditOpen(false); }}>
-          <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
-            <div style={styles.modalHeader}>
-              <span style={styles.modalTitle}>Kontrollen</span>
-              <button style={styles.iconBtn} onClick={() => { setShowKontrollen(null); setG26EditOpen(false); }}><X size={20} color="#5C5F58" /></button>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {inEinsatzabteilung && <button onClick={() => setShowKontrollen("fuehrerschein")} style={{ ...styles.kontrollTab, ...(showKontrollen === "fuehrerschein" ? styles.kontrollTabActive : {}) }}><Car size={14} /> Führerschein</button>}
-              {isAtemschutz && <button onClick={() => setShowKontrollen("atemschutz")} style={{ ...styles.kontrollTab, ...(showKontrollen === "atemschutz" ? styles.kontrollTabActive : {}) }}><Stethoscope size={14} /> Atemschutz</button>}
-            </div>
+        <div style={styles.fullscreenPage}>
+          <div style={styles.fullscreenHeader}>
+            <button style={styles.fullscreenBackBtn} onClick={closeKachelView}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button>
+          </div>
+          <div style={styles.modalTitle}>{showKontrollen === "fuehrerschein" ? "Führerschein" : "Atemschutz"}</div>
+          <div style={{ marginTop: 14 }}>
 
             {showKontrollen === "fuehrerschein" && (
               <div>
@@ -1381,14 +1431,25 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                     {vehicles.map((v) => (
                       <div key={v.id} style={styles.kontrollRow}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v.name}</div>
-                          <button style={styles.rosterRemoveBtn} onClick={() => setConfirmDeleteVehicleId(v.id)}><Trash2 size={13} /></button>
+                          {editVehicleId === v.id ? (
+                            <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                              <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 13 }} value={editVehicleName} onChange={(e) => setEditVehicleName(e.target.value)} autoFocus />
+                              <button style={styles.tinyBtnPrimary} onClick={() => { if (editVehicleName.trim()) { renameVehicle(v.id, editVehicleName.trim()); setEditVehicleId(null); } }}><Check size={13} /></button>
+                            </div>
+                          ) : (
+                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{v.name}</div>
+                          )}
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {editVehicleId !== v.id && <button style={styles.rosterRemoveBtn} onClick={() => { setEditVehicleId(v.id); setEditVehicleName(v.name); }}><Pencil size={13} /></button>}
+                            <button style={styles.rosterRemoveBtn} onClick={() => setConfirmDeleteVehicleId(v.id)}><Trash2 size={13} /></button>
+                          </div>
                         </div>
                         {roster.filter((r) => r.bereiche.includes("einsatzabteilung")).map((r) => {
                           const status = getVehicleStatus(r, v.id);
                           return (
-                            <div key={r.name} style={{ fontSize: 11.5, color: status.confirmedBy ? "#1F6F5C" : "#8A8C86", marginBottom: 2 }}>
-                              {r.name}: {status.confirmedBy ? `eingewiesen (${status.confirmedBy}, ${fmtDate(status.confirmedDate)})` : "offen"}
+                            <div key={r.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11.5, color: status.confirmedBy ? "#1F6F5C" : "#8A8C86", marginBottom: 2 }}>
+                              <span>{r.name}: {status.confirmedBy ? `eingewiesen (${status.confirmedBy}, ${fmtDate(status.confirmedDate)})` : "offen"}</span>
+                              {!status.confirmedBy && <button style={styles.tinyBtn} onClick={() => confirmVehicleInstruction(r.name, v.id)}>direkt bestätigen</button>}
                             </div>
                           );
                         })}
@@ -1417,6 +1478,20 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                     {g26ReminderActive(myEntry) && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
                       <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
                     )}
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #E2DFD6" }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>NACHWEIS-FOTO (nur du und Admin sehen das)</div>
+                      {myEntry.g26.photoUrl ? (
+                        <div>
+                          <img src={myEntry.g26.photoUrl} alt="G26-Nachweis" style={{ maxWidth: 160, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6 }} />
+                          <button style={styles.tinyBtn} onClick={removeG26Photo}>Foto entfernen</button>
+                        </div>
+                      ) : (
+                        <label style={styles.smallAddBtn}>
+                          {g26PhotoUploading ? "Lädt hoch …" : <><Plus size={12} /> Foto hochladen</>}
+                          <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadG26Photo(e.target.files[0]); }} />
+                        </label>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1428,9 +1503,23 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                         <span style={{ width: 12, height: 12, borderRadius: "50%", background: st.allValid ? "#1F6F5C" : "#C1272D", flexShrink: 0 }} />
                         <div style={{ fontWeight: 700, fontSize: 13.5 }}>{st.allValid ? `Einsatztauglich bis ${fmtDate(st.bis)}` : "Nicht einsatztauglich"}</div>
                       </div>
-                      <div style={{ fontSize: 12, color: st.g26Valid ? "#1F6F5C" : "#C1272D", marginBottom: 3 }}>G26.3: {st.g26Valid ? "aktuell" : "abgelaufen/fehlt"}</div>
-                      <div style={{ fontSize: 12, color: st.streckeValid ? "#1F6F5C" : "#C1272D", marginBottom: 3 }}>Streckendurchgang: {myEntry.streckendurchgang.date ? `${fmtDate(myEntry.streckendurchgang.date)}${st.streckeValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen (durch Admin)"}</div>
-                      <div style={{ fontSize: 12, color: st.uebungValid ? "#1F6F5C" : "#C1272D" }}>Übung (Container/Warmer Einsatz/Einsatznah): {myEntry.atemschutzUebung.date ? `${ATEMSCHUTZ_UEBUNG_TYPES[myEntry.atemschutzUebung.type] || ""} am ${fmtDate(myEntry.atemschutzUebung.date)}${st.uebungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen (durch Admin)"}</div>
+                      <div style={{ fontSize: 12, color: st.g26Valid ? "#1F6F5C" : "#C1272D", marginBottom: 8 }}>G26.3: {st.g26Valid ? "aktuell" : "abgelaufen/fehlt"}</div>
+
+                      <div style={{ fontSize: 12, color: st.streckeValid ? "#1F6F5C" : "#C1272D", marginBottom: 4 }}>Streckendurchgang: {myEntry.streckendurchgang.date ? `${fmtDate(myEntry.streckendurchgang.date)}${st.streckeValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}</div>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                        <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 12 }} type="date" defaultValue={myEntry.streckendurchgang.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== myEntry.streckendurchgang.date) setStreckendurchgang(me, e.target.value); }} />
+                        {myEntry.streckendurchgang.date && <button style={styles.tinyBtn} onClick={() => resetStreckendurchgang(me)}>zurücksetzen</button>}
+                      </div>
+
+                      <div style={{ fontSize: 12, color: st.uebungValid ? "#1F6F5C" : "#C1272D", marginBottom: 4 }}>Übung (Container/Warmer Einsatz/Einsatznah): {myEntry.atemschutzUebung.date ? `${ATEMSCHUTZ_UEBUNG_TYPES[myEntry.atemschutzUebung.type] || ""} am ${fmtDate(myEntry.atemschutzUebung.date)}${st.uebungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <select style={{ ...styles.input, width: 150, padding: "6px 9px", fontSize: 12 }} defaultValue={myEntry.atemschutzUebung.type || ""} onChange={(e) => { const type = e.target.value; if (type) setAtemschutzUebung(me, type, myEntry.atemschutzUebung.date || todayISO()); }}>
+                          <option value="">— Art wählen —</option>
+                          {Object.entries(ATEMSCHUTZ_UEBUNG_TYPES).map(([k, label]) => (<option key={k} value={k}>{label}</option>))}
+                        </select>
+                        <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 12 }} type="date" defaultValue={myEntry.atemschutzUebung.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== myEntry.atemschutzUebung.date) setAtemschutzUebung(me, myEntry.atemschutzUebung.type || "einsatznah", e.target.value); }} />
+                        {myEntry.atemschutzUebung.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUebung(me)}>zurücksetzen</button>}
+                      </div>
                     </div>
                   );
                 })()}
@@ -1465,6 +1554,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                           </div>
                         </div>
                         <div style={{ fontSize: 11.5, color: "#5C5F58", marginBottom: 6 }}>G26.3: {fmtDate(r.g26.dueDate)}{r.g26.pendingConfirmation && <span style={styles.pinPendingTag}>offen</span>}</div>
+                        {r.g26.photoUrl && <img src={r.g26.photoUrl} alt="Nachweis" style={{ maxWidth: 100, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6 }} />}
 
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 11.5, color: "#5C5F58", width: 130 }}>Streckendurchgang:</span>
@@ -1592,19 +1682,29 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
                     </div>
                   );
                 })}
-                {s.links && <div style={{ fontSize: 11.5, color: "#4A6670", marginTop: 4, wordBreak: "break-all" }}>Anhänge: {s.links}</div>}
+                {s.links && <div style={{ fontSize: 11.5, color: "#4A6670", marginTop: 4, wordBreak: "break-all" }}>Link: {s.links}</div>}
+                {(s.attachments || []).length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {s.attachments.map((a, idx) => (
+                      <a key={idx} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", fontSize: 11.5, color: "#4A6670", marginBottom: 3 }}>📎 {a.name}</a>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <button style={styles.exportBtn} onClick={() => exportSitzungFile(s.id)}><Printer size={14} /> Als PDF anzeigen / drucken</button>
-                  {canEditSitzung && <button style={styles.deleteBtn} onClick={() => deleteSitzung(s.id)}><Trash2 size={14} /> Löschen</button>}
+                  {canEditSitzung && <button style={styles.deleteBtn} onClick={() => setConfirmDeleteSitzungId(s.id)}><Trash2 size={14} /> Löschen</button>}
                 </div>
               </div>
             )}
           </div>
         );
         return (
-          <div style={styles.modalBackdrop} onClick={() => setShowSitzungen(false)}>
-            <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
-              <div style={styles.modalHeader}><span style={styles.modalTitle}>Ausschuss</span><button style={styles.iconBtn} onClick={() => setShowSitzungen(false)}><X size={20} color="#5C5F58" /></button></div>
+          <div style={styles.fullscreenPage}>
+            <div style={styles.fullscreenHeader}>
+              <button style={styles.fullscreenBackBtn} onClick={closeKachelView}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button>
+            </div>
+            <div style={styles.modalTitle}>Ausschuss</div>
+            <div style={{ marginTop: 14 }}>
               {canEditSitzung && <button style={styles.smallAddBtn} onClick={openNewSitzung}><Plus size={13} /> Neue Sitzung</button>}
               <div style={{ marginTop: 12 }}>
                 {upcoming.length === 0 && <div style={{ fontSize: 12.5, color: "#8A8C86", marginBottom: 10 }}>Keine anstehenden Sitzungen.</div>}
@@ -1647,6 +1747,17 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
               <button style={styles.tinyBtn} onClick={() => setSitzungDraft({ ...sitzungDraft, tagesordnung: [...sitzungDraft.tagesordnung, ""] })}>+ Punkt hinzufügen</button>
               <label style={styles.label}>Anhänge (Link, optional)</label>
               <input style={styles.input} placeholder="z. B. Link zur Gemeinde-Cloud-Datei" value={sitzungDraft.links} onChange={(e) => setSitzungDraft({ ...sitzungDraft, links: e.target.value })} />
+              <label style={{ ...styles.label, marginTop: 10 }}>Dateien/Fotos anhängen</label>
+              {(sitzungDraft.attachments || []).map((a, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: "6px 10px", marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: "#5C5F58" }}>{a.name}</span>
+                  <button style={styles.rosterRemoveBtn} onClick={() => removeSitzungAttachmentDraft(idx)}><X size={13} /></button>
+                </div>
+              ))}
+              <label style={styles.smallAddBtn}>
+                {attachmentUploading ? "Lädt hoch …" : <><Plus size={12} /> Datei hinzufügen</>}
+                <input type="file" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadSitzungAttachment(e.target.files[0]); }} />
+              </label>
               {sitzungError && <div style={styles.errorText}>{sitzungError}</div>}
               <div style={styles.formActions}><button style={styles.saveBtn} onClick={saveSitzungDraft}>{sitzungDraft.id ? "Speichern" : "Sitzung anlegen"}</button></div>
             </div>
@@ -1690,11 +1801,13 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
       })()}
 
       {showSettings && isAdmin && (
-        <div style={styles.modalBackdrop} onClick={() => setShowSettings(false)}>
-          <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()} className="card-enter">
-            <div style={styles.modalHeader}><span style={styles.modalTitle}>Einstellungen</span><button style={styles.iconBtn} onClick={() => setShowSettings(false)}><X size={20} color="#5C5F58" /></button></div>
-            <div style={{ fontSize: 10.5, color: "#A5A79F", marginBottom: 10 }}>Version {APP_VERSION}</div>
-            <div style={styles.formBody}>
+        <div style={styles.fullscreenPage}>
+          <div style={styles.fullscreenHeader}>
+            <button style={styles.fullscreenBackBtn} onClick={closeKachelView}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button>
+          </div>
+          <div style={styles.modalTitle}>Einstellungen</div>
+          <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 14px" }}>Version {APP_VERSION}</div>
+          <div style={styles.formBody}>
               <label style={styles.label}>Mitgliederliste, Bereiche & Rechte</label>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <input style={{ ...styles.input, flex: 1 }} placeholder="Neues Mitglied: Name eingeben" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newMemberName.trim()) { adminAddMember(newMemberName); setNewMemberName(""); } }} />
@@ -1747,7 +1860,6 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
               )}
             </div>
           </div>
-        </div>
       )}
 
       {confirmResetVote && (
@@ -1787,6 +1899,34 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}</style>
               {CHANGELOG.map((item, idx) => (<li key={idx}>{item}</li>))}
             </ul>
             <button style={{ ...styles.saveBtn, width: "100%" }} onClick={dismissWhatsNew}>Verstanden</button>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteVehicleId && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setConfirmDeleteVehicleId(null)}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <ShieldAlert size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Fahrzeug wirklich löschen?</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Alle Einweisungsdaten dazu gehen verloren.</div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmDeleteVehicleId(null)}>Abbrechen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { deleteVehicle(confirmDeleteVehicleId); setConfirmDeleteVehicleId(null); }}>Löschen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteSitzungId && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setConfirmDeleteSitzungId(null)}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <ShieldAlert size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Sitzung wirklich löschen?</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Protokoll und Anwesenheit gehen dabei verloren.</div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmDeleteSitzungId(null)}>Abbrechen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { deleteSitzung(confirmDeleteSitzungId); setConfirmDeleteSitzungId(null); }}>Löschen</button>
+            </div>
           </div>
         </div>
       )}
@@ -2195,7 +2335,10 @@ const styles = {
   tinyBtn: { fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 4, border: "1px solid #E2DFD6", background: "#F3F1EC", color: "#5C5F58" },
   tinyBtnPrimary: { fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, border: "1px solid #1F6F5C", background: "#1F6F5C", color: "white" },
   tileGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "white", border: "0.5px solid #E2DFD6", borderRadius: 12, padding: "18px 10px", position: "relative" },
+  tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#FBF1E1", border: "0.5px solid #E8C98A", borderRadius: 12, padding: "18px 10px", position: "relative" },
+  fullscreenPage: { position: "fixed", inset: 0, background: "#F3F1EC", zIndex: 60, overflowY: "auto", padding: "20px 18px 40px" },
+  fullscreenHeader: { display: "flex", alignItems: "center", marginBottom: 12 },
+  fullscreenBackBtn: { display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none", color: "#5C5F58", fontSize: 13, fontWeight: 600, padding: 0 },
   tileLabel: { fontSize: 12.5, fontWeight: 600, color: "#2C2F2A" },
   tileBadge: { position: "absolute", top: 8, right: 8, minWidth: 18, height: 18, borderRadius: 9, background: "#E8A33D", color: "white", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" },
   tilePlaceholder: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#F3F1EC", border: "1px dashed #C7C4BC", borderRadius: 12, padding: "18px 10px" },
