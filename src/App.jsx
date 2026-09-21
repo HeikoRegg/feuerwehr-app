@@ -2305,7 +2305,7 @@ const styles = {
   emptyState: { textAlign: "center", padding: "50px 20px", display: "flex", flexDirection: "column", alignItems: "center" },
   fab: { position: "fixed", bottom: 22, right: 20, width: 52, height: 52, borderRadius: "50%", background: "#C1272D", border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(193,39,45,0.4)" },
 
-  modalBackdrop: { position: "fixed", inset: 0, background: "rgba(31,36,34,0.55)", display: "flex", alignItems: "flex-end", zIndex: 50 },
+  modalBackdrop: { position: "fixed", inset: 0, background: "rgba(31,36,34,0.55)", display: "flex", alignItems: "flex-end", zIndex: 70 },
   modalSheet: { background: "#F3F1EC", width: "100%", maxHeight: "88vh", overflowY: "auto", borderRadius: "14px 14px 0 0", padding: "14px 18px 24px" },
   modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   modalTitle: { fontFamily: "'Oswald', sans-serif", fontSize: 17, fontWeight: 600, color: "#2C2F2A" },
