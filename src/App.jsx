@@ -9,13 +9,12 @@ import {
 import { supabase } from "./supabaseClient";
 
 const APP_NAME = "Feuerwehr Regglisweiler";
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 const CHANGELOG = [
-  "Atemschutzunterweisung als vierte Voraussetzung für Einsatztauglichkeit (wird von Admin/Berechtigten eingetragen)",
-  "Fahrzeuge können jetzt PKW oder LKW zugeordnet werden – wer den Führerschein nicht hat, muss auch nicht eingewiesen werden",
-  "Kategorie-Filter im Kalender merkt sich jetzt dauerhaft, was schon gesehen wurde (kein Punkt mehr nach jedem Neustart)",
-  "Zahl bei der Ausschuss-Kachel bleibt jetzt korrekt gespeichert, statt bei jedem Neuladen wieder zu erscheinen",
-  "Kategorien im Kalender jetzt kompakt auf einen Blick sichtbar, ohne seitliches Scrollen",
+  "Push-Benachrichtigung bei 'Dringend'-Mitteilungen für die Einsatzabteilung, direkt zur App springend",
+  "Zahl am Homescreen-App-Icon für neue Mitteilungen (außer Dringend/Einsatzabteilung, dafür kommt ja die Push-Nachricht)",
+  "Fotos lassen sich jetzt antippen und öffnen sich auf Bildschirmgröße, X schließt wieder",
+  "Atemschutz-Kachel: G26-Termin eintragen und Nachweis-Foto hochladen wieder repariert, Zurücksetzen-Buttons dort kompakter",
 ];
 // WICHTIG (Heiko): Diese beiden Zeilen NICHT aus dieser Datei übernehmen — bitte die
 // Original-Werte für LION_ICON und JF_ICON aus deiner aktuellen App.jsx bei GitHub
@@ -287,6 +286,7 @@ export default function App() {
   });
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
+  const [lightboxSrc, setLightboxSrc] = useState(null); // Foto-Vollbildansicht, gilt für jedes Foto in der App
 
   // Beide "gesehen"-Listen dauerhaft im Browser sichern, damit der Neu-Punkt/die Zahl
   // nach dem Neuladen der App nicht wieder fälschlich auftaucht.
@@ -382,6 +382,26 @@ export default function App() {
   function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
   function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
   function openTileSettings() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSettings(true); }
+
+  // Service Worker registrieren (für Push-Benachrichtigungen & Homescreen-Zähler) und,
+  // wenn jemand aus der Einsatzabteilung sich anmeldet, einmalig pro Gerät automatisch
+  // nach der Erlaubnis fragen (danach lässt es sich jederzeit über die Glocke im Kopf
+  // der App nachholen).
+  useEffect(() => {
+    if (phase !== "app" || !me) return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+    }
+    if (inEinsatzabteilung) {
+      try {
+        const key = `ffw_push_asked_${me}`;
+        if (!localStorage.getItem(key)) {
+          localStorage.setItem(key, "1");
+          if (typeof Notification !== "undefined" && Notification.permission === "default") subscribeToPush();
+        }
+      } catch (e) {}
+    }
+  }, [phase, me, inEinsatzabteilung]);
 
   // Echtzeit-Updates: Statt regelmäßig nachzufragen, meldet sich Supabase von selbst,
   // sobald sich in der Datenbank etwas ändert (Realtime). Deutlich schneller als Polling.
@@ -561,6 +581,7 @@ export default function App() {
     if (noticeDraft.id) next = notices.map((n) => (n.id === noticeDraft.id ? { ...noticeDraft, createdBy: n.createdBy } : n));
     else next = [...notices, { ...noticeDraft, id: uid(), createdBy: me }];
     persistNotices(next); setShowNoticeForm(false);
+    notifyAboutNotice(noticeDraft);
   }
   function deleteNotice(id) { const n = notices.find((x) => x.id === id); if (!n || !canEditNewsFor(n.bereich)) return; persistNotices(notices.filter((x) => x.id !== id)); }
 
@@ -762,6 +783,52 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
   function removeSitzungAttachmentDraft(idx) { setSitzungDraft((d) => ({ ...d, attachments: d.attachments.filter((_, i) => i !== idx) })); }
   function g26ReminderActive(entry) { if (!entry.atemschutz || !entry.g26.dueDate) return false; return daysUntil(entry.g26.dueDate) <= 122; }
 
+  // --- Push-Benachrichtigungen (Dringend + Einsatzabteilung) & Homescreen-Zähler ---
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    const out = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
+    return out;
+  }
+  async function subscribeToPush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
+      flashError("Push-Benachrichtigungen werden auf diesem Gerät/Browser nicht unterstützt.");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+      if (!sub && vapidKey) {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidKey) });
+      }
+      if (sub) {
+        await supabase.from("push_subscriptions").upsert({
+          endpoint: sub.endpoint,
+          name: me,
+          bereiche: myEntry ? myEntry.bereiche : [],
+          subscription: sub.toJSON(),
+        });
+      }
+    } catch (e) { flashError("Benachrichtigungen konnten nicht aktiviert werden."); }
+  }
+  function notifyAboutNotice(notice) {
+    fetch("/.netlify/functions/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bereich: notice.bereich,
+        priority: notice.priority,
+        title: notice.priority === "dringend" ? `Dringend – ${(BEREICHE[notice.bereich] && BEREICHE[notice.bereich].label) || ""}` : "Neue Mitteilung",
+        text: notice.text,
+      }),
+    }).catch(() => {});
+  }
+
   function openPreviewPage(bodyHtml, title) {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px 60px;color:#2C2F2A;}
@@ -835,6 +902,14 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       .sort((a, b) => PRIORITIES[a.priority].rank - PRIORITIES[b.priority].rank || a.expiryDate.localeCompare(b.expiryDate));
   }, [notices, effectiveBereiche]);
 
+  // Homescreen-App-Icon: Zahl = aktuelle Mitteilungen, außer Dringend/Einsatzabteilung
+  // (dafür gibt's ja schon die Push-Nachricht). Beim Öffnen der App sieht man die
+  // Mitteilungen ja sowieso sofort, deshalb wird die Zahl hier direkt geleert.
+  useEffect(() => {
+    if (phase !== "app" || typeof navigator === "undefined" || !("setAppBadge" in navigator)) return;
+    try { navigator.clearAppBadge(); } catch (e) {}
+  }, [phase, activeNotices]);
+
   const categoryDots = useMemo(() => {
     const dots = {};
     events.filter((ev) => effectiveBereiche.includes(ev.bereich)).forEach((ev) => {
@@ -906,6 +981,14 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     if (!myEntry) return [];
     return vehicles.filter((v) => (v.type === "lkw" ? myEntry.fuehrerschein.lkw.hasLicense : myEntry.fuehrerschein.pkw.hasLicense));
   }, [vehicles, myEntry]);
+
+  // Hinweis für iPhones: Push-Benachrichtigungen funktionieren nur, wenn die App vorher
+  // zum Home-Bildschirm hinzugefügt wurde (Safari selbst kann keine Push-Nachrichten empfangen).
+  const isIOSDevice = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandaloneApp = typeof window !== "undefined" && (window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
+  const [iosHintDismissed, setIosHintDismissed] = useState(() => { try { return localStorage.getItem("ffw_ios_push_hint_dismissed") === "1"; } catch (e) { return false; } });
+  function dismissIosHint() { setIosHintDismissed(true); try { localStorage.setItem("ffw_ios_push_hint_dismissed", "1"); } catch (e) {} }
+  const showIosPushHint = inEinsatzabteilung && isIOSDevice && !isStandaloneApp && !iosHintDismissed;
 
   const fontImport = (
     <style>{`
@@ -1028,6 +1111,11 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
+            {inEinsatzabteilung && (
+              <button style={styles.settingsBtn} onClick={subscribeToPush} aria-label="Benachrichtigungen">
+                <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
+              </button>
+            )}
             {(inEinsatzabteilung || isAtemschutz || canSeeAusschuss || isAdmin) && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
@@ -1053,6 +1141,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                 </button>
               );
             })}
+          </div>
+        )}
+        {showIosPushHint && (
+          <div style={styles.iosHintBanner}>
+            <span>Für Push-Benachrichtigungen: Seite über "Teilen" → "Zum Home-Bildschirm" hinzufügen, dann die App von dort aus öffnen.</span>
+            <button style={styles.iosHintClose} onClick={dismissIosHint} aria-label="Schließen"><X size={13} color="#8FA0A6" /></button>
           </div>
         )}
       </header>
@@ -1494,6 +1588,38 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
 
             {showKontrollen === "atemschutz" && (
               <div>
+                {myEntry && myEntry.atemschutz && (
+                  <div style={styles.kontrollRow}>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Meine G26.3-Untersuchung</div>
+                    <div style={{ fontSize: 13, color: "#5C5F58", marginBottom: 8 }}>Nächster Termin: <strong>{fmtDate(myEntry.g26.dueDate)}</strong>{myEntry.g26.pendingConfirmation && <span style={styles.pinPendingTag}> wartet auf Bestätigung</span>}</div>
+                    {!g26EditOpen ? (
+                      <button style={styles.smallAddBtn} onClick={() => { setG26EditOpen(true); setG26DateInput(myEntry.g26.dueDate || ""); }}><Pencil size={12} /> Neuen Termin eintragen</button>
+                    ) : (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input style={{ ...styles.input, flex: 1 }} type="date" value={g26DateInput} onChange={(e) => setG26DateInput(e.target.value)} />
+                        <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => g26DateInput && saveG26Date(g26DateInput)}><Check size={15} /></button>
+                      </div>
+                    )}
+                    {g26ReminderActive(myEntry) && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
+                      <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
+                    )}
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #E2DFD6" }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>NACHWEIS-FOTO (nur du und Admin sehen das)</div>
+                      {myEntry.g26.photoUrl ? (
+                        <div>
+                          <img src={myEntry.g26.photoUrl} alt="G26-Nachweis" style={{ maxWidth: 160, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6, cursor: "zoom-in" }} onClick={() => setLightboxSrc(myEntry.g26.photoUrl)} />
+                          <button style={styles.tinyBtn} onClick={removeG26Photo}>Foto entfernen</button>
+                        </div>
+                      ) : (
+                        <label style={styles.smallAddBtn}>
+                          {g26PhotoUploading ? "Lädt hoch …" : <><Plus size={12} /> Foto hochladen</>}
+                          <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadG26Photo(e.target.files[0]); }} />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {myEntry && myEntry.atemschutz && (() => {
                   const st = atemschutzStatus(myEntry);
                   return (
@@ -1505,19 +1631,19 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                       <div style={{ fontSize: 12, color: st.g26Valid ? "#1F6F5C" : "#C1272D", marginBottom: 8 }}>G26.3: {st.g26Valid ? "aktuell" : "abgelaufen/fehlt"}</div>
 
                       <div style={{ fontSize: 12, color: st.streckeValid ? "#1F6F5C" : "#C1272D", marginBottom: 4 }}>Streckendurchgang: {myEntry.streckendurchgang.date ? `${fmtDate(myEntry.streckendurchgang.date)}${st.streckeValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}</div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
                         <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 12 }} type="date" defaultValue={myEntry.streckendurchgang.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== myEntry.streckendurchgang.date) setStreckendurchgang(me, e.target.value); }} />
-                        {myEntry.streckendurchgang.date && <button style={styles.tinyBtn} onClick={() => resetStreckendurchgang(me)}>zurücksetzen</button>}
+                        {myEntry.streckendurchgang.date && <button style={styles.tinyIconBtn} aria-label="zurücksetzen" onClick={() => resetStreckendurchgang(me)}><RotateCcw size={12} /></button>}
                       </div>
 
                       <div style={{ fontSize: 12, color: st.uebungValid ? "#1F6F5C" : "#C1272D", marginBottom: 4 }}>Übung (Container/Warmer Einsatz/Einsatznah): {myEntry.atemschutzUebung.date ? `${ATEMSCHUTZ_UEBUNG_TYPES[myEntry.atemschutzUebung.type] || ""} am ${fmtDate(myEntry.atemschutzUebung.date)}${st.uebungValid ? "" : " (abgelaufen)"}` : "noch nicht eingetragen"}</div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
                         <select style={{ ...styles.input, width: 150, padding: "6px 9px", fontSize: 12 }} defaultValue={myEntry.atemschutzUebung.type || ""} onChange={(e) => { const type = e.target.value; if (type) setAtemschutzUebung(me, type, myEntry.atemschutzUebung.date || todayISO()); }}>
                           <option value="">— Art wählen —</option>
                           {Object.entries(ATEMSCHUTZ_UEBUNG_TYPES).map(([k, label]) => (<option key={k} value={k}>{label}</option>))}
                         </select>
                         <input style={{ ...styles.input, flex: 1, padding: "6px 9px", fontSize: 12 }} type="date" defaultValue={myEntry.atemschutzUebung.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== myEntry.atemschutzUebung.date) setAtemschutzUebung(me, myEntry.atemschutzUebung.type || "einsatznah", e.target.value); }} />
-                        {myEntry.atemschutzUebung.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUebung(me)}>zurücksetzen</button>}
+                        {myEntry.atemschutzUebung.date && <button style={styles.tinyIconBtn} aria-label="zurücksetzen" onClick={() => resetAtemschutzUebung(me)}><RotateCcw size={12} /></button>}
                       </div>
 
                       <div style={{ fontSize: 12, color: st.unterweisungValid ? "#1F6F5C" : "#C1272D" }}>
@@ -1539,7 +1665,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                           <span style={{ fontSize: 11.5, color: "#5C5F58", width: 110 }}>{r.name}:</span>
                           <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={u.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== u.date) setAtemschutzUnterweisung(r.name, e.target.value); }} />
                           <span style={{ fontSize: 11, color: valid ? "#1F6F5C" : "#C1272D", fontWeight: 600 }}>{u.date ? (valid ? "gültig" : "abgelaufen") : "offen"}</span>
-                          {u.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUnterweisung(r.name)}>zurücksetzen</button>}
+                          {u.date && <button style={styles.tinyIconBtn} aria-label="zurücksetzen" onClick={() => resetAtemschutzUnterweisung(r.name)}><RotateCcw size={12} /></button>}
                         </div>
                       );
                     })}
@@ -1571,17 +1697,17 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
-                            {r.g26.pendingConfirmation && <button style={styles.tinyBtn} onClick={() => setConfirmResetG26Name(r.name)}>G26 zurücksetzen</button>}
+                            {r.g26.pendingConfirmation && <button style={styles.tinyIconBtn} aria-label="G26 zurücksetzen" onClick={() => setConfirmResetG26Name(r.name)}><RotateCcw size={12} /></button>}
                             {r.g26.pendingConfirmation && <button style={styles.smallAddBtn} onClick={() => adminConfirmG26(r.name)}><Check size={12} /> G26 bestätigen</button>}
                           </div>
                         </div>
                         <div style={{ fontSize: 11.5, color: "#5C5F58", marginBottom: 6 }}>G26.3: {fmtDate(r.g26.dueDate)}{r.g26.pendingConfirmation && <span style={styles.pinPendingTag}>offen</span>}</div>
-                        {r.g26.photoUrl && <img src={r.g26.photoUrl} alt="Nachweis" style={{ maxWidth: 100, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6 }} />}
+                        {r.g26.photoUrl && <img src={r.g26.photoUrl} alt="Nachweis" style={{ maxWidth: 100, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6, cursor: "zoom-in" }} onClick={() => setLightboxSrc(r.g26.photoUrl)} />}
 
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 11.5, color: "#5C5F58", width: 130 }}>Streckendurchgang:</span>
                           <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={r.streckendurchgang.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== r.streckendurchgang.date) setStreckendurchgang(r.name, e.target.value); }} />
-                          {r.streckendurchgang.date && <button style={styles.tinyBtn} onClick={() => resetStreckendurchgang(r.name)}>zurücksetzen</button>}
+                          {r.streckendurchgang.date && <button style={styles.tinyIconBtn} aria-label="zurücksetzen" onClick={() => resetStreckendurchgang(r.name)}><RotateCcw size={12} /></button>}
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -1591,7 +1717,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                             {Object.entries(ATEMSCHUTZ_UEBUNG_TYPES).map(([k, label]) => (<option key={k} value={k}>{label}</option>))}
                           </select>
                           <input style={{ ...styles.input, width: 130, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={r.atemschutzUebung.date || ""} onBlur={(e) => { if (e.target.value && e.target.value !== r.atemschutzUebung.date) setAtemschutzUebung(r.name, r.atemschutzUebung.type || "einsatznah", e.target.value); }} />
-                          {r.atemschutzUebung.date && <button style={styles.tinyBtn} onClick={() => resetAtemschutzUebung(r.name)}>zurücksetzen</button>}
+                          {r.atemschutzUebung.date && <button style={styles.tinyIconBtn} aria-label="zurücksetzen" onClick={() => resetAtemschutzUebung(r.name)}><RotateCcw size={12} /></button>}
                         </div>
                       </div>
                       );
@@ -1981,6 +2107,13 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
         </div>
       )}
 
+      {lightboxSrc && (
+        <div style={styles.lightboxBackdrop} onClick={() => setLightboxSrc(null)}>
+          <button style={styles.lightboxClose} onClick={() => setLightboxSrc(null)} aria-label="Schließen"><X size={22} color="white" /></button>
+          <img src={lightboxSrc} alt="" style={styles.lightboxImg} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
       {confirmDeleteName && (
         <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setConfirmDeleteName(null)}>
           <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
@@ -2260,6 +2393,8 @@ const styles = {
   switchLink: { background: "transparent", border: "none", color: "#E8A33D", fontSize: 11.5, fontWeight: 600, textDecoration: "underline", padding: 0, marginLeft: 4 },
   bereichRow: { display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" },
   bereichChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: "#F3F1EC", background: "transparent", border: "1.5px solid", borderRadius: 14, padding: "3px 8px" },
+  iosHintBanner: { display: "flex", alignItems: "flex-start", gap: 8, marginTop: 10, background: "#2C2F2A", borderRadius: 6, padding: "8px 10px", fontSize: 10.5, color: "#B8BCB6", lineHeight: 1.4 },
+  iosHintClose: { background: "transparent", border: "none", padding: 0, flexShrink: 0 },
 
   errorBanner: { position: "sticky", top: 0, zIndex: 40, background: "#C1272D", color: "white", fontSize: 12.5, fontWeight: 600, padding: "9px 16px", display: "flex", alignItems: "center", gap: 8 },
 
@@ -2355,6 +2490,10 @@ const styles = {
   kontrollRow: { background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: "9px 10px", marginBottom: 6 },
   exportBtn: { display: "flex", alignItems: "center", gap: 6, background: "#4A6670", color: "white", border: "none", borderRadius: 6, padding: "9px 14px", fontSize: 12.5, fontWeight: 600, marginBottom: 4 },
   tinyBtn: { fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 4, border: "1px solid #E2DFD6", background: "#F3F1EC", color: "#5C5F58" },
+  tinyIconBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "3px 5px", borderRadius: 4, border: "1px solid #E2DFD6", background: "#F3F1EC", color: "#5C5F58", flexShrink: 0 },
+  lightboxBackdrop: { position: "fixed", inset: 0, background: "rgba(20,20,20,0.92)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
+  lightboxImg: { maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 4 },
+  lightboxClose: { position: "fixed", top: 16, right: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", padding: 8, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center" },
   tinyBtnPrimary: { fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, border: "1px solid #1F6F5C", background: "#1F6F5C", color: "white" },
   tileGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
   tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#FBF1E1", border: "0.5px solid #E8C98A", borderRadius: 12, padding: "18px 10px", position: "relative" },
