@@ -1,8 +1,9 @@
 // netlify/functions/send-push.js
-// Wird von der App aufgerufen, sobald eine Mitteilung gespeichert wird. Verschickt bei
-// "Dringend" + Einsatzabteilung eine sichtbare Push-Nachricht an alle Einsatzabteilung-
-// Mitglieder, bei allen anderen Mitteilungen nur eine "stille" Nachricht, die lediglich
-// die Zahl am Homescreen-App-Icon aktualisiert.
+// Wird von der App aufgerufen, sobald eine NEUE Mitteilung gespeichert wird.
+// Jede Mitteilung erzeugt eine sichtbare Benachrichtigung (das verlangen iPhone und
+// Chrome – "stille" Nachrichten führen sonst zur Sperre) plus Zahl am App-Symbol.
+// Empfänger: alle angemeldeten Geräte von Mitgliedern des jeweiligen Bereichs
+// (Admins sehen alle Bereiche), außer dem Verfasser selbst.
 
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
@@ -15,45 +16,40 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
+async function getKv(key) {
+  const { data } = await supabase.from("kv_store").select("value").eq("key", key).maybeSingle();
+  return data ? data.value : null;
+}
+
 export async function handler(event) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   try {
-    const { bereich, priority, title, text } = JSON.parse(event.body || "{}");
+    const { bereich, title, text, sender } = JSON.parse(event.body || "{}");
     if (!bereich) return { statusCode: 400, body: "bereich fehlt" };
 
-    const { data: subs, error: subsError } = await supabase.from("push_subscriptions").select("*");
-    if (subsError) throw subsError;
+    const roster = (await getKv("roster")) || [];
+    const config = (await getKv("config")) || {};
+    const admins = config.adminNames || [];
+    // Bereiche werden bei jedem Versand frisch aus der Mitgliederliste gelesen.
+    const siehtBereich = (name) => admins.includes(name) || ((roster.find((r) => r.name === name) || {}).bereiche || []).includes(bereich);
 
-    const relevant = (subs || []).filter((s) => Array.isArray(s.bereiche) && s.bereiche.includes(bereich));
-    const isLoud = priority === "dringend" && bereich === "einsatzabteilung";
-
-    // Aktuelle Mitteilungen aus dem kv_store holen, um für jeden Empfänger die passende
-    // Zahl für das Homescreen-Icon zu berechnen (nur dessen eigene sichtbare Bereiche zählen).
-    const { data: noticesRow } = await supabase.from("kv_store").select("value").eq("key", "notices").maybeSingle();
-    const allNotices = (noticesRow && noticesRow.value) || [];
-    const today = new Date().toISOString().slice(0, 10);
+    const { data: subs, error } = await supabase.from("push_subscriptions").select("*");
+    if (error) throw error;
+    const relevant = (subs || []).filter((s) => s.name && s.name !== sender && siehtBereich(s.name));
 
     await Promise.allSettled(relevant.map(async (sub) => {
-      const badgeCount = allNotices.filter((n) =>
-        Array.isArray(sub.bereiche) && sub.bereiche.includes(n.bereich) &&
-        n.expiryDate >= today &&
-        !(n.priority === "dringend" && n.bereich === "einsatzabteilung")
-      ).length;
-
+      const badge = (sub.badge_count || 0) + 1;
       const payload = JSON.stringify({
-        loud: isLoud,
-        title: isLoud ? (title || "Dringende Mitteilung") : undefined,
-        body: isLoud ? (text || "") : undefined,
-        badge: badgeCount,
+        title: title || "Neue Mitteilung",
+        body: (text || "").slice(0, 180),
+        badge,
       });
-
       try {
         await webpush.sendNotification(sub.subscription, payload);
+        await supabase.from("push_subscriptions").update({ badge_count: badge }).eq("endpoint", sub.endpoint);
       } catch (err) {
-        // Abgelaufene/ungültige Abos (z. B. App auf dem Gerät deinstalliert) entfernen.
+        // Abgelaufene/ungültige Anmeldungen (z. B. App vom Gerät gelöscht) aufräumen.
         if (err && (err.statusCode === 404 || err.statusCode === 410)) {
           await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
         }
