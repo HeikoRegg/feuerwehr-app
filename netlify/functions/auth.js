@@ -33,8 +33,10 @@ async function upsertUser(row) {
 }
 async function userByToken(token) {
   if (!token) return null;
-  const { data } = await db.from("app_users").select("*").contains("tokens", [token]);
-  return data && data.length ? data[0] : null;
+  // Kleine Tabelle – deshalb einfach alle Benutzer laden und den Schlüssel hier im Code suchen.
+  const { data, error } = await db.from("app_users").select("*");
+  if (error) throw error;
+  return (data || []).find((u) => Array.isArray(u.tokens) && u.tokens.includes(token)) || null;
 }
 
 // Übernimmt evtl. noch öffentlich gespeicherte PINs und Admin-Rechte in den geschützten

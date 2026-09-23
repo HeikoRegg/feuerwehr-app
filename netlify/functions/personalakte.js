@@ -14,8 +14,10 @@ const folderFor = (name) => String(name || "").replace(/[^a-z0-9]+/gi, "_");
 
 async function userByToken(token) {
   if (!token) return null;
-  const { data } = await db.from("app_users").select("name,is_admin").contains("tokens", [token]);
-  return data && data.length ? data[0] : null;
+  // Kleine Tabelle – deshalb einfach alle Benutzer laden und den Schlüssel hier im Code suchen.
+  const { data, error } = await db.from("app_users").select("name,is_admin,tokens");
+  if (error) throw error;
+  return (data || []).find((u) => Array.isArray(u.tokens) && u.tokens.includes(token)) || null;
 }
 async function loadAkte(name) {
   const { data } = await db.from("personalakten").select("data").eq("name", name).maybeSingle();
