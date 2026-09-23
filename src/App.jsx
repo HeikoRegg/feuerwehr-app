@@ -4,17 +4,18 @@ import {
   UserCheck, UserX, ChevronRight, ShieldCheck, AlertTriangle, KeyRound, ArrowLeft,
   RotateCcw, Megaphone, Users, EyeOff, Eye, HandHelping, ClipboardCheck, Car, Truck,
   Stethoscope, Download, Sparkles, Pencil as PencilIcon, ChevronDown, Search, Landmark,
-  Printer, ShieldAlert, RefreshCw, UserCog, LayoutGrid
+  Printer, ShieldAlert, RefreshCw, UserCog, LayoutGrid, FolderOpen
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const APP_NAME = "Feuerwehr Regglisweiler";
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.3";
 const CHANGELOG = [
-  "Push-Benachrichtigung bei 'Dringend'-Mitteilungen für die Einsatzabteilung, direkt zur App springend",
-  "Zahl am Homescreen-App-Icon für neue Mitteilungen (außer Dringend/Einsatzabteilung, dafür kommt ja die Push-Nachricht)",
-  "Fotos lassen sich jetzt antippen und öffnen sich auf Bildschirmgröße, X schließt wieder",
-  "Atemschutz-Kachel: G26-Termin eintragen und Nachweis-Foto hochladen wieder repariert, Zurücksetzen-Buttons dort kompakter",
+  "Neue Kachel Personalakte: Kontaktdaten, Lehrgänge mit Nachweis-Foto, Leistungsabzeichen, Rang, Ehrungen u. v. m. – sichtbar nur für dich und den Admin",
+  "Neuer Bereich Führungskräfte mit eigenen Terminen und Mitteilungen",
+  "Benachrichtigungen jetzt für alle Bereiche: jede neue Mitteilung meldet sich kurz und zählt am App-Symbol mit",
+  "LKW-Führerschein: Ablaufdatum eintragen, Erinnerung 4 Monate vorher",
+  "Mehr Sicherheit: PINs werden jetzt geschützt auf dem Server geprüft",
 ];
 // WICHTIG (Heiko): Diese beiden Zeilen NICHT aus dieser Datei übernehmen — bitte die
 // Original-Werte für LION_ICON und JF_ICON aus deiner aktuellen App.jsx bei GitHub
@@ -43,6 +44,7 @@ const BEREICHE = {
   altersabteilung: { label: "Altersabteilung", short: "AA", color: "#5C5F58" },
   wettkampfgruppe: { label: "Wettkampfgruppe", short: "WK", color: "#1F6F5C" },
   atemschutz: { label: "Atemschutz", short: "AS", color: "#2C6E8F" },
+  fuehrungskraefte: { label: "Führungskräfte", short: "FK", color: "#8A3B5C" },
 };
 const BEREICH_KEYS = Object.keys(BEREICHE);
 
@@ -73,8 +75,22 @@ function BereichIcon({ bereich, size = 18 }) {
       </svg>
     );
   }
+  if (bereich === "fuehrungskraefte") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={BEREICHE.fuehrungskraefte.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 9l7-4 7 4" /><path d="M5 14l7-4 7 4" /><path d="M5 19l7-4 7 4" />
+      </svg>
+    );
+  }
   return null;
 }
+
+// Führerscheinklassen: Aus den eingetragenen Klassen ergibt sich automatisch, ob jemand
+// bei der Führerscheinkontrolle und den Fahrzeugeinweisungen für PKW bzw. LKW auftaucht.
+const FUEHRERSCHEIN_KLASSEN = ["B", "BE", "C1", "C1E", "C", "CE", "FF 4,75 t", "FF 7,5 t"];
+const PKW_KLASSEN = ["B", "BE"];
+const LKW_KLASSEN = ["C1", "C1E", "C", "CE", "FF 4,75 t", "FF 7,5 t"];
+const JUBILAEUMS_JAHRE = [10, 15, 20, 25, 30, 40, 50, 60];
 
 const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 const WEEKDAYS_SHORT = ["So","Mo","Di","Mi","Do","Fr","Sa"];
@@ -105,8 +121,8 @@ const emptyDraft = (bereich) => ({
 const GRUPPENFUEHRER_CATEGORIES = ["uebung", "brandwache"];
 const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", warm: "Warmer Einsatz", einsatznah: "Einsatznahe Übung" };
 const emptyNoticeDraft = () => ({ id: null, text: "", priority: "info", expiryDate: inNDays(7), bereich: "" });
-const emptyRosterEntry = (name, pin) => ({
-  name, pin, bereiche: [],
+const emptyRosterEntry = (name, hasPin) => ({
+  name, hasPin: !!hasPin, bereiche: [],
   rechte: BEREICH_KEYS.reduce((acc, k) => ({ ...acc, [k]: { calendar: false, news: false } }), {}),
   atemschutz: false,
   gruppenfuehrer: false,
@@ -118,8 +134,9 @@ const emptyRosterEntry = (name, pin) => ({
   atemschutzUnterweisung: { date: null, confirmedBy: null },
   fuehrerschein: {
     pkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
-    lkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null },
+    lkw: { hasLicense: true, confirmedYear: null, confirmedBy: null, confirmedDate: null, confirmRequestTo: null, requestDate: null, problemReported: false, problemReportedBy: null, problemDate: null, ablaufDatum: null },
   },
+  fuehrerscheinKlassen: [],
   fahrzeuge: {},
 });
 const emptySitzungDraft = () => ({ id: null, title: "", date: todayISO(), time: "20:00", location: "", tagesordnung: [""], links: "", protokoll: {}, attachments: [] });
@@ -140,6 +157,18 @@ function atemschutzStatus(entry) {
     bis = dates.sort()[0];
   }
   return { g26Valid, streckeValid, uebungValid, unterweisungValid, allValid, bis };
+}
+
+// Aufruf der geschützten Serverfunktionen bei Netlify (PIN-Prüfung, Personalakte).
+async function callServer(fn, body) {
+  try {
+    const res = await fetch(`/.netlify/functions/${fn}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, data: { error: "Keine Verbindung zum Server." } };
+  }
 }
 
 async function storageSetWithRetry(key, jsonString, shared = true, retries = 2) {
@@ -171,7 +200,11 @@ async function storageGetSafe(key, shared = true, retries = 3) {
 // Beim Laden ergänzen wir fehlende Felder mit sinnvollen Standardwerten, damit die
 // App nie an einem unvollständigen Datensatz abstürzt.
 function normalizeRosterEntry(r) {
-  const base = emptyRosterEntry(r.name, r.pin);
+  // PINs liegen seit Version 2.3 geschützt auf dem Server. Ein evtl. noch vorhandenes
+  // "pin"-Feld wird hier entfernt, damit es nie wieder öffentlich gespeichert wird.
+  const { pin: legacyPin, ...rest } = r;
+  r = { ...rest, hasPin: r.hasPin !== undefined ? !!r.hasPin : !!legacyPin };
+  const base = emptyRosterEntry(r.name, r.hasPin);
   const rechte = { ...base.rechte };
   Object.keys(rechte).forEach((k) => { rechte[k] = { ...base.rechte[k], ...((r.rechte && r.rechte[k]) || {}) }; });
   return {
@@ -188,6 +221,7 @@ function normalizeRosterEntry(r) {
     },
     fahrzeuge: r.fahrzeuge || {},
     bereiche: r.bereiche || [],
+    fuehrerscheinKlassen: r.fuehrerscheinKlassen || [],
   };
 }
 function normalizeEvent(e) {
@@ -205,6 +239,7 @@ function normalizeConfig(cfg) {
   const legacyAdmin = cfg.adminName;
   return {
     doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear(),
+    raenge: [], funktionen: [],
     ...cfg,
     adminNames: cfg.adminNames || (legacyAdmin ? [legacyAdmin] : []),
     mainAdminName: cfg.mainAdminName || legacyAdmin || (cfg.adminNames && cfg.adminNames[0]) || null,
@@ -286,7 +321,8 @@ export default function App() {
   });
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
-  const [lightboxSrc, setLightboxSrc] = useState(null); // Foto-Vollbildansicht, gilt für jedes Foto in der App
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [showPersonalakte, setShowPersonalakte] = useState(false); // Foto-Vollbildansicht, gilt für jedes Foto in der App
 
   // Beide "gesehen"-Listen dauerhaft im Browser sichern, damit der Neu-Punkt/die Zahl
   // nach dem Neuladen der App nicht wieder fälschlich auftaucht.
@@ -360,6 +396,9 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      // Einmalig/automatisch: evtl. noch öffentlich gespeicherte PINs in den geschützten
+      // Server-Speicher übernehmen, bevor irgendetwas anderes gespeichert wird.
+      await callServer("auth", { action: "migrate" });
       const cfg = await fetchAllData(true);
       // Dauerhaft angemeldet bleiben: prüfen, ob dieses Gerät sich schon einmal erfolgreich angemeldet hat.
       try {
@@ -372,36 +411,91 @@ export default function App() {
     })();
   }, []);
   function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
-  function clearAuth() { try { localStorage.removeItem("ffw_auth"); } catch (e) {} }
+  function clearAuth() { try { localStorage.removeItem("ffw_auth"); localStorage.removeItem("ffw_token"); } catch (e) {} authTokenRef.current = null; }
   function logout() { clearAuth(); setMe(null); setCodeInput(""); setPhase("gate"); }
+
+  // --- Sitzungs-Schlüssel (Token) für geschützte Serverfunktionen ---
+  // Wird bei der PIN-Anmeldung vom Server ausgegeben. Wer schon vor dem Update angemeldet
+  // war, wird bei der ersten geschützten Aktion (z. B. Personalakte) einmal nach der PIN gefragt.
+  const authTokenRef = useRef(null);
+  function loadToken(name) {
+    try { const t = JSON.parse(localStorage.getItem("ffw_token") || "null"); return t && t.name === name ? t.token : null; } catch (e) { return null; }
+  }
+  function saveToken(name, token) { authTokenRef.current = token; try { localStorage.setItem("ffw_token", JSON.stringify({ name, token })); } catch (e) {} }
+  const [pinPrompt, setPinPrompt] = useState(null); // { input, error, busy }
+  const pinPromptResolveRef = useRef(null);
+  function requestPinConfirm() {
+    return new Promise((resolve) => { pinPromptResolveRef.current = resolve; setPinPrompt({ input: "", error: "", busy: false }); });
+  }
+  async function submitPinPrompt() {
+    if (!pinPrompt || !/^\d{4}$/.test(pinPrompt.input)) { setPinPrompt((p) => ({ ...p, error: "Bitte deine 4-stellige PIN eingeben." })); return; }
+    setPinPrompt((p) => ({ ...p, busy: true, error: "" }));
+    const r = await callServer("auth", { action: "login", name: me, pin: pinPrompt.input });
+    if (r.ok && r.data.token) {
+      saveToken(me, r.data.token);
+      setPinPrompt(null);
+      const res = pinPromptResolveRef.current; pinPromptResolveRef.current = null; if (res) res(r.data.token);
+    } else {
+      setPinPrompt((p) => ({ ...p, busy: false, error: (r.data && r.data.error) || "PIN stimmt nicht." }));
+    }
+  }
+  function cancelPinPrompt() { setPinPrompt(null); const res = pinPromptResolveRef.current; pinPromptResolveRef.current = null; if (res) res(null); }
+  async function callAuthed(fn, body) {
+    if (!authTokenRef.current && me) authTokenRef.current = loadToken(me);
+    if (authTokenRef.current) {
+      const r = await callServer(fn, { ...body, token: authTokenRef.current });
+      if (r.status !== 401) return r;
+    }
+    const tok = await requestPinConfirm();
+    if (!tok) return { ok: false, status: 401, data: { error: "abgebrochen" } };
+    return callServer(fn, { ...body, token: tok });
+  }
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
   function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
   function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
+  function openTilePersonalakte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowPersonalakte(true); }
   function openTileSettings() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSettings(true); }
 
-  // Service Worker registrieren (für Push-Benachrichtigungen & Homescreen-Zähler) und,
-  // wenn jemand aus der Einsatzabteilung sich anmeldet, einmalig pro Gerät automatisch
-  // nach der Erlaubnis fragen (danach lässt es sich jederzeit über die Glocke im Kopf
-  // der App nachholen).
+  // Service Worker registrieren (für Push-Benachrichtigungen & Homescreen-Zähler) und
+  // beim ersten Anmelden auf dem Gerät einmalig automatisch nach der Erlaubnis fragen
+  // (danach lässt es sich jederzeit über die Glocke im Kopf der App nachholen).
+  // Ist das Gerät schon angemeldet, wird die Anmeldung bei jedem Start still aufgefrischt.
   useEffect(() => {
     if (phase !== "app" || !me) return;
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/service-worker.js").catch(() => {});
     }
-    if (inEinsatzabteilung) {
+    try {
+      const key = `ffw_push_asked_v2_${me}`;
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") subscribeToPush(true);
+      else if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, "1");
+        if (typeof Notification !== "undefined" && Notification.permission === "default") subscribeToPush();
+      }
+    } catch (e) {}
+  }, [phase, me]);
+
+  // Zahl am App-Symbol zurücksetzen, sobald die App geöffnet bzw. wieder in den Vordergrund geholt wird.
+  useEffect(() => {
+    if (phase !== "app") return;
+    const resetBadge = async () => {
+      try { if ("clearAppBadge" in navigator) await navigator.clearAppBadge(); } catch (e) {}
       try {
-        const key = `ffw_push_asked_${me}`;
-        if (!localStorage.getItem(key)) {
-          localStorage.setItem(key, "1");
-          if (typeof Notification !== "undefined" && Notification.permission === "default") subscribeToPush();
-        }
+        if (!("serviceWorker" in navigator)) return;
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg && (await reg.pushManager.getSubscription());
+        if (sub) await supabase.from("push_subscriptions").update({ badge_count: 0 }).eq("endpoint", sub.endpoint);
       } catch (e) {}
-    }
-  }, [phase, me, inEinsatzabteilung]);
+    };
+    resetBadge();
+    const onVis = () => { if (document.visibilityState === "visible") resetBadge(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [phase]);
 
   // Echtzeit-Updates: Statt regelmäßig nachzufragen, meldet sich Supabase von selbst,
   // sobald sich in der Datenbank etwas ändert (Realtime). Deutlich schneller als Polling.
@@ -455,8 +549,11 @@ export default function App() {
       if (!adminNameInput.trim()) { setGateError("Bitte deinen Namen eintragen."); return; }
       if (!/^\d{4}$/.test(adminPinInput)) { setGateError("Bitte eine 4-stellige PIN für dich als Admin festlegen."); return; }
       setGateBusy(true);
-      const newConfig = { accessCode: codeInput.trim(), adminNames: [adminNameInput.trim()], mainAdminName: adminNameInput.trim(), doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear() };
-      const newRoster = [{ ...emptyRosterEntry(adminNameInput.trim(), adminPinInput), bereiche: [...BEREICH_KEYS] }];
+      const setupRes = await callServer("auth", { action: "setup", name: adminNameInput.trim(), pin: adminPinInput });
+      if (!setupRes.ok) { setGateBusy(false); setGateError((setupRes.data && setupRes.data.error) || "Einrichtung fehlgeschlagen."); return; }
+      if (setupRes.data.token) saveToken(adminNameInput.trim(), setupRes.data.token);
+      const newConfig = { accessCode: codeInput.trim(), adminNames: [adminNameInput.trim()], mainAdminName: adminNameInput.trim(), doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear(), raenge: [], funktionen: [] };
+      const newRoster = [{ ...emptyRosterEntry(adminNameInput.trim(), true), bereiche: [...BEREICH_KEYS] }];
       setConfig(newConfig); setRoster(newRoster); setMe(adminNameInput.trim());
       setGateBusy(false); setPhase("app"); saveAuth(newConfig.accessCode, adminNameInput.trim());
       storageSetWithRetry("config", JSON.stringify(newConfig), true).then((res) => { if (!res.ok) flashError("Einrichtung evtl. nicht dauerhaft gespeichert."); });
@@ -475,28 +572,55 @@ export default function App() {
   function updateMyRosterEntry(mutator) { persistRoster(roster.map((r) => (r.name === me ? mutator({ ...r }) : r))); }
   function updateRosterEntry(name, mutator) { persistRoster(roster.map((r) => (r.name === name ? mutator({ ...r }) : r))); }
 
-  function pickRosterEntry(entry) { setPinError(""); setPinInput(""); setPinConfirm(""); setPendingName(entry.name); setNameInput(""); setLoginSearch(""); setPhase(entry.pin ? "pinEntry" : "pinSetup"); }
+  function pickRosterEntry(entry) { setPinError(""); setPinInput(""); setPinConfirm(""); setPendingName(entry.name); setNameInput(""); setLoginSearch(""); setPhase(entry.hasPin ? "pinEntry" : "pinSetup"); }
   function startNewName() {
     const trimmed = nameInput.trim(); if (!trimmed) return;
     const existing = roster.find((r) => r.name.toLowerCase() === trimmed.toLowerCase());
     if (existing) { pickRosterEntry(existing); return; }
     setPinError(""); setPinInput(""); setPinConfirm(""); setPendingName(trimmed); setNameInput(""); setLoginSearch(""); setPhase("pinSetup");
   }
-  function submitPinEntry() {
-    const entry = roster.find((r) => r.name === pendingName);
-    if (entry && pinInput === entry.pin) { setMe(pendingName); setSelectedBereiche(null); setPhase("app"); saveAuth(config.accessCode, pendingName); }
-    else setPinError("PIN stimmt nicht. Nochmal versuchen.");
+  const [pinBusy, setPinBusy] = useState(false);
+  async function submitPinEntry() {
+    if (pinBusy) return;
+    setPinBusy(true); setPinError("");
+    const r = await callServer("auth", { action: "login", name: pendingName, pin: pinInput });
+    setPinBusy(false);
+    if (r.ok && r.data.token) {
+      saveToken(pendingName, r.data.token);
+      setMe(pendingName); setSelectedBereiche(null); setPhase("app"); saveAuth(config.accessCode, pendingName);
+    } else setPinError((r.data && r.data.error) || "PIN stimmt nicht. Nochmal versuchen.");
   }
-  function submitPinSetup() {
+  async function submitPinSetup() {
     if (!/^\d{4}$/.test(pinInput)) { setPinError("Bitte eine 4-stellige PIN eingeben."); return; }
     if (pinInput !== pinConfirm) { setPinError("PINs stimmen nicht überein."); return; }
-    const exists = roster.some((r) => r.name === pendingName);
+    if (pinBusy) return;
+    setPinBusy(true); setPinError("");
+    const r = await callServer("auth", { action: "setPin", name: pendingName, pin: pinInput });
+    setPinBusy(false);
+    if (!r.ok || !r.data.token) { setPinError((r.data && r.data.error) || "PIN konnte nicht gespeichert werden."); return; }
+    saveToken(pendingName, r.data.token);
+    const exists = roster.some((x) => x.name === pendingName);
     const next = exists
-      ? roster.map((r) => (r.name === pendingName ? { ...r, pin: pinInput } : r))
-      : [...roster, emptyRosterEntry(pendingName, pinInput)].sort((a, b) => a.name.localeCompare(b.name, "de"));
+      ? roster.map((x) => (x.name === pendingName ? { ...x, hasPin: true } : x))
+      : [...roster, emptyRosterEntry(pendingName, true)].sort((a, b) => a.name.localeCompare(b.name, "de"));
     persistRoster(next); setMe(pendingName); setSelectedBereiche(null); setPhase("app"); saveAuth(config.accessCode, pendingName);
   }
-  function resetPin(name) { updateRosterEntry(name, (r) => ({ ...r, pin: null })); }
+  async function resetPin(name) {
+    const r = await callAuthed("auth", { action: "resetPin", target: name });
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "PIN konnte nicht zurückgesetzt werden."); return; }
+    updateRosterEntry(name, (x) => ({ ...x, hasPin: false }));
+  }
+  async function removeMember(name) {
+    const r = await callAuthed("auth", { action: "deleteUser", target: name });
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Mitglied konnte nicht entfernt werden."); return; }
+    persistRoster(roster.filter((x) => x.name !== name));
+  }
+  async function toggleAdmin(name) {
+    const makeAdmin = !config.adminNames.includes(name);
+    const r = await callAuthed("auth", { action: "setAdmin", target: name, value: makeAdmin });
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Admin-Recht konnte nicht geändert werden."); return; }
+    persistConfig({ ...config, adminNames: makeAdmin ? [...config.adminNames, name] : config.adminNames.filter((n) => n !== name) });
+  }
   function togglePermission(name, bereich, field) { updateRosterEntry(name, (r) => ({ ...r, rechte: { ...r.rechte, [bereich]: { ...r.rechte[bereich], [field]: !r.rechte[bereich][field] } } })); }
   function toggleBereichAssignment(name, bereich) { updateRosterEntry(name, (r) => ({ ...r, bereiche: r.bereiche.includes(bereich) ? r.bereiche.filter((b) => b !== bereich) : [...r.bereiche, bereich] })); }
   function toggleAtemschutz(name) { updateRosterEntry(name, (r) => ({ ...r, atemschutz: !r.atemschutz })); }
@@ -581,7 +705,7 @@ export default function App() {
     if (noticeDraft.id) next = notices.map((n) => (n.id === noticeDraft.id ? { ...noticeDraft, createdBy: n.createdBy } : n));
     else next = [...notices, { ...noticeDraft, id: uid(), createdBy: me }];
     persistNotices(next); setShowNoticeForm(false);
-    notifyAboutNotice(noticeDraft);
+    if (!noticeDraft.id) notifyAboutNotice(noticeDraft);
   }
   function deleteNotice(id) { const n = notices.find((x) => x.id === id); if (!n || !canEditNewsFor(n.bereich)) return; persistNotices(notices.filter((x) => x.id !== id)); }
 
@@ -715,6 +839,25 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
   function toggleHasLicense(name, type) {
     updateRosterEntry(name, (r) => ({ ...r, fuehrerschein: { ...r.fuehrerschein, [type]: { ...r.fuehrerschein[type], hasLicense: !r.fuehrerschein[type].hasLicense, confirmedYear: !r.fuehrerschein[type].hasLicense ? r.fuehrerschein[type].confirmedYear : currentYear() } } }));
   }
+  function setLkwAblauf(name, date) {
+    if (!isAdmin && me !== name) return;
+    updateRosterEntry(name, (r) => ({ ...r, fuehrerschein: { ...r.fuehrerschein, lkw: { ...r.fuehrerschein.lkw, ablaufDatum: date || null } } }));
+  }
+  // Führerscheinklassen setzen: PKW/LKW-Status für Kontrolle und Fahrzeugeinweisung wird daraus abgeleitet.
+  function setFuehrerscheinKlassen(name, klassen) {
+    if (!isAdmin && me !== name) return;
+    updateRosterEntry(name, (r) => {
+      const next = { ...r, fuehrerscheinKlassen: klassen };
+      if (klassen.length > 0) {
+        next.fuehrerschein = {
+          ...r.fuehrerschein,
+          pkw: { ...r.fuehrerschein.pkw, hasLicense: klassen.some((k) => PKW_KLASSEN.includes(k) || LKW_KLASSEN.includes(k)) },
+          lkw: { ...r.fuehrerschein.lkw, hasLicense: klassen.some((k) => LKW_KLASSEN.includes(k)) },
+        };
+      }
+      return next;
+    });
+  }
   function fuehrerscheinDue(entry, type) { const f = entry.fuehrerschein[type]; return f.hasLicense && f.confirmedYear !== currentYear(); }
 
   // --- Fahrzeuge / Fahrzeugeinweisung ---
@@ -792,9 +935,9 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
     for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
     return out;
   }
-  async function subscribeToPush() {
+  async function subscribeToPush(silent = false) {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
-      flashError("Push-Benachrichtigungen werden auf diesem Gerät/Browser nicht unterstützt.");
+      if (!silent) flashError("Push-Benachrichtigungen werden auf diesem Gerät/Browser nicht unterstützt.");
       return;
     }
     try {
@@ -814,18 +957,20 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
           subscription: sub.toJSON(),
         });
       }
-    } catch (e) { flashError("Benachrichtigungen konnten nicht aktiviert werden."); }
+    } catch (e) { if (!silent) flashError("Benachrichtigungen konnten nicht aktiviert werden."); }
   }
+  // Jede neue Mitteilung löst eine kurze Benachrichtigung + Zahl am App-Symbol aus
+  // (nur für Mitglieder des jeweiligen Bereichs, nicht für den Verfasser selbst).
+  // "Dringend" in der Einsatzabteilung wird besonders hervorgehoben.
   function notifyAboutNotice(notice) {
+    const label = (BEREICHE[notice.bereich] && BEREICHE[notice.bereich].label) || "";
+    const title = notice.priority === "dringend"
+      ? (notice.bereich === "einsatzabteilung" ? "🚨 DRINGEND – Einsatzabteilung" : `Dringend – ${label}`)
+      : `Neue Mitteilung – ${label}`;
     fetch("/.netlify/functions/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bereich: notice.bereich,
-        priority: notice.priority,
-        title: notice.priority === "dringend" ? `Dringend – ${(BEREICHE[notice.bereich] && BEREICHE[notice.bereich].label) || ""}` : "Neue Mitteilung",
-        text: notice.text,
-      }),
+      body: JSON.stringify({ bereich: notice.bereich, priority: notice.priority, title, text: notice.text, sender: me }),
     }).catch(() => {});
   }
 
@@ -853,11 +998,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     openPreviewPage(`<h2>${escapeHtml(title)}</h2><table><thead>${theadHtml}</thead><tbody>${tbodyHtml}</tbody></table>`, title);
   }
   function exportFuehrerschein() {
-    const rows = [["Name", "PKW Status", "PKW bestätigt von", "PKW Datum", "LKW Status", "LKW bestätigt von", "LKW Datum"]];
+    const rows = [["Name", "PKW Status", "PKW bestätigt von", "PKW Datum", "LKW Status", "LKW bestätigt von", "LKW Datum", "LKW gültig bis"]];
     roster.filter((r) => r.bereiche.includes("einsatzabteilung")).forEach((r) => {
       const pkw = r.fuehrerschein.pkw; const lkw = r.fuehrerschein.lkw;
       rows.push([r.name, !pkw.hasLicense ? "Kein PKW" : pkw.confirmedYear === currentYear() ? "Bestätigt" : "Offen", pkw.confirmedBy || "", pkw.confirmedDate ? fmtDate(pkw.confirmedDate) : "",
-        !lkw.hasLicense ? "Kein LKW" : lkw.confirmedYear === currentYear() ? "Bestätigt" : "Offen", lkw.confirmedBy || "", lkw.confirmedDate ? fmtDate(lkw.confirmedDate) : ""]);
+        !lkw.hasLicense ? "Kein LKW" : lkw.confirmedYear === currentYear() ? "Bestätigt" : "Offen", lkw.confirmedBy || "", lkw.confirmedDate ? fmtDate(lkw.confirmedDate) : "",
+        lkw.hasLicense && lkw.ablaufDatum ? fmtDate(lkw.ablaufDatum) : ""]);
     });
     exportCSV(rows, `Fuehrerschein_${currentYear()}.csv`);
   }
@@ -902,13 +1048,6 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       .sort((a, b) => PRIORITIES[a.priority].rank - PRIORITIES[b.priority].rank || a.expiryDate.localeCompare(b.expiryDate));
   }, [notices, effectiveBereiche]);
 
-  // Homescreen-App-Icon: Zahl = aktuelle Mitteilungen, außer Dringend/Einsatzabteilung
-  // (dafür gibt's ja schon die Push-Nachricht). Beim Öffnen der App sieht man die
-  // Mitteilungen ja sowieso sofort, deshalb wird die Zahl hier direkt geleert.
-  useEffect(() => {
-    if (phase !== "app" || typeof navigator === "undefined" || !("setAppBadge" in navigator)) return;
-    try { navigator.clearAppBadge(); } catch (e) {}
-  }, [phase, activeNotices]);
 
   const categoryDots = useMemo(() => {
     const dots = {};
@@ -929,6 +1068,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     if (inEinsatzabteilung) {
       if (fuehrerscheinDue(myEntry, "pkw")) list.push({ key: "fs-pkw", text: "Bitte deinen PKW-Führerschein einem Kameraden zur Kontrolle zeigen.", target: "fuehrerschein" });
       if (fuehrerscheinDue(myEntry, "lkw")) list.push({ key: "fs-lkw", text: "Bitte deinen LKW-Führerschein einem Kameraden zur Kontrolle zeigen.", target: "fuehrerschein" });
+      const lkwAblauf = myEntry.fuehrerschein.lkw.ablaufDatum;
+      if (myEntry.fuehrerschein.lkw.hasLicense && lkwAblauf && daysUntil(lkwAblauf) <= 122) {
+        const d = daysUntil(lkwAblauf);
+        const when = d < 0 ? `ist seit ${Math.abs(d)} Tagen abgelaufen` : d === 0 ? "läuft heute ab" : `läuft in ${d} Tagen ab`;
+        list.push({ key: `lkw-ablauf-${lkwAblauf}`, text: `Dein LKW-Führerschein ${when} (${fmtDate(lkwAblauf)}). Bitte rechtzeitig verlängern und danach das neue Datum eintragen.`, target: "fuehrerschein" });
+      }
     }
     if (myEntry.atemschutz) {
       if (!myEntry.g26.dueDate) list.push({ key: "g26-missing", text: "Bitte trage deinen nächsten G26.3-Untersuchungstermin ein.", target: "atemschutz" });
@@ -988,7 +1133,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
   const isStandaloneApp = typeof window !== "undefined" && (window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
   const [iosHintDismissed, setIosHintDismissed] = useState(() => { try { return localStorage.getItem("ffw_ios_push_hint_dismissed") === "1"; } catch (e) { return false; } });
   function dismissIosHint() { setIosHintDismissed(true); try { localStorage.setItem("ffw_ios_push_hint_dismissed", "1"); } catch (e) {} }
-  const showIosPushHint = inEinsatzabteilung && isIOSDevice && !isStandaloneApp && !iosHintDismissed;
+  const showIosPushHint = isIOSDevice && !isStandaloneApp && !iosHintDismissed;
 
   const fontImport = (
     <style>{`
@@ -1073,7 +1218,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           <div style={styles.gateSub}>Bitte deine persönliche 4-stellige PIN eingeben.</div>
           <input style={{ ...styles.gateInput, letterSpacing: "0.5em", textAlign: "center" }} type="password" inputMode="numeric" maxLength={4} value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))} onKeyDown={(e) => e.key === "Enter" && submitPinEntry()} autoFocus />
           {pinError && <div style={styles.errorText}>{pinError}</div>}
-          <button style={styles.gateBtn} onClick={submitPinEntry}>Anmelden <ChevronRight size={16} /></button>
+          <button style={styles.gateBtn} onClick={submitPinEntry} disabled={pinBusy}>{pinBusy ? "Prüfe …" : <>Anmelden <ChevronRight size={16} /></>}</button>
           <button style={styles.backLink} onClick={() => setPhase("name")}><ArrowLeft size={13} /> Zurück zur Namensliste</button>
         </div>
       </div>
@@ -1091,7 +1236,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           <input style={{ ...styles.gateInput, letterSpacing: "0.5em", textAlign: "center" }} type="password" inputMode="numeric" maxLength={4} placeholder="PIN" value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))} autoFocus />
           <input style={{ ...styles.gateInput, letterSpacing: "0.5em", textAlign: "center", marginTop: 8 }} type="password" inputMode="numeric" maxLength={4} placeholder="PIN bestätigen" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))} onKeyDown={(e) => e.key === "Enter" && submitPinSetup()} />
           {pinError && <div style={styles.errorText}>{pinError}</div>}
-          <button style={styles.gateBtn} onClick={submitPinSetup}>PIN speichern <ChevronRight size={16} /></button>
+          <button style={styles.gateBtn} onClick={submitPinSetup} disabled={pinBusy}>{pinBusy ? "Speichert …" : <>PIN speichern <ChevronRight size={16} /></>}</button>
           <button style={styles.backLink} onClick={() => setPhase("name")}><ArrowLeft size={13} /> Zurück zur Namensliste</button>
         </div>
       </div>
@@ -1111,12 +1256,10 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
-            {inEinsatzabteilung && (
-              <button style={styles.settingsBtn} onClick={subscribeToPush} aria-label="Benachrichtigungen">
-                <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
-              </button>
-            )}
-            {(inEinsatzabteilung || isAtemschutz || canSeeAusschuss || isAdmin) && (
+            <button style={styles.settingsBtn} onClick={() => subscribeToPush()} aria-label="Benachrichtigungen">
+              <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
+            </button>
+            {me && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
                 {neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
@@ -1425,6 +1568,10 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                 {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
               </button>
             )}
+            <button style={styles.tile} onClick={openTilePersonalakte}>
+              <FolderOpen size={26} color="#B8791A" />
+              <span style={styles.tileLabel}>Personalakte</span>
+            </button>
             {isAdmin && (
               <button style={styles.tile} onClick={openTileSettings}>
                 <Settings size={26} color="#B8791A" />
@@ -1463,6 +1610,13 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                             </div>
                             <button style={styles.tinyBtn} onClick={() => toggleHasLicense(me, type)}>{data.hasLicense ? "kein " + type.toUpperCase() : "hat " + type.toUpperCase()}</button>
                           </div>
+                          {type === "lkw" && data.hasLicense && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                              <span style={{ fontSize: 11.5, color: "#5C5F58" }}>Gültig bis:</span>
+                              <input key={`lkwab-${data.ablaufDatum || ""}`} style={{ ...styles.input, width: 145, padding: "5px 8px", fontSize: 12 }} type="date" defaultValue={data.ablaufDatum || ""} onBlur={(e) => { if (e.target.value !== (data.ablaufDatum || "")) setLkwAblauf(me, e.target.value); }} />
+                              {data.ablaufDatum && daysUntil(data.ablaufDatum) < 0 && <span style={{ fontSize: 11, color: "#C1272D", fontWeight: 700 }}>abgelaufen</span>}
+                            </div>
+                          )}
                           {data.problemReported && (
                             <div style={styles.problemBanner}>
                               <AlertTriangle size={13} color="#C1272D" style={{ flexShrink: 0 }} />
@@ -1538,6 +1692,14 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                         <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>{r.name}</div>
                         <FuehrerscheinLine label="PKW" icon={<Car size={13} />} data={r.fuehrerschein.pkw} isSelf={r.name === me} onConfirm={() => confirmFuehrerschein(r.name, "pkw")} onToggleHas={() => toggleHasLicense(r.name, "pkw")} />
                         <FuehrerscheinLine label="LKW" icon={<Truck size={13} />} data={r.fuehrerschein.lkw} isSelf={r.name === me} onConfirm={() => confirmFuehrerschein(r.name, "lkw")} onToggleHas={() => toggleHasLicense(r.name, "lkw")} />
+                        {r.fuehrerschein.lkw.hasLicense && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 11.5, color: "#5C5F58" }}>LKW gültig bis:</span>
+                            <input key={`lkwab-${r.name}-${r.fuehrerschein.lkw.ablaufDatum || ""}`} style={{ ...styles.input, width: 140, padding: "5px 8px", fontSize: 11.5 }} type="date" defaultValue={r.fuehrerschein.lkw.ablaufDatum || ""} onBlur={(e) => { if (e.target.value !== (r.fuehrerschein.lkw.ablaufDatum || "")) setLkwAblauf(r.name, e.target.value); }} />
+                            {r.fuehrerschein.lkw.ablaufDatum && daysUntil(r.fuehrerschein.lkw.ablaufDatum) < 0 && <span style={{ fontSize: 11, color: "#C1272D", fontWeight: 700 }}>abgelaufen</span>}
+                            {r.fuehrerschein.lkw.ablaufDatum && daysUntil(r.fuehrerschein.lkw.ablaufDatum) >= 0 && daysUntil(r.fuehrerschein.lkw.ablaufDatum) <= 122 && <span style={{ fontSize: 11, color: "#B8791A", fontWeight: 700 }}>läuft bald ab</span>}
+                          </div>
+                        )}
                       </div>
                     ))}
 
@@ -1978,6 +2140,10 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                 ))}
                 {roster.length === 0 && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Noch niemand eingetragen.</div>}
               </div>
+              <label style={{ ...styles.label, marginTop: 22 }}>Ränge (Auswahlliste für die Personalakte)</label>
+              <SimpleListEditor items={config.raenge || []} onChange={(v) => persistConfig({ ...config, raenge: v })} placeholder="z. B. Oberfeuerwehrmann" />
+              <label style={{ ...styles.label, marginTop: 16 }}>Funktionen / Qualifikationen (Auswahlliste)</label>
+              <SimpleListEditor items={config.funktionen || []} onChange={(v) => persistConfig({ ...config, funktionen: v })} placeholder="z. B. Maschinist" />
               <label style={{ ...styles.label, marginTop: 22 }}>Zugangscode ändern</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input style={{ ...styles.input, flex: 1 }} placeholder={`aktuell: ${config.accessCode}`} value={newCode} onChange={(e) => setNewCode(e.target.value)} />
@@ -1995,10 +2161,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                         {roster.filter((r) => r.name !== config.mainAdminName).map((r) => (
                           <label key={r.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#5C5F58" }}>
-                            <input type="checkbox" checked={config.adminNames.includes(r.name)} onChange={() => {
-                              const next = config.adminNames.includes(r.name) ? config.adminNames.filter((n) => n !== r.name) : [...config.adminNames, r.name];
-                              persistConfig({ ...config, adminNames: next });
-                            }} /> {r.name}
+                            <input type="checkbox" checked={config.adminNames.includes(r.name)} onChange={() => toggleAdmin(r.name)} /> {r.name}
                           </label>
                         ))}
                       </div>
@@ -2107,6 +2270,31 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
         </div>
       )}
 
+      {showPersonalakte && (
+        <div style={styles.fullscreenPage}>
+          <PersonalakteView me={me} isAdmin={isAdmin} roster={roster} config={config} callAuthed={callAuthed} flashError={flashError}
+            onOpenPhoto={setLightboxSrc} onSetKlassen={setFuehrerscheinKlassen} onClose={closeKachelView} />
+        </div>
+      )}
+
+      {pinPrompt && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center", zIndex: 80 }} onClick={cancelPinPrompt}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <KeyRound size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Bitte PIN bestätigen</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 12 }}>Für geschützte Daten einmalig auf diesem Gerät nötig.</div>
+            <input style={{ ...styles.gateInput, letterSpacing: "0.5em" }} type="password" inputMode="numeric" maxLength={4} value={pinPrompt.input} autoFocus
+              onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 4); setPinPrompt((p) => ({ ...p, input: v })); }}
+              onKeyDown={(e) => e.key === "Enter" && submitPinPrompt()} />
+            {pinPrompt.error && <div style={styles.errorText}>{pinPrompt.error}</div>}
+            <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 14 }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={cancelPinPrompt}>Abbrechen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} disabled={pinPrompt.busy} onClick={submitPinPrompt}>{pinPrompt.busy ? "Prüfe …" : "Bestätigen"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightboxSrc && (
         <div style={styles.lightboxBackdrop} onClick={() => setLightboxSrc(null)}>
           <button style={styles.lightboxClose} onClick={() => setLightboxSrc(null)} aria-label="Schließen"><X size={22} color="white" /></button>
@@ -2119,14 +2307,335 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
             <ShieldAlert size={22} color="#C1272D" style={{ marginBottom: 8 }} />
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{confirmDeleteName} wirklich entfernen?</div>
-            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Das kann nicht rückgängig gemacht werden.</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Das kann nicht rückgängig gemacht werden. Die Personalakte samt Nachweisen wird dabei ebenfalls gelöscht.</div>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmDeleteName(null)}>Abbrechen</button>
-              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { persistRoster(roster.filter((x) => x.name !== confirmDeleteName)); setConfirmDeleteName(null); }}>Entfernen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { removeMember(confirmDeleteName); setConfirmDeleteName(null); }}>Entfernen</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Personalakte – sichtbar nur für die Person selbst und den Admin.
+// Alle Daten laufen ausschließlich über die geschützte Serverfunktion
+// "personalakte" (Netlify), nie direkt über die öffentliche Datenbank.
+// ============================================================================
+const emptyAkte = () => ({
+  strasse: "", plz: "", ort: "", email: "", telefon: "", geburtsdatum: "",
+  arbeitgeber: { name: "", telefon: "", email: "" },
+  notfallkontakt: { name: "", telefon: "" },
+  bemerkung: "", eintrittsdatum: "",
+  lehrgaenge: [], leistungsabzeichen: [], funktionen: [], mitgliedsverlauf: [],
+  befoerderungen: [], ehrungen: [],
+});
+function normalizeAkte(d) {
+  const b = emptyAkte(); d = d || {};
+  return {
+    ...b, ...d,
+    arbeitgeber: { ...b.arbeitgeber, ...(d.arbeitgeber || {}) },
+    notfallkontakt: { ...b.notfallkontakt, ...(d.notfallkontakt || {}) },
+    lehrgaenge: d.lehrgaenge || [], leistungsabzeichen: d.leistungsabzeichen || [], funktionen: d.funktionen || [],
+    mitgliedsverlauf: d.mitgliedsverlauf || [], befoerderungen: d.befoerderungen || [], ehrungen: d.ehrungen || [],
+  };
+}
+function aktuellerRang(akte) {
+  const list = [...((akte && akte.befoerderungen) || [])].filter((b) => b.rang).sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+  return list.length ? list[list.length - 1] : null;
+}
+function nextBirthdayInfo(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const today = new Date(todayISO() + "T00:00:00");
+  let next = new Date(today.getFullYear(), m - 1, d);
+  if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+  return { days: Math.round((next - today) / 86400000), age: next.getFullYear() - y, date: next };
+}
+
+function AkteSection({ title, children, adminOnly }) {
+  return (
+    <div style={styles.kontrollRow}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", letterSpacing: "0.04em", marginBottom: 8 }}>{title}{adminOnly && <span style={{ fontWeight: 600, color: "#A5A79F" }}> · nur Admin trägt ein</span>}</div>
+      {children}
+    </div>
+  );
+}
+function AkteField({ label, value, onChange, type = "text", readOnly, placeholder }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2 }}>{label}</div>
+      {readOnly ? (
+        <div style={{ fontSize: 13, color: "#2C2F2A", minHeight: 18 }}>{type === "date" ? fmtDate(value) : (value || "—")}</div>
+      ) : type === "textarea" ? (
+        <textarea style={{ ...styles.input, minHeight: 60, resize: "vertical", fontSize: 13 }} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input style={{ ...styles.input, padding: "7px 9px", fontSize: 13 }} type={type} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+// Liste aus Einträgen mit Titel/Datum (Leistungsabzeichen, Ehrungen, Mitgliedsverlauf, Beförderungen)
+function AkteList({ items, onChange, readOnly, textKey = "titel", textLabel = "Bezeichnung", options, addLabel = "Eintrag hinzufügen" }) {
+  const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  const sorted = [...items].sort((a, b) => (a.datum || "9999").localeCompare(b.datum || "9999"));
+  return (
+    <div>
+      {sorted.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Einträge.</div>}
+      {sorted.map((it) => (
+        readOnly ? (
+          <div key={it.id} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{it[textKey] || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
+        ) : (
+          <div key={it.id} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+            {options ? (
+              <select style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })}>
+                <option value="">— {textLabel} wählen —</option>
+                {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                {it[textKey] && !options.includes(it[textKey]) && <option value={it[textKey]}>{it[textKey]}</option>}
+              </select>
+            ) : (
+              <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder={textLabel} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })} />
+            )}
+            <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={it.datum || ""} onChange={(e) => update(it.id, { datum: e.target.value })} />
+            <button style={styles.tinyIconBtn} aria-label="Entfernen" onClick={() => onChange(items.filter((x) => x.id !== it.id))}><X size={12} /></button>
+          </div>
+        )
+      ))}
+      {!readOnly && <button style={styles.smallAddBtn} onClick={() => onChange([...items, { id: uid(), [textKey]: "", datum: "" }])}><Plus size={12} /> {addLabel}</button>}
+    </div>
+  );
+}
+function ChipPicker({ options, selected, onToggle, readOnly, emptyHint }) {
+  if (!options.length) return <div style={{ fontSize: 12, color: "#A5A79F" }}>{emptyHint}</div>;
+  if (readOnly) return <div style={{ fontSize: 12.5, color: "#2C2F2A" }}>{selected.length ? selected.join(", ") : "—"}</div>;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {options.map((o) => {
+        const on = selected.includes(o);
+        return <button key={o} onClick={() => onToggle(o)} style={{ ...styles.categoryChip, fontSize: 11.5, padding: "4px 10px", background: on ? "#2C2F2A" : "#F3F1EC", color: on ? "white" : "#5C5F58", borderColor: on ? "#2C2F2A" : "#E2DFD6" }}>{o}</button>;
+      })}
+    </div>
+  );
+}
+
+function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onClose }) {
+  const [target, setTarget] = useState(isAdmin ? null : me);
+  const [search, setSearch] = useState("");
+  const [akte, setAkte] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [uploadingId, setUploadingId] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [errorText, setErrorText] = useState("");
+
+  useEffect(() => {
+    if (!target) { setAkte(null); if (isAdmin) loadOverview(); return; }
+    loadAkte(target);
+  }, [target]);
+
+  async function loadOverview() {
+    setErrorText("");
+    const r = await callAuthed("personalakte", { action: "list" });
+    if (r.ok) setOverview(r.data.items || []);
+    else if (r.data.error === "abgebrochen") onClose();
+    else setErrorText(r.data.error || "Übersicht konnte nicht geladen werden.");
+  }
+  async function loadAkte(name) {
+    setLoading(true); setErrorText("");
+    const r = await callAuthed("personalakte", { action: "get", target: name });
+    setLoading(false);
+    if (r.ok) { setAkte(normalizeAkte(r.data.data)); setDirty(false); }
+    else if (r.data.error === "abgebrochen") { if (isAdmin) setTarget(null); else onClose(); }
+    else setErrorText(r.data.error || "Personalakte konnte nicht geladen werden.");
+  }
+  function upd(patch) { setAkte((a) => ({ ...a, ...patch })); setDirty(true); }
+  async function save(data) {
+    setSaving(true);
+    const clean = { ...data, lehrgaenge: data.lehrgaenge.map(({ photoUrl, ...rest }) => rest) };
+    const r = await callAuthed("personalakte", { action: "save", target, data: clean });
+    setSaving(false);
+    if (r.ok) { setDirty(false); return true; }
+    if (r.data.error !== "abgebrochen") flashError(r.data.error || "Personalakte konnte nicht gespeichert werden.");
+    return false;
+  }
+  async function uploadLehrgangFoto(id, file) {
+    if (!file) return;
+    setUploadingId(id);
+    try {
+      const r = await callAuthed("personalakte", { action: "uploadUrl", target, filename: file.name });
+      if (!r.ok) throw new Error(r.data.error || "Upload nicht möglich.");
+      const { error } = await supabase.storage.from("personalakte").uploadToSignedUrl(r.data.path, r.data.uploadToken, file);
+      if (error) throw error;
+      const next = { ...akte, lehrgaenge: akte.lehrgaenge.map((l) => (l.id === id ? { ...l, photoPath: r.data.path } : l)) };
+      if (await save(next)) await loadAkte(target);
+    } catch (e) { flashError("Foto-Upload fehlgeschlagen."); }
+    setUploadingId(null);
+  }
+  function back() {
+    if (dirty && !window.confirm("Es gibt ungespeicherte Änderungen. Trotzdem zurück?")) return;
+    if (isAdmin && target) setTarget(null); else onClose();
+  }
+
+  // ---------- Admin-Übersicht ----------
+  if (isAdmin && !target) {
+    const items = overview || [];
+    const byName = Object.fromEntries(items.map((i) => [i.name, i]));
+    const geburtstage = items.map((i) => ({ ...i, bd: nextBirthdayInfo(i.geburtsdatum) })).filter((i) => i.bd && i.bd.days <= 30).sort((a, b) => a.bd.days - b.bd.days);
+    const jubilaeen = items.filter((i) => i.eintrittsdatum).map((i) => ({ ...i, jahre: currentYear() - Number(i.eintrittsdatum.slice(0, 4)) })).filter((i) => JUBILAEUMS_JAHRE.includes(i.jahre)).sort((a, b) => b.jahre - a.jahre);
+    return (
+      <div>
+        <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Zurück</button></div>
+        <div style={styles.modalTitle}>Personalakten</div>
+        {errorText && <div style={styles.errorText}>{errorText}</div>}
+        {overview === null && !errorText && <div style={{ fontSize: 12.5, color: "#8A8C86", marginTop: 12 }}>Lädt …</div>}
+        {overview !== null && (
+          <div style={{ marginTop: 14 }}>
+            <AkteSection title="GEBURTSTAGE (NÄCHSTE 30 TAGE)">
+              {geburtstage.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine anstehenden Geburtstage.</div> : geburtstage.map((g) => (
+                <div key={g.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{g.name}</strong> wird {g.bd.age} · {g.bd.days === 0 ? "heute 🎉" : g.bd.days === 1 ? "morgen" : `in ${g.bd.days} Tagen`} <span style={{ color: "#8A8C86" }}>({fmtDate(g.bd.date.toISOString().slice(0, 10))})</span></div>
+              ))}
+            </AkteSection>
+            <AkteSection title={`DIENSTJUBILÄEN ${currentYear()}`}>
+              {jubilaeen.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine Jubiläen in diesem Jahr (bzw. Eintrittsdaten noch nicht eingetragen).</div> : jubilaeen.map((j) => (
+                <div key={j.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{j.name}</strong> · {j.jahre} Jahre <span style={{ color: "#8A8C86" }}>(Eintritt {fmtDate(j.eintrittsdatum)})</span></div>
+              ))}
+            </AkteSection>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "14px 0 6px", letterSpacing: "0.04em" }}>ALLE MITGLIEDER</div>
+            <SearchBox value={search} onChange={setSearch} placeholder="Name suchen …" />
+            {roster.filter((r) => matchesSearch(r.name, search)).map((r) => (
+              <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => setTarget(r.name)}>
+                <span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {byName[r.name].rang}</span>}</span>
+                <ChevronRight size={15} color="#A5A79F" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- Einzelne Akte ----------
+  const entry = roster.find((r) => r.name === target);
+  const klassen = (entry && entry.fuehrerscheinKlassen) || [];
+  const rang = akte ? aktuellerRang(akte) : null;
+  const dienstjahre = akte && akte.eintrittsdatum ? currentYear() - Number(akte.eintrittsdatum.slice(0, 4)) : null;
+  return (
+    <div>
+      <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
+      <div style={styles.modalTitle}>Personalakte {target}</div>
+      {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{rang.rang}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
+      <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 12px" }}>Nur {isAdmin && target !== me ? `${target} und` : "du und"} der Admin können diese Akte sehen.</div>
+      {errorText && <div style={styles.errorText}>{errorText}</div>}
+      {loading && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>}
+      {akte && !loading && (
+        <>
+          <AkteSection title="PERSÖNLICHES">
+            <AkteField label="Geburtsdatum" type="date" value={akte.geburtsdatum} onChange={(v) => upd({ geburtsdatum: v })} />
+            <AkteField label="Straße und Hausnummer" value={akte.strasse} onChange={(v) => upd({ strasse: v })} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ width: 90 }}><AkteField label="PLZ" value={akte.plz} onChange={(v) => upd({ plz: v })} /></div>
+              <div style={{ flex: 1 }}><AkteField label="Ort" value={akte.ort} onChange={(v) => upd({ ort: v })} /></div>
+            </div>
+            <AkteField label="Telefon" type="tel" value={akte.telefon} onChange={(v) => upd({ telefon: v })} />
+            <AkteField label="E-Mail" type="email" value={akte.email} onChange={(v) => upd({ email: v })} />
+          </AkteSection>
+
+          <AkteSection title="NOTFALLKONTAKT">
+            <AkteField label="Name" value={akte.notfallkontakt.name} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, name: v } })} />
+            <AkteField label="Telefon" type="tel" value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
+          </AkteSection>
+
+          <AkteSection title="ARBEITGEBER">
+            <AkteField label="Name" value={akte.arbeitgeber.name} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, name: v } })} />
+            <AkteField label="Telefon" type="tel" value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
+            <AkteField label="E-Mail" type="email" value={akte.arbeitgeber.email} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, email: v } })} />
+          </AkteSection>
+
+          <AkteSection title="FEUERWEHR">
+            <AkteField label="Eintrittsdatum" type="date" value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
+            {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()})</div>}
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
+            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="z. B. Übertritt Einsatzabteilung" />
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen</div>
+            <ChipPicker options={config.funktionen || []} selected={akte.funktionen} onToggle={(f) => upd({ funktionen: akte.funktionen.includes(f) ? akte.funktionen.filter((x) => x !== f) : [...akte.funktionen, f] })} emptyHint="Noch keine Funktionen angelegt (Admin: Einstellungen)." />
+          </AkteSection>
+
+          <AkteSection title="RANG & BEFÖRDERUNGEN" adminOnly>
+            <AkteList items={akte.befoerderungen} onChange={(v) => upd({ befoerderungen: v })} readOnly={!isAdmin} textKey="rang" textLabel="Rang" options={config.raenge || []} addLabel="Beförderung eintragen" />
+            {isAdmin && (config.raenge || []).length === 0 && <div style={{ fontSize: 11, color: "#B8791A", marginTop: 4 }}>Bitte zuerst die Ränge in den Einstellungen anlegen.</div>}
+          </AkteSection>
+
+          <AkteSection title="EHRUNGEN & AUSZEICHNUNGEN" adminOnly>
+            <AkteList items={akte.ehrungen} onChange={(v) => upd({ ehrungen: v })} readOnly={!isAdmin} textLabel="z. B. Ehrenzeichen Silber" addLabel="Ehrung eintragen" />
+          </AkteSection>
+
+          <AkteSection title="LEISTUNGSABZEICHEN">
+            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} textLabel="z. B. Leistungsabzeichen Bronze" addLabel="Abzeichen eintragen" />
+          </AkteSection>
+
+          <AkteSection title="LEHRGÄNGE">
+            {akte.lehrgaenge.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Lehrgänge.</div>}
+            {akte.lehrgaenge.map((l) => (
+              <div key={l.id} style={{ borderBottom: "1px dashed #E2DFD6", paddingBottom: 8, marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder="z. B. Truppführer" value={l.titel || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, titel: e.target.value } : x)) })} />
+                  <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={l.datum || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, datum: e.target.value } : x)) })} />
+                  <button style={styles.tinyIconBtn} aria-label="Lehrgang entfernen" onClick={() => { if (window.confirm("Lehrgang samt Nachweis-Foto entfernen?")) upd({ lehrgaenge: akte.lehrgaenge.filter((x) => x.id !== l.id) }); }}><X size={12} /></button>
+                </div>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                  {l.photoUrl && <img src={l.photoUrl} alt="Nachweis" style={{ width: 70, height: 50, objectFit: "cover", borderRadius: 4, border: "1px solid #E2DFD6", cursor: "zoom-in" }} onClick={() => onOpenPhoto(l.photoUrl)} />}
+                  <label style={styles.smallAddBtn}>
+                    {uploadingId === l.id ? "Lädt hoch …" : <><Plus size={12} /> {l.photoPath ? "Foto ersetzen" : "Nachweis-Foto"}</>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadLehrgangFoto(l.id, e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                </div>
+              </div>
+            ))}
+            <button style={styles.smallAddBtn} onClick={() => upd({ lehrgaenge: [...akte.lehrgaenge, { id: uid(), titel: "", datum: "", photoPath: null }] })}><Plus size={12} /> Lehrgang hinzufügen</button>
+          </AkteSection>
+
+          <AkteSection title="FÜHRERSCHEINKLASSEN">
+            <ChipPicker options={FUEHRERSCHEIN_KLASSEN} selected={klassen} onToggle={(k) => onSetKlassen(target, klassen.includes(k) ? klassen.filter((x) => x !== k) : [...klassen, k])} />
+            <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Wird sofort gespeichert. Bestimmt, ob PKW/LKW bei der Führerscheinkontrolle und den Fahrzeugeinweisungen erscheinen. FF = Feuerwehrführerschein.</div>
+          </AkteSection>
+
+          <AkteSection title="BEMERKUNG">
+            <AkteField label="" type="textarea" value={akte.bemerkung} onChange={(v) => upd({ bemerkung: v })} placeholder="Freitext …" />
+          </AkteSection>
+
+          <div style={{ position: "sticky", bottom: 0, background: "#F3F1EC", padding: "10px 0 4px" }}>
+            <button style={{ ...styles.saveBtn, width: "100%", opacity: dirty ? 1 : 0.6 }} disabled={saving || !dirty} onClick={() => save(akte)}>{saving ? "Speichert …" : dirty ? "Änderungen speichern" : "Alles gespeichert"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Einfache Liste zum Pflegen von Auswahlwerten (Ränge, Funktionen) in den Einstellungen.
+function SimpleListEditor({ items, onChange, placeholder }) {
+  const [input, setInput] = useState("");
+  const add = () => { const t = input.trim(); if (!t || items.includes(t)) return; onChange([...items, t]); setInput(""); };
+  const move = (idx, dir) => { const next = [...items]; const j = idx + dir; if (j < 0 || j >= next.length) return; [next[idx], next[j]] = [next[j], next[idx]]; onChange(next); };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <input style={{ ...styles.input, flex: 1 }} placeholder={placeholder} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={add}><Plus size={16} /></button>
+      </div>
+      {items.map((it, idx) => (
+        <div key={it} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: "5px 8px", marginBottom: 4 }}>
+          <span style={{ fontSize: 12.5 }}>{it}</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button style={styles.tinyIconBtn} aria-label="nach oben" onClick={() => move(idx, -1)}><ChevronDown size={12} style={{ transform: "rotate(180deg)" }} /></button>
+            <button style={styles.tinyIconBtn} aria-label="nach unten" onClick={() => move(idx, 1)}><ChevronDown size={12} /></button>
+            <button style={styles.tinyIconBtn} aria-label="entfernen" onClick={() => onChange(items.filter((x) => x !== it))}><X size={12} /></button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2149,7 +2658,7 @@ function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onToggleB
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.pin && <span style={styles.pinPendingTag}>PIN offen</span>}</span>
+        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && <button style={styles.rosterRemoveBtn} title="Entfernen" onClick={(e) => { e.stopPropagation(); onRequestRemove(); }}><X size={13} /></button>}
