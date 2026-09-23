@@ -1,48 +1,26 @@
 // Feuerwehr Regglisweiler – Service Worker
-// Zuständig für: (1) Push-Benachrichtigungen bei "Dringend"-Mitteilungen für die
-// Einsatzabteilung, (2) die Zahl am Homescreen-App-Icon für neue Mitteilungen.
+// Zeigt bei jeder neuen Mitteilung eine Benachrichtigung und setzt die Zahl am App-Symbol.
+// Wichtig: Jede Push-Nachricht MUSS sichtbar angezeigt werden, sonst sperren iPhone
+// und Chrome die Anmeldung nach wenigen Nachrichten.
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
-});
+self.addEventListener("install", () => { self.skipWaiting(); });
+self.addEventListener("activate", (event) => { event.waitUntil(self.clients.claim()); });
 
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) {}
 
-  const badgeCount = typeof data.badge === "number" ? data.badge : 0;
-
-  const updateBadge = (async () => {
-    try {
-      if ("setAppBadge" in self.navigator) {
-        if (badgeCount > 0) await self.navigator.setAppBadge(badgeCount);
-        else await self.navigator.clearAppBadge();
-      }
-    } catch (e) {
-      // Badge-API auf diesem Gerät/Browser nicht unterstützt – kein Problem, einfach ignorieren.
-    }
-  })();
-
-  if (data.loud) {
-    // "Dringend"-Mitteilung für die Einsatzabteilung: sichtbare Benachrichtigung anzeigen.
-    event.waitUntil(Promise.all([
-      updateBadge,
-      self.registration.showNotification(data.title || "Feuerwehr Regglisweiler", {
-        body: data.body || "",
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
-        tag: "ffw-dringend",
-        renotify: true,
-      }),
-    ]));
-  } else {
-    // Normale Mitteilung: nur die Zahl am Icon aktualisieren, keine Benachrichtigung anzeigen.
-    event.waitUntil(updateBadge);
+  const tasks = [
+    self.registration.showNotification(data.title || "Feuerwehr Regglisweiler", {
+      body: data.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+    }),
+  ];
+  if (typeof data.badge === "number" && self.navigator && "setAppBadge" in self.navigator) {
+    tasks.push(self.navigator.setAppBadge(data.badge).catch(() => {}));
   }
+  event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener("notificationclick", (event) => {
