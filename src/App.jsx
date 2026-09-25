@@ -60,6 +60,7 @@ export default function App() {
   const [rosterSearch, setRosterSearch] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [confirmDeleteName, setConfirmDeleteName] = useState(null);
+  const [confirmBlock, setConfirmBlock] = useState(null); // { name, gesperrt }
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loginSearch, setLoginSearch] = useState("");
   const [confirmTargetSearch, setConfirmTargetSearch] = useState("");
@@ -109,6 +110,8 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem("ffw_seen_sitzungen", JSON.stringify([...seenSitzungIds])); } catch (e) {} }, [seenSitzungIds]);
 
   const myEntry = roster.find((r) => r.name === me);
+  // Gesperrte Mitglieder (ausgetreten) tauchen in keiner Liste mehr auf – ihre Daten bleiben aber erhalten.
+  const aktiveMitglieder = useMemo(() => roster.filter((r) => !r.gesperrt), [roster]);
   const isAdmin = !!(me && config && config.adminNames && config.adminNames.includes(me));
   const isMainAdmin = !!(me && config && me === config.mainAdminName);
   const myBereiche = isAdmin ? BEREICH_KEYS : (myEntry ? myEntry.bereiche : []);
@@ -394,6 +397,11 @@ export default function App() {
     if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Mitglied konnte nicht entfernt werden."); return; }
     persistRoster(roster.filter((x) => x.name !== name));
   }
+  async function setMemberBlocked(name, gesperrt) {
+    const r = await callAuthed("auth", { action: "setBlocked", target: name, value: gesperrt });
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Änderung fehlgeschlagen."); return; }
+    updateRosterEntry(name, (x) => ({ ...x, gesperrt, gesperrtSeit: gesperrt ? todayISO() : null }));
+  }
   async function toggleAdmin(name) {
     const makeAdmin = !config.adminNames.includes(name);
     const r = await callAuthed("auth", { action: "setAdmin", target: name, value: makeAdmin });
@@ -519,7 +527,7 @@ export default function App() {
   }
 
   // --- Abstimmungen ---
-  function eligibleVoters(s) { return roster.filter((r) => r.ausschuss && (s.anwesenheit || {})[r.name] === "anwesend").map((r) => r.name); }
+  function eligibleVoters(s) { return aktiveMitglieder.filter((r) => r.ausschuss && (s.anwesenheit || {})[r.name] === "anwesend").map((r) => r.name); }
   function voteResult(ab) {
     const vals = Object.values((ab && ab.votes) || {});
     const dafuer = vals.filter((v) => v === "dafuer").length;
@@ -560,7 +568,7 @@ export default function App() {
   function escapeHtml(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function exportSitzungFile(sitzungId) {
     const s = sitzungen.find((x) => x.id === sitzungId); if (!s) return;
-    const anwesenheitRows = roster.filter((r) => r.ausschuss).map((r) => {
+    const anwesenheitRows = aktiveMitglieder.filter((r) => r.ausschuss).map((r) => {
       const status = (s.anwesenheit || {})[r.name];
       return `<li>${escapeHtml(r.name)} — ${status === "anwesend" ? "anwesend" : status === "entschuldigt" ? "entschuldigt" : "keine Angabe"}</li>`;
     }).join("");
@@ -780,7 +788,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
   }
   function exportFuehrerschein() {
     const rows = [["Name", "PKW Status", "PKW bestätigt von", "PKW Datum", "LKW Status", "LKW bestätigt von", "LKW Datum", "LKW gültig bis"]];
-    roster.filter((r) => r.bereiche.includes("einsatzabteilung")).forEach((r) => {
+    aktiveMitglieder.filter((r) => r.bereiche.includes("einsatzabteilung")).forEach((r) => {
       const pkw = r.fuehrerschein.pkw; const lkw = r.fuehrerschein.lkw;
       rows.push([r.name, !pkw.hasLicense ? "Kein PKW" : pkw.confirmedYear === currentYear() ? "Bestätigt" : "Offen", pkw.confirmedBy || "", pkw.confirmedDate ? fmtDate(pkw.confirmedDate) : "",
         !lkw.hasLicense ? "Kein LKW" : lkw.confirmedYear === currentYear() ? "Bestätigt" : "Offen", lkw.confirmedBy || "", lkw.confirmedDate ? fmtDate(lkw.confirmedDate) : "",
@@ -790,7 +798,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
   }
   function exportAtemschutz() {
     const rows = [["Name", "G26 Termin", "G26 Status", "Streckendurchgang", "Übung Typ", "Übung Datum", "Unterweisung", "Einsatztauglich", "Tauglich bis"]];
-    roster.filter((r) => r.atemschutz).forEach((r) => {
+    aktiveMitglieder.filter((r) => r.atemschutz).forEach((r) => {
       const st = atemschutzStatus(r);
       rows.push([
         r.name,
@@ -879,12 +887,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       .filter((r) => !dismissedReminders[r.key]);
   }, [events, me, effectiveBereiche, dismissedReminders]);
 
-  const adminPendingG26 = useMemo(() => { if (!isAdmin) return []; return roster.filter((r) => r.atemschutz && r.g26.pendingConfirmation); }, [roster, isAdmin]);
+  const adminPendingG26 = useMemo(() => { if (!isAdmin) return []; return aktiveMitglieder.filter((r) => r.atemschutz && r.g26.pendingConfirmation); }, [aktiveMitglieder, isAdmin]);
 
   const incomingFsRequests = useMemo(() => {
     if (!me) return [];
     const list = [];
-    roster.forEach((r) => {
+    aktiveMitglieder.forEach((r) => {
       ["pkw", "lkw"].forEach((type) => { if (r.fuehrerschein[type].confirmRequestTo === me) list.push({ name: r.name, type }); });
     });
     return list;
@@ -893,7 +901,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
   const incomingVehicleRequests = useMemo(() => {
     if (!me) return [];
     const list = [];
-    roster.forEach((r) => {
+    aktiveMitglieder.forEach((r) => {
       Object.entries(r.fahrzeuge || {}).forEach(([vehicleId, status]) => {
         if (status.confirmRequestTo === me) { const v = vehicles.find((x) => x.id === vehicleId); list.push({ name: r.name, vehicleId, vehicleName: v ? v.name : "Fahrzeug" }); }
       });
@@ -944,7 +952,18 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     return () => clearTimeout(t);
   }, [phase]);
 
+  // Wird das eigene Konto gesperrt, meldet sich die App auf diesem Gerät sofort ab.
+  useEffect(() => {
+    if (phase === "app" && myEntry && myEntry.gesperrt) {
+      clearAuth(); setMe(null); setCodeInput(""); setPhase("gate");
+      setGateError("Dein Zugang zur App wurde gesperrt. Bei Fragen bitte beim Kommandanten melden.");
+    }
+  }, [phase, myEntry]);
+
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, openPreviewPage, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
+  appCtx.alleMitglieder = roster;
+  appCtx.roster = aktiveMitglieder;
+  appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
 
   if (phase === "loading") return <div style={{ ...styles.page, display: "flex", alignItems: "center", justifyContent: "center" }}>{fontImport}<Flame size={26} color="#C1272D" /></div>;
 
@@ -978,7 +997,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           {roster.length > 5 && <SearchBox value={loginSearch} onChange={setLoginSearch} placeholder="Name suchen …" />}
           {roster.length > 0 && (
             <div style={styles.rosterList}>
-              {roster.filter((r) => matchesSearch(r.name, loginSearch)).map((r) => (
+              {aktiveMitglieder.filter((r) => matchesSearch(r.name, loginSearch)).map((r) => (
                 <button key={r.name} style={styles.rosterItem} onClick={() => pickRosterEntry(r)}>
                   <span>{r.name} {config && config.adminNames && config.adminNames.includes(r.name) && <span style={styles.adminTag}>Admin</span>}</span>
                   <KeyRound size={13} color="#B8BCB6" />
@@ -1199,7 +1218,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           <div key={monthYear} style={{ marginBottom: 22 }}>
             <div style={styles.monthLabel}>{monthYear}</div>
             {evs.map((ev) => (
-              <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={roster} onToggleAttendance={toggleAttendance} />
+              <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} />
             ))}
           </div>
         ))}
@@ -1213,7 +1232,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
               <div key={monthYear} style={{ marginBottom: 22, marginTop: 12 }}>
                 <div style={styles.monthLabel}>{monthYear}</div>
                 {evs.map((ev) => (
-                  <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={roster} onToggleAttendance={toggleAttendance} isArchived />
+                  <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} isArchived />
                 ))}
               </div>
             ))}
@@ -1285,7 +1304,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                   <label style={styles.label}><UserCog size={13} style={{ verticalAlign: -2 }} /> Gruppenführer</label>
                   <select style={styles.input} value={draft.gruppenfuehrer || ""} onChange={(e) => setDraft({ ...draft, gruppenfuehrer: e.target.value })}>
                     <option value="">— nicht festgelegt —</option>
-                    {roster.filter((r) => r.bereiche.includes("einsatzabteilung") && r.gruppenfuehrer).map((r) => (
+                    {aktiveMitglieder.filter((r) => r.bereiche.includes("einsatzabteilung") && r.gruppenfuehrer).map((r) => (
                       <option key={r.name} value={r.name}>{r.name}</option>
                     ))}
                   </select>
@@ -1445,7 +1464,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
             <hr />
             <p><strong>Anwesenheit:</strong></p>
             <ul>
-              {roster.filter((r) => r.ausschuss).map((r) => (
+              {aktiveMitglieder.filter((r) => r.ausschuss).map((r) => (
                 <li key={r.name}>{r.name} — {(s.anwesenheit || {})[r.name] === "anwesend" ? "anwesend" : (s.anwesenheit || {})[r.name] === "entschuldigt" ? "entschuldigt" : "keine Angabe"}</li>
               ))}
             </ul>
@@ -1599,6 +1618,22 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
         <div style={styles.lightboxBackdrop} onClick={() => setLightboxSrc(null)}>
           <button style={styles.lightboxClose} onClick={() => setLightboxSrc(null)} aria-label="Schließen"><X size={22} color="white" /></button>
           <img src={lightboxSrc} alt="" style={styles.lightboxImg} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
+      {confirmBlock && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setConfirmBlock(null)}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
+            <ShieldAlert size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{confirmBlock.name} wirklich {confirmBlock.gesperrt ? "sperren" : "entsperren"}?</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>{confirmBlock.gesperrt
+              ? "Kein Zugriff mehr auf die App, keine Benachrichtigungen, verschwindet aus allen Listen. Alle Daten und die Personalakte bleiben erhalten. In der Akte wird automatisch \"Austritt\" mit heutigem Datum eingetragen."
+              : "Die Person kann sich wieder mit ihrer bisherigen PIN anmelden und erscheint wieder in allen Listen. In der Akte wird automatisch \"Wiedereintritt\" mit heutigem Datum eingetragen."}</div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmBlock(null)}>Abbrechen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { setMemberBlocked(confirmBlock.name, confirmBlock.gesperrt); setConfirmBlock(null); }}>{confirmBlock.gesperrt ? "Sperren" : "Entsperren"}</button>
+            </div>
+          </div>
         </div>
       )}
 

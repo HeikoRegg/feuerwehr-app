@@ -1,14 +1,15 @@
 import React from "react";
-import { ArrowLeft, Check, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Plus, X } from "lucide-react";
 import { APP_VERSION } from "../lib/constants";
 import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
+import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 export default function EinstellungenKachel() {
-  const { config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht } = useApp();
+  const { alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht } = useApp();
   return (
         <div style={styles.fullscreenPage}>
           <div style={styles.fullscreenHeader}>
@@ -29,6 +30,7 @@ export default function EinstellungenKachel() {
                   <RosterAdminRow key={r.name} r={r} isAdminName={config.adminNames.includes(r.name)}
                     onResetPin={() => resetPin(r.name)}
                     onRequestRemove={() => setConfirmDeleteName(r.name)}
+                    onRequestBlock={() => setConfirmBlock({ name: r.name, gesperrt: true })}
                     onToggleBereich={(b) => toggleBereichAssignment(r.name, b)}
                     onTogglePerm={(b, f) => togglePermission(r.name, b, f)}
                     onToggleAtemschutz={() => toggleAtemschutz(r.name)}
@@ -38,6 +40,20 @@ export default function EinstellungenKachel() {
                   />
                 ))}
                 {roster.length === 0 && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Noch niemand eingetragen.</div>}
+                {alleMitglieder.some((r) => r.gesperrt) && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", marginBottom: 6, letterSpacing: "0.04em" }}>GESPERRTE MITGLIEDER</div>
+                    {alleMitglieder.filter((r) => r.gesperrt).map((r) => (
+                      <div key={r.name} style={{ ...styles.rosterManageItemFull, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, opacity: 0.8 }}>
+                        <span style={{ fontSize: 13 }}>{r.name}{r.gesperrtSeit && <span style={{ fontSize: 11, color: "#8A8C86" }}> · gesperrt seit {fmtDate(r.gesperrtSeit)}</span>}</span>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button style={styles.tinyBtn} onClick={() => setConfirmBlock({ name: r.name, gesperrt: false })}>Entsperren</button>
+                          <button style={styles.rosterRemoveBtn} title="Entfernen" onClick={() => setConfirmDeleteName(r.name)}><X size={13} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <label style={{ ...styles.label, marginTop: 22 }}>Ränge (Auswahlliste für die Personalakte)</label>
               <SimpleListEditor items={config.raenge || []} onChange={(v) => persistConfig({ ...config, raenge: v })} placeholder="z. B. Oberfeuerwehrmann" />

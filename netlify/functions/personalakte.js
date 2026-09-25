@@ -15,9 +15,9 @@ const folderFor = (name) => String(name || "").replace(/[^a-z0-9]+/gi, "_");
 async function userByToken(token) {
   if (!token) return null;
   // Kleine Tabelle – deshalb einfach alle Benutzer laden und den Schlüssel hier im Code suchen.
-  const { data, error } = await db.from("app_users").select("name,is_admin,tokens");
+  const { data, error } = await db.from("app_users").select("name,is_admin,tokens,blocked,elevated_token,elevated_until");
   if (error) throw error;
-  return (data || []).find((u) => Array.isArray(u.tokens) && u.tokens.includes(token)) || null;
+  return (data || []).find((u) => !u.blocked && Array.isArray(u.tokens) && u.tokens.includes(token)) || null;
 }
 async function loadAkte(name) {
   const { data } = await db.from("personalakten").select("data").eq("name", name).maybeSingle();
@@ -41,6 +41,23 @@ export async function handler(event) {
     if (!me) return json(401, { error: "Bitte PIN bestätigen." });
     const isAdmin = !!me.is_admin;
     const { action, target } = body;
+
+    // Fremde Akten (und Übersicht/Arbeitgeberliste) nur mit frischer PIN-Freischaltung.
+    const brauchtFreischaltung = action === "list" || action === "arbeitgeber" || (target && target !== me.name);
+    if (brauchtFreischaltung) {
+      if (!isAdmin) return json(403, { error: "Du darfst nur deine eigene Personalakte sehen." });
+      const ok = body.elevatedToken && me.elevated_token === body.elevatedToken && me.elevated_until && new Date(me.elevated_until) > new Date();
+      if (!ok) return json(403, { error: "Bitte PIN eingeben.", code: "PIN_NOETIG" });
+    }
+
+    if (action === "arbeitgeber") {
+      const names = Array.isArray(body.names) ? body.names : [];
+      const { data } = await db.from("personalakten").select("name,data").in("name", names.length ? names : ["-"]);
+      const byName = Object.fromEntries((data || []).map((r) => [r.name, r.data || {}]));
+      const items = names.map((n) => ({ name: n, arbeitgeber: { name: "", telefon: "", email: "", ...((byName[n] || {}).arbeitgeber || {}) } }))
+        .sort((a, b) => a.name.localeCompare(b.name, "de"));
+      return json(200, { items });
+    }
 
     if (action === "list") {
       if (!isAdmin) return json(403, { error: "Nur für Admins." });

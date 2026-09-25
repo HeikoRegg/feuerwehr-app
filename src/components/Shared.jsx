@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, Clock, EyeOff, HandHelping, Landmark, MapPin, Pencil, Plus, RotateCcw, Search, UserCheck, UserCog, UserX, Users, X } from "lucide-react";
+import { ChevronDown, Clock, EyeOff, HandHelping, Landmark, Lock, MapPin, Pencil, Plus, RotateCcw, Search, UserCheck, UserCog, UserX, Users, X } from "lucide-react";
 import { BEREICHE, BEREICH_KEYS, CATEGORIES, GRUPPENFUEHRER_CATEGORIES } from "../lib/constants";
 import { BereichIcon } from "./BereichIcon";
 import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadcount } from "../lib/helpers";
@@ -43,7 +43,7 @@ export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onTogg
   );
 }
 
-export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
+export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={styles.rosterManageItemFull}>
@@ -51,6 +51,7 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
         <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
+          {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}
           {!isAdminName && <button style={styles.rosterRemoveBtn} title="Entfernen" onClick={(e) => { e.stopPropagation(); onRequestRemove(); }}><X size={13} /></button>}
           <ChevronDown size={14} color="#8A8C86" style={{ transform: open ? "rotate(180deg)" : "none" }} />
         </div>

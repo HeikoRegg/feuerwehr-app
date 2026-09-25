@@ -32,7 +32,9 @@ export async function handler(event) {
     const config = (await getKv("config")) || {};
     const admins = config.adminNames || [];
     // Bereiche werden bei jedem Versand frisch aus der Mitgliederliste gelesen.
-    const siehtBereich = (name) => admins.includes(name) || ((roster.find((r) => r.name === name) || {}).bereiche || []).includes(bereich);
+    const eintrag = (name) => roster.find((r) => r.name === name) || {};
+    // Gesperrte Mitglieder bekommen keine Benachrichtigungen mehr.
+    const siehtBereich = (name) => !eintrag(name).gesperrt && (admins.includes(name) || (eintrag(name).bereiche || []).includes(bereich));
 
     const { data: subs, error } = await supabase.from("push_subscriptions").select("*");
     if (error) throw error;
