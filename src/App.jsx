@@ -10,12 +10,20 @@ import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
 import { AppContext } from "./AppContext";
 
 // Kacheln werden erst geladen, wenn man sie öffnet – so startet die App immer gleich schnell.
-const FuehrerscheinKachel = lazy(() => import("./tiles/FuehrerscheinKachel"));
-const AtemschutzKachel = lazy(() => import("./tiles/AtemschutzKachel"));
-const AusschussKachel = lazy(() => import("./tiles/AusschussKachel"));
-const EinstellungenKachel = lazy(() => import("./tiles/EinstellungenKachel"));
-const PersonalakteView = lazy(() => import("./tiles/PersonalakteKachel"));
-function KachelLaden() { return <div style={{ padding: 30, textAlign: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
+const kachelImporte = {
+  fuehrerschein: () => import("./tiles/FuehrerscheinKachel"),
+  atemschutz: () => import("./tiles/AtemschutzKachel"),
+  ausschuss: () => import("./tiles/AusschussKachel"),
+  einstellungen: () => import("./tiles/EinstellungenKachel"),
+  personalakte: () => import("./tiles/PersonalakteKachel"),
+};
+const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
+const AtemschutzKachel = lazy(kachelImporte.atemschutz);
+const AusschussKachel = lazy(kachelImporte.ausschuss);
+const EinstellungenKachel = lazy(kachelImporte.einstellungen);
+const PersonalakteView = lazy(kachelImporte.personalakte);
+// Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
+function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
 
 export default function App() {
   const [phase, setPhase] = useState("loading");
@@ -927,6 +935,14 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       button:disabled { opacity: 0.5; cursor: not-allowed; }
     `}</style>
   );
+
+  // Ein paar Sekunden nach dem Start alle Kacheln still im Hintergrund vorladen,
+  // damit sie beim Antippen sofort da sind (der Start selbst bleibt schnell).
+  useEffect(() => {
+    if (phase !== "app") return;
+    const t = setTimeout(() => { Object.values(kachelImporte).forEach((f) => f().catch(() => {})); }, 3000);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, openPreviewPage, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
 
