@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { BereichIcon } from "./components/BereichIcon";
-import { atemschutzStatus, callServer, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, fmtDate, formatDateParts, matchesSearch, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
+import { atemschutzStatus, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, fmtDate, formatDateParts, matchesSearch, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
 import { AppContext } from "./AppContext";
@@ -673,6 +673,7 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
     if (!file || !me) return;
     setG26PhotoUploading(true);
     try {
+      file = await compressImage(file);
       const path = `g26/${me.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`;
       const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true });
       if (error) throw error;
@@ -686,6 +687,7 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
     if (!file) return;
     setAttachmentUploading(true);
     try {
+      file = await compressImage(file);
       const path = `ausschuss/${Date.now()}_${file.name.replace(/[^a-z0-9.\-_]+/gi, "_")}`;
       const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true });
       if (error) throw error;

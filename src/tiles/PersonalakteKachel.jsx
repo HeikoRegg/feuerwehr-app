@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { ArrowLeft, ChevronRight, Plus, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { FUEHRERSCHEIN_KLASSEN, JUBILAEUMS_JAHRE } from "../lib/constants";
-import { currentYear, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
+import { FUEHRERSCHEIN_KLASSEN, JUBILAEUMS_JAHRE, RUNDE_GEBURTSTAGE_EXTRA } from "../lib/constants";
+import { compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { SearchBox } from "../components/Shared";
 
@@ -152,6 +152,7 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
     if (!file) return;
     setUploadingId(id);
     try {
+      file = await compressImage(file);
       const r = await callAuthed("personalakte", { action: "uploadUrl", target, filename: file.name });
       if (!r.ok) throw new Error(r.data.error || "Upload nicht möglich.");
       const { error } = await supabase.storage.from("personalakte").uploadToSignedUrl(r.data.path, r.data.uploadToken, file);
@@ -171,7 +172,12 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
     const items = overview || [];
     const byName = Object.fromEntries(items.map((i) => [i.name, i]));
     const geburtstage = items.map((i) => ({ ...i, bd: nextBirthdayInfo(i.geburtsdatum) })).filter((i) => i.bd && i.bd.days <= 30).sort((a, b) => a.bd.days - b.bd.days);
-    const jubilaeen = items.filter((i) => i.eintrittsdatum).map((i) => ({ ...i, jahre: currentYear() - Number(i.eintrittsdatum.slice(0, 4)) })).filter((i) => JUBILAEUMS_JAHRE.includes(i.jahre)).sort((a, b) => b.jahre - a.jahre);
+    const rundeGeburtstage = items.filter((i) => i.geburtsdatum).map((i) => {
+      const alter = currentYear() - Number(i.geburtsdatum.slice(0, 4));
+      const datum = `${currentYear()}${i.geburtsdatum.slice(4)}`;
+      return { ...i, alter, datum, vorbei: datum < todayISO() };
+    }).filter((i) => RUNDE_GEBURTSTAGE_EXTRA.includes(i.alter) || (i.alter >= 20 && i.alter % 10 === 0)).sort((a, b) => a.datum.localeCompare(b.datum));
+    const jubilaeen = items.filter((i) => i.eintrittsdatum).map((i) => ({ ...i, beginn: dienstbeginn(i.eintrittsdatum, i.geburtsdatum), jahre: dienstjahreImJahr(i.eintrittsdatum, i.geburtsdatum) })).filter((i) => JUBILAEUMS_JAHRE.includes(i.jahre)).sort((a, b) => b.jahre - a.jahre);
     return (
       <div>
         <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Zurück</button></div>
@@ -185,9 +191,14 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
                 <div key={g.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{g.name}</strong> wird {g.bd.age} · {g.bd.days === 0 ? "heute 🎉" : g.bd.days === 1 ? "morgen" : `in ${g.bd.days} Tagen`} <span style={{ color: "#8A8C86" }}>({fmtDate(g.bd.date.toISOString().slice(0, 10))})</span></div>
               ))}
             </AkteSection>
+            <AkteSection title={`RUNDE GEBURTSTAGE ${currentYear()}`}>
+              {rundeGeburtstage.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine runden Geburtstage in diesem Jahr (bzw. Geburtsdaten noch nicht eingetragen).</div> : rundeGeburtstage.map((g) => (
+                <div key={g.name} style={{ fontSize: 12.5, marginBottom: 3, color: g.vorbei ? "#A5A79F" : "#2C2F2A" }}><strong>{g.name}</strong> wird {g.alter} <span style={{ color: g.vorbei ? "#A5A79F" : "#8A8C86" }}>· {fmtDate(g.datum)}{g.vorbei ? " (war schon)" : ""}</span></div>
+              ))}
+            </AkteSection>
             <AkteSection title={`DIENSTJUBILÄEN ${currentYear()}`}>
               {jubilaeen.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine Jubiläen in diesem Jahr (bzw. Eintrittsdaten noch nicht eingetragen).</div> : jubilaeen.map((j) => (
-                <div key={j.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{j.name}</strong> · {j.jahre} Jahre <span style={{ color: "#8A8C86" }}>(Eintritt {fmtDate(j.eintrittsdatum)})</span></div>
+                <div key={j.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{j.name}</strong> · {j.jahre} Jahre <span style={{ color: "#8A8C86" }}>({j.beginn !== j.eintrittsdatum ? `gezählt ab 14. Geburtstag, ${fmtDate(j.beginn)}` : `Eintritt ${fmtDate(j.eintrittsdatum)}`})</span></div>
               ))}
             </AkteSection>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "14px 0 6px", letterSpacing: "0.04em" }}>ALLE MITGLIEDER</div>
@@ -208,7 +219,8 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   const entry = roster.find((r) => r.name === target);
   const klassen = (entry && entry.fuehrerscheinKlassen) || [];
   const rang = akte ? aktuellerRang(akte) : null;
-  const dienstjahre = akte && akte.eintrittsdatum ? currentYear() - Number(akte.eintrittsdatum.slice(0, 4)) : null;
+  const dienstjahre = akte ? dienstjahreImJahr(akte.eintrittsdatum, akte.geburtsdatum) : null;
+  const dienstbeginnDatum = akte ? dienstbeginn(akte.eintrittsdatum, akte.geburtsdatum) : null;
   return (
     <div>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
@@ -243,7 +255,7 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
 
           <AkteSection title="FEUERWEHR">
             <AkteField label="Eintrittsdatum" type="date" value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
-            {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()})</div>}
+            {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()}){dienstbeginnDatum !== akte.eintrittsdatum ? `, gezählt ab dem 14. Geburtstag (${fmtDate(dienstbeginnDatum)})` : ""}</div>}
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
             <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="z. B. Übertritt Einsatzabteilung" />
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen</div>

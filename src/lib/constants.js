@@ -1,13 +1,11 @@
 import React from "react";
 
 export const APP_NAME = "Feuerwehr Regglisweiler";
-export const APP_VERSION = "2.3";
+export const APP_VERSION = "2.4";
 export const CHANGELOG = [
-  "Neue Kachel Personalakte: Kontaktdaten, Lehrgänge mit Nachweis-Foto, Leistungsabzeichen, Rang, Ehrungen u. v. m. – sichtbar nur für dich und den Admin",
-  "Neuer Bereich Führungskräfte mit eigenen Terminen und Mitteilungen",
-  "Benachrichtigungen jetzt für alle Bereiche: jede neue Mitteilung meldet sich kurz und zählt am App-Symbol mit",
-  "LKW-Führerschein: Ablaufdatum eintragen, Erinnerung 4 Monate vorher",
-  "Mehr Sicherheit: PINs werden jetzt geschützt auf dem Server geprüft",
+  "Neue Reihenfolge der Bereiche: Einsatzabteilung, Jugendfeuerwehr, Wettkampfgruppe, Altersabteilung, Atemschutz, Führungskräfte",
+  "Fotos werden vor dem Hochladen automatisch verkleinert – spart Speicher und geht schneller",
+  "Personalakte (Admin): Übersicht der runden Geburtstage im ganzen Jahr, Dienstjahre zählen ab dem 14. Lebensjahr",
 ];
 
 export const CATEGORIES = {
@@ -25,10 +23,10 @@ export const PRIORITIES = {
 };
 
 export const BEREICHE = {
-  jugendfeuerwehr: { label: "Jugendfeuerwehr", short: "JF", color: "#B8791A" },
   einsatzabteilung: { label: "Einsatzabteilung", short: "EA", color: "#C1272D" },
-  altersabteilung: { label: "Altersabteilung", short: "AA", color: "#5C5F58" },
+  jugendfeuerwehr: { label: "Jugendfeuerwehr", short: "JF", color: "#B8791A" },
   wettkampfgruppe: { label: "Wettkampfgruppe", short: "WK", color: "#1F6F5C" },
+  altersabteilung: { label: "Altersabteilung", short: "AA", color: "#5C5F58" },
   atemschutz: { label: "Atemschutz", short: "AS", color: "#2C6E8F" },
   fuehrungskraefte: { label: "Führungskräfte", short: "FK", color: "#8A3B5C" },
 };
@@ -46,3 +44,6 @@ export const WEEKDAYS_SHORT = ["So","Mo","Di","Mi","Do","Fr","Sa"];
 
 export const GRUPPENFUEHRER_CATEGORIES = ["uebung", "brandwache"];
 export const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", warm: "Warmer Einsatz", einsatznah: "Einsatznahe Übung" };
+
+// Runde Geburtstage, die in der Jahresübersicht erscheinen (zusätzlich zu allen Zehnern ab 20).
+export const RUNDE_GEBURTSTAGE_EXTRA = [18];

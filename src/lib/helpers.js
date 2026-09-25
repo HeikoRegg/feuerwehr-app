@@ -157,3 +157,47 @@ export function totalHeadcount(ev) {
   const responses = ev.responses || {}; const guests = ev.guests || {};
   return Object.entries(responses).filter(([, v]) => v === "zu").reduce((sum, [n]) => sum + 1 + (guests[n] || 0), 0);
 }
+
+// Fotos vor dem Hochladen verkleinern: längste Seite max. 1600 px, JPEG in guter Qualität.
+// Andere Dateien (PDF usw.) und Fotos, die sich nicht lesen lassen, bleiben unverändert.
+export async function compressImage(file, maxSize = 1600, quality = 0.82) {
+  try {
+    if (!file || !file.type || !file.type.startsWith("image/") || /gif|svg/.test(file.type)) return file;
+    let bitmap;
+    try { bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch (e) {
+      bitmap = await new Promise((resolve, reject) => {
+        const img = new Image(); const url = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+        img.src = url;
+      });
+    }
+    const w = bitmap.width, h = bitmap.height;
+    const scale = Math.min(1, maxSize / Math.max(w, h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+    const name = (file.name || "foto").replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch (e) {
+    return file;
+  }
+}
+
+// Dienstjahre zählen erst ab dem 14. Lebensjahr: Maßgeblich ist das spätere Datum
+// von Eintritt und 14. Geburtstag. Ohne Geburtsdatum gilt das Eintrittsdatum.
+export function dienstbeginn(eintrittsdatum, geburtsdatum) {
+  if (!eintrittsdatum) return null;
+  if (!geburtsdatum) return eintrittsdatum;
+  const mit14 = `${Number(geburtsdatum.slice(0, 4)) + 14}${geburtsdatum.slice(4)}`;
+  return mit14 > eintrittsdatum ? mit14 : eintrittsdatum;
+}
+export function dienstjahreImJahr(eintrittsdatum, geburtsdatum, jahr = currentYear()) {
+  const beginn = dienstbeginn(eintrittsdatum, geburtsdatum);
+  return beginn ? jahr - Number(beginn.slice(0, 4)) : null;
+}
