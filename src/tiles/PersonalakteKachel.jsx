@@ -1,0 +1,303 @@
+import React, { useState, useEffect } from "react";
+import { ArrowLeft, ChevronRight, Plus, X } from "lucide-react";
+import { supabase } from "../supabaseClient";
+import { FUEHRERSCHEIN_KLASSEN, JUBILAEUMS_JAHRE } from "../lib/constants";
+import { currentYear, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
+import { styles } from "../lib/styles";
+import { SearchBox } from "../components/Shared";
+
+// ============================================================================
+// Personalakte – sichtbar nur für die Person selbst und den Admin.
+// Alle Daten laufen ausschließlich über die geschützte Serverfunktion
+// "personalakte" (Netlify), nie direkt über die öffentliche Datenbank.
+// ============================================================================
+export const emptyAkte = () => ({
+  strasse: "", plz: "", ort: "", email: "", telefon: "", geburtsdatum: "",
+  arbeitgeber: { name: "", telefon: "", email: "" },
+  notfallkontakt: { name: "", telefon: "" },
+  bemerkung: "", eintrittsdatum: "",
+  lehrgaenge: [], leistungsabzeichen: [], funktionen: [], mitgliedsverlauf: [],
+  befoerderungen: [], ehrungen: [],
+});
+export function normalizeAkte(d) {
+  const b = emptyAkte(); d = d || {};
+  return {
+    ...b, ...d,
+    arbeitgeber: { ...b.arbeitgeber, ...(d.arbeitgeber || {}) },
+    notfallkontakt: { ...b.notfallkontakt, ...(d.notfallkontakt || {}) },
+    lehrgaenge: d.lehrgaenge || [], leistungsabzeichen: d.leistungsabzeichen || [], funktionen: d.funktionen || [],
+    mitgliedsverlauf: d.mitgliedsverlauf || [], befoerderungen: d.befoerderungen || [], ehrungen: d.ehrungen || [],
+  };
+}
+export function aktuellerRang(akte) {
+  const list = [...((akte && akte.befoerderungen) || [])].filter((b) => b.rang).sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+  return list.length ? list[list.length - 1] : null;
+}
+export function nextBirthdayInfo(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const today = new Date(todayISO() + "T00:00:00");
+  let next = new Date(today.getFullYear(), m - 1, d);
+  if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+  return { days: Math.round((next - today) / 86400000), age: next.getFullYear() - y, date: next };
+}
+
+export function AkteSection({ title, children, adminOnly }) {
+  return (
+    <div style={styles.kontrollRow}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", letterSpacing: "0.04em", marginBottom: 8 }}>{title}{adminOnly && <span style={{ fontWeight: 600, color: "#A5A79F" }}> · nur Admin trägt ein</span>}</div>
+      {children}
+    </div>
+  );
+}
+export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2 }}>{label}</div>
+      {readOnly ? (
+        <div style={{ fontSize: 13, color: "#2C2F2A", minHeight: 18 }}>{type === "date" ? fmtDate(value) : (value || "—")}</div>
+      ) : type === "textarea" ? (
+        <textarea style={{ ...styles.input, minHeight: 60, resize: "vertical", fontSize: 13 }} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input style={{ ...styles.input, padding: "7px 9px", fontSize: 13 }} type={type} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+// Liste aus Einträgen mit Titel/Datum (Leistungsabzeichen, Ehrungen, Mitgliedsverlauf, Beförderungen)
+export function AkteList({ items, onChange, readOnly, textKey = "titel", textLabel = "Bezeichnung", options, addLabel = "Eintrag hinzufügen" }) {
+  const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  const sorted = [...items].sort((a, b) => (a.datum || "9999").localeCompare(b.datum || "9999"));
+  return (
+    <div>
+      {sorted.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Einträge.</div>}
+      {sorted.map((it) => (
+        readOnly ? (
+          <div key={it.id} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{it[textKey] || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
+        ) : (
+          <div key={it.id} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+            {options ? (
+              <select style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })}>
+                <option value="">— {textLabel} wählen —</option>
+                {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                {it[textKey] && !options.includes(it[textKey]) && <option value={it[textKey]}>{it[textKey]}</option>}
+              </select>
+            ) : (
+              <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder={textLabel} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })} />
+            )}
+            <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={it.datum || ""} onChange={(e) => update(it.id, { datum: e.target.value })} />
+            <button style={styles.tinyIconBtn} aria-label="Entfernen" onClick={() => onChange(items.filter((x) => x.id !== it.id))}><X size={12} /></button>
+          </div>
+        )
+      ))}
+      {!readOnly && <button style={styles.smallAddBtn} onClick={() => onChange([...items, { id: uid(), [textKey]: "", datum: "" }])}><Plus size={12} /> {addLabel}</button>}
+    </div>
+  );
+}
+export function ChipPicker({ options, selected, onToggle, readOnly, emptyHint }) {
+  if (!options.length) return <div style={{ fontSize: 12, color: "#A5A79F" }}>{emptyHint}</div>;
+  if (readOnly) return <div style={{ fontSize: 12.5, color: "#2C2F2A" }}>{selected.length ? selected.join(", ") : "—"}</div>;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {options.map((o) => {
+        const on = selected.includes(o);
+        return <button key={o} onClick={() => onToggle(o)} style={{ ...styles.categoryChip, fontSize: 11.5, padding: "4px 10px", background: on ? "#2C2F2A" : "#F3F1EC", color: on ? "white" : "#5C5F58", borderColor: on ? "#2C2F2A" : "#E2DFD6" }}>{o}</button>;
+      })}
+    </div>
+  );
+}
+
+export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onClose }) {
+  const [target, setTarget] = useState(isAdmin ? null : me);
+  const [search, setSearch] = useState("");
+  const [akte, setAkte] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [uploadingId, setUploadingId] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [errorText, setErrorText] = useState("");
+
+  useEffect(() => {
+    if (!target) { setAkte(null); if (isAdmin) loadOverview(); return; }
+    loadAkte(target);
+  }, [target]);
+
+  async function loadOverview() {
+    setErrorText("");
+    const r = await callAuthed("personalakte", { action: "list" });
+    if (r.ok) setOverview(r.data.items || []);
+    else if (r.data.error === "abgebrochen") onClose();
+    else setErrorText(r.data.error || "Übersicht konnte nicht geladen werden.");
+  }
+  async function loadAkte(name) {
+    setLoading(true); setErrorText("");
+    const r = await callAuthed("personalakte", { action: "get", target: name });
+    setLoading(false);
+    if (r.ok) { setAkte(normalizeAkte(r.data.data)); setDirty(false); }
+    else if (r.data.error === "abgebrochen") { if (isAdmin) setTarget(null); else onClose(); }
+    else setErrorText(r.data.error || "Personalakte konnte nicht geladen werden.");
+  }
+  function upd(patch) { setAkte((a) => ({ ...a, ...patch })); setDirty(true); }
+  async function save(data) {
+    setSaving(true);
+    const clean = { ...data, lehrgaenge: data.lehrgaenge.map(({ photoUrl, ...rest }) => rest) };
+    const r = await callAuthed("personalakte", { action: "save", target, data: clean });
+    setSaving(false);
+    if (r.ok) { setDirty(false); return true; }
+    if (r.data.error !== "abgebrochen") flashError(r.data.error || "Personalakte konnte nicht gespeichert werden.");
+    return false;
+  }
+  async function uploadLehrgangFoto(id, file) {
+    if (!file) return;
+    setUploadingId(id);
+    try {
+      const r = await callAuthed("personalakte", { action: "uploadUrl", target, filename: file.name });
+      if (!r.ok) throw new Error(r.data.error || "Upload nicht möglich.");
+      const { error } = await supabase.storage.from("personalakte").uploadToSignedUrl(r.data.path, r.data.uploadToken, file);
+      if (error) throw error;
+      const next = { ...akte, lehrgaenge: akte.lehrgaenge.map((l) => (l.id === id ? { ...l, photoPath: r.data.path } : l)) };
+      if (await save(next)) await loadAkte(target);
+    } catch (e) { flashError("Foto-Upload fehlgeschlagen."); }
+    setUploadingId(null);
+  }
+  function back() {
+    if (dirty && !window.confirm("Es gibt ungespeicherte Änderungen. Trotzdem zurück?")) return;
+    if (isAdmin && target) setTarget(null); else onClose();
+  }
+
+  // ---------- Admin-Übersicht ----------
+  if (isAdmin && !target) {
+    const items = overview || [];
+    const byName = Object.fromEntries(items.map((i) => [i.name, i]));
+    const geburtstage = items.map((i) => ({ ...i, bd: nextBirthdayInfo(i.geburtsdatum) })).filter((i) => i.bd && i.bd.days <= 30).sort((a, b) => a.bd.days - b.bd.days);
+    const jubilaeen = items.filter((i) => i.eintrittsdatum).map((i) => ({ ...i, jahre: currentYear() - Number(i.eintrittsdatum.slice(0, 4)) })).filter((i) => JUBILAEUMS_JAHRE.includes(i.jahre)).sort((a, b) => b.jahre - a.jahre);
+    return (
+      <div>
+        <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Zurück</button></div>
+        <div style={styles.modalTitle}>Personalakten</div>
+        {errorText && <div style={styles.errorText}>{errorText}</div>}
+        {overview === null && !errorText && <div style={{ fontSize: 12.5, color: "#8A8C86", marginTop: 12 }}>Lädt …</div>}
+        {overview !== null && (
+          <div style={{ marginTop: 14 }}>
+            <AkteSection title="GEBURTSTAGE (NÄCHSTE 30 TAGE)">
+              {geburtstage.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine anstehenden Geburtstage.</div> : geburtstage.map((g) => (
+                <div key={g.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{g.name}</strong> wird {g.bd.age} · {g.bd.days === 0 ? "heute 🎉" : g.bd.days === 1 ? "morgen" : `in ${g.bd.days} Tagen`} <span style={{ color: "#8A8C86" }}>({fmtDate(g.bd.date.toISOString().slice(0, 10))})</span></div>
+              ))}
+            </AkteSection>
+            <AkteSection title={`DIENSTJUBILÄEN ${currentYear()}`}>
+              {jubilaeen.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine Jubiläen in diesem Jahr (bzw. Eintrittsdaten noch nicht eingetragen).</div> : jubilaeen.map((j) => (
+                <div key={j.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{j.name}</strong> · {j.jahre} Jahre <span style={{ color: "#8A8C86" }}>(Eintritt {fmtDate(j.eintrittsdatum)})</span></div>
+              ))}
+            </AkteSection>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "14px 0 6px", letterSpacing: "0.04em" }}>ALLE MITGLIEDER</div>
+            <SearchBox value={search} onChange={setSearch} placeholder="Name suchen …" />
+            {roster.filter((r) => matchesSearch(r.name, search)).map((r) => (
+              <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => setTarget(r.name)}>
+                <span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {byName[r.name].rang}</span>}</span>
+                <ChevronRight size={15} color="#A5A79F" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- Einzelne Akte ----------
+  const entry = roster.find((r) => r.name === target);
+  const klassen = (entry && entry.fuehrerscheinKlassen) || [];
+  const rang = akte ? aktuellerRang(akte) : null;
+  const dienstjahre = akte && akte.eintrittsdatum ? currentYear() - Number(akte.eintrittsdatum.slice(0, 4)) : null;
+  return (
+    <div>
+      <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
+      <div style={styles.modalTitle}>Personalakte {target}</div>
+      {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{rang.rang}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
+      <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 12px" }}>Nur {isAdmin && target !== me ? `${target} und` : "du und"} der Admin können diese Akte sehen.</div>
+      {errorText && <div style={styles.errorText}>{errorText}</div>}
+      {loading && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>}
+      {akte && !loading && (
+        <>
+          <AkteSection title="PERSÖNLICHES">
+            <AkteField label="Geburtsdatum" type="date" value={akte.geburtsdatum} onChange={(v) => upd({ geburtsdatum: v })} />
+            <AkteField label="Straße und Hausnummer" value={akte.strasse} onChange={(v) => upd({ strasse: v })} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ width: 90 }}><AkteField label="PLZ" value={akte.plz} onChange={(v) => upd({ plz: v })} /></div>
+              <div style={{ flex: 1 }}><AkteField label="Ort" value={akte.ort} onChange={(v) => upd({ ort: v })} /></div>
+            </div>
+            <AkteField label="Telefon" type="tel" value={akte.telefon} onChange={(v) => upd({ telefon: v })} />
+            <AkteField label="E-Mail" type="email" value={akte.email} onChange={(v) => upd({ email: v })} />
+          </AkteSection>
+
+          <AkteSection title="NOTFALLKONTAKT">
+            <AkteField label="Name" value={akte.notfallkontakt.name} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, name: v } })} />
+            <AkteField label="Telefon" type="tel" value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
+          </AkteSection>
+
+          <AkteSection title="ARBEITGEBER">
+            <AkteField label="Name" value={akte.arbeitgeber.name} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, name: v } })} />
+            <AkteField label="Telefon" type="tel" value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
+            <AkteField label="E-Mail" type="email" value={akte.arbeitgeber.email} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, email: v } })} />
+          </AkteSection>
+
+          <AkteSection title="FEUERWEHR">
+            <AkteField label="Eintrittsdatum" type="date" value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
+            {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()})</div>}
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
+            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="z. B. Übertritt Einsatzabteilung" />
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen</div>
+            <ChipPicker options={config.funktionen || []} selected={akte.funktionen} onToggle={(f) => upd({ funktionen: akte.funktionen.includes(f) ? akte.funktionen.filter((x) => x !== f) : [...akte.funktionen, f] })} emptyHint="Noch keine Funktionen angelegt (Admin: Einstellungen)." />
+          </AkteSection>
+
+          <AkteSection title="RANG & BEFÖRDERUNGEN" adminOnly>
+            <AkteList items={akte.befoerderungen} onChange={(v) => upd({ befoerderungen: v })} readOnly={!isAdmin} textKey="rang" textLabel="Rang" options={config.raenge || []} addLabel="Beförderung eintragen" />
+            {isAdmin && (config.raenge || []).length === 0 && <div style={{ fontSize: 11, color: "#B8791A", marginTop: 4 }}>Bitte zuerst die Ränge in den Einstellungen anlegen.</div>}
+          </AkteSection>
+
+          <AkteSection title="EHRUNGEN & AUSZEICHNUNGEN" adminOnly>
+            <AkteList items={akte.ehrungen} onChange={(v) => upd({ ehrungen: v })} readOnly={!isAdmin} textLabel="z. B. Ehrenzeichen Silber" addLabel="Ehrung eintragen" />
+          </AkteSection>
+
+          <AkteSection title="LEISTUNGSABZEICHEN">
+            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} textLabel="z. B. Leistungsabzeichen Bronze" addLabel="Abzeichen eintragen" />
+          </AkteSection>
+
+          <AkteSection title="LEHRGÄNGE">
+            {akte.lehrgaenge.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Lehrgänge.</div>}
+            {akte.lehrgaenge.map((l) => (
+              <div key={l.id} style={{ borderBottom: "1px dashed #E2DFD6", paddingBottom: 8, marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder="z. B. Truppführer" value={l.titel || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, titel: e.target.value } : x)) })} />
+                  <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={l.datum || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, datum: e.target.value } : x)) })} />
+                  <button style={styles.tinyIconBtn} aria-label="Lehrgang entfernen" onClick={() => { if (window.confirm("Lehrgang samt Nachweis-Foto entfernen?")) upd({ lehrgaenge: akte.lehrgaenge.filter((x) => x.id !== l.id) }); }}><X size={12} /></button>
+                </div>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                  {l.photoUrl && <img src={l.photoUrl} alt="Nachweis" style={{ width: 70, height: 50, objectFit: "cover", borderRadius: 4, border: "1px solid #E2DFD6", cursor: "zoom-in" }} onClick={() => onOpenPhoto(l.photoUrl)} />}
+                  <label style={styles.smallAddBtn}>
+                    {uploadingId === l.id ? "Lädt hoch …" : <><Plus size={12} /> {l.photoPath ? "Foto ersetzen" : "Nachweis-Foto"}</>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) uploadLehrgangFoto(l.id, e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                </div>
+              </div>
+            ))}
+            <button style={styles.smallAddBtn} onClick={() => upd({ lehrgaenge: [...akte.lehrgaenge, { id: uid(), titel: "", datum: "", photoPath: null }] })}><Plus size={12} /> Lehrgang hinzufügen</button>
+          </AkteSection>
+
+          <AkteSection title="FÜHRERSCHEINKLASSEN">
+            <ChipPicker options={FUEHRERSCHEIN_KLASSEN} selected={klassen} onToggle={(k) => onSetKlassen(target, klassen.includes(k) ? klassen.filter((x) => x !== k) : [...klassen, k])} />
+            <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Wird sofort gespeichert. Bestimmt, ob PKW/LKW bei der Führerscheinkontrolle und den Fahrzeugeinweisungen erscheinen. FF = Feuerwehrführerschein.</div>
+          </AkteSection>
+
+          <AkteSection title="BEMERKUNG">
+            <AkteField label="" type="textarea" value={akte.bemerkung} onChange={(v) => upd({ bemerkung: v })} placeholder="Freitext …" />
+          </AkteSection>
+
+          <div style={{ position: "sticky", bottom: 0, background: "#F3F1EC", padding: "10px 0 4px" }}>
+            <button style={{ ...styles.saveBtn, width: "100%", opacity: dirty ? 1 : 0.6 }} disabled={saving || !dirty} onClick={() => save(akte)}>{saving ? "Speichert …" : dirty ? "Änderungen speichern" : "Alles gespeichert"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
