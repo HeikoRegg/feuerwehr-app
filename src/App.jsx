@@ -584,7 +584,7 @@ export default function App() {
       return `${divider}<div style="margin-bottom:6px"><strong>${idx + 1}. ${escapeHtml(point)}</strong><p style="white-space:pre-wrap;">${escapeHtml(s.protokoll[idx] || "—")}</p>${voteHtml}</div>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(s.title)}</title></head>
-<body style="font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#2C2F2A;line-height:1.5;">
+<body style="font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#2C2F2A;line-height:1.5;"><button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button><style>@media print { .no-print { display:none !important; } } @media screen { body { padding-top: 46px !important; } }</style>
 <div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:14px;margin-bottom:18px;">
   <img src="${LION_ICON}" alt="" style="width:48px;height:48px;object-fit:contain;" />
   <div><div style="font-size:20px;font-weight:700;letter-spacing:0.03em;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">Ausschuss-Protokoll</div></div>
@@ -771,7 +771,7 @@ th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left;}
 th{background:#F3F1EC;} h2{margin-bottom:4px;}
 .print-btn{position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);}
 @media print { .print-btn { display:none; } }</style>
-</head><body>${bodyHtml}
+</head><body><button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button><style>@media print { .no-print { display:none !important; } } @media screen { body { padding-top: 46px !important; } }</style>${bodyHtml}
 <p style="margin-top:24px;font-size:12px;color:#8A8C86;">Am Handy: über das Teilen-Symbol deines Browsers zusätzlich speichern/weiterleiten möglich.</p>
 <button class="print-btn" onclick="window.print()">🖨️ Drucken / Als PDF sichern</button>
 </body></html>`;
