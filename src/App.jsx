@@ -8,6 +8,8 @@ import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, curren
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
 import { AppContext } from "./AppContext";
+import { oeffneBericht, registriereBerichtAnzeige } from "./lib/bericht";
+import BerichtAnsicht from "./components/BerichtAnsicht";
 
 // Kacheln werden erst geladen, wenn man sie öffnet – so startet die App immer gleich schnell.
 const kachelImporte = {
@@ -109,6 +111,8 @@ export default function App() {
   const [g26EditOpen, setG26EditOpen] = useState(false);
   const [g26DateInput, setG26DateInput] = useState("");
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [bericht, setBericht] = useState(null); // Handy: Berichtsvorschau mit PDF-Teilen
+  useEffect(() => { registriereBerichtAnzeige(setBericht); return () => registriereBerichtAnzeige(null); }, []);
   const [showPersonalakte, setShowPersonalakte] = useState(false); // Foto-Vollbildansicht, gilt für jedes Foto in der App
 
   // Beide "gesehen"-Listen dauerhaft im Browser sichern, damit der Neu-Punkt/die Zahl
@@ -596,42 +600,34 @@ export default function App() {
   function escapeHtml(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function exportSitzungFile(sitzungId) {
     const s = sitzungen.find((x) => x.id === sitzungId); if (!s) return;
-    const anwesenheitRows = aktiveMitglieder.filter((r) => r.ausschuss).map((r) => {
+    const blocks = [
+      { t: "h1", text: s.title },
+      { t: "text", text: `${fmtDate(s.date)} · ${s.time} Uhr${s.location ? " · " + s.location : ""}`, grau: true },
+      { t: "linie" },
+      { t: "h3", text: "Anwesenheit" },
+    ];
+    const anwesenheit = aktiveMitglieder.filter((r) => r.ausschuss).map((r) => {
       const status = (s.anwesenheit || {})[r.name];
-      return `<li>${escapeHtml(r.name)} — ${status === "anwesend" ? "anwesend" : status === "entschuldigt" ? "entschuldigt" : "keine Angabe"}</li>`;
-    }).join("");
-    const agendaRows = s.tagesordnung.map((point, idx) => {
+      return `${r.name} – ${status === "anwesend" ? "anwesend" : status === "entschuldigt" ? "entschuldigt" : "keine Angabe"}`;
+    });
+    blocks.push(anwesenheit.length ? { t: "liste", items: anwesenheit } : { t: "text", text: "Keine Ausschussmitglieder eingetragen.", grau: true });
+    blocks.push({ t: "linie" });
+    s.tagesordnung.forEach((point, idx) => {
+      if (idx > 0) blocks.push({ t: "linie" });
+      blocks.push({ t: "h3", text: `${idx + 1}. ${point}` });
+      blocks.push({ t: "text", text: s.protokoll[idx] || "—" });
       const ab = (s.abstimmungen || {})[idx];
-      let voteHtml = "";
       if (ab && ab.finalized) {
         const r = voteResult(ab);
-        const votesList = Object.entries(ab.votes).map(([n, v]) => `${escapeHtml(n)}: ${v === "dafuer" ? "dafür" : "dagegen"}`).join(", ");
-        voteHtml = `<p style="margin-top:6px;">${ab.text ? `<em>„${escapeHtml(ab.text)}“</em><br/>` : ""}<strong>Abstimmung:</strong> ${r.dafuer} dafür · ${r.dagegen} dagegen — ${r.label}<br/><span style="font-size:12px;color:#5C5F58;">${votesList}</span></p>`;
+        if (ab.text) blocks.push({ t: "text", text: `„${ab.text}“`, kursiv: true });
+        blocks.push({ t: "text", text: `Abstimmung: ${r.dafuer} dafür · ${r.dagegen} dagegen – ${r.label}`, fett: true });
+        blocks.push({ t: "text", text: Object.entries(ab.votes).map(([n, v]) => `${n}: ${v === "dafuer" ? "dafür" : "dagegen"}`).join(", "), klein: true, grau: true });
       }
-      const divider = idx > 0 ? `<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>` : "";
-      return `${divider}<div style="margin-bottom:6px"><strong>${idx + 1}. ${escapeHtml(point)}</strong><p style="white-space:pre-wrap;">${escapeHtml(s.protokoll[idx] || "—")}</p>${voteHtml}</div>`;
-    }).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(s.title)}</title></head>
-<body style="font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#2C2F2A;line-height:1.5;"><button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button><style>@media print { .no-print { display:none !important; } } @media screen { body { padding-top: 46px !important; } }</style>
-<div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:14px;margin-bottom:18px;">
-  <img src="${LION_ICON}" alt="" style="width:48px;height:48px;object-fit:contain;" />
-  <div><div style="font-size:20px;font-weight:700;letter-spacing:0.03em;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">Ausschuss-Protokoll</div></div>
-</div>
-<h2 style="margin-bottom:4px;">${escapeHtml(s.title)}</h2>
-<p style="color:#5C5F58;margin-top:0;">${fmtDate(s.date)} · ${s.time} Uhr ${s.location ? "· " + escapeHtml(s.location) : ""}</p>
-<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>
-<p><strong>Anwesenheit</strong></p>
-<ul>${anwesenheitRows || "<li>Keine Ausschussmitglieder eingetragen.</li>"}</ul>
-<hr style="border:none;border-top:1px solid #E2DFD6;margin:16px 0;"/>
-${agendaRows}
-${s.links ? `<p><strong>Link:</strong> ${escapeHtml(s.links)}</p>` : ""}
-${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.attachments.map((a) => `<li><a href="${escapeHtml(a.url)}">${escapeHtml(a.name)}</a></li>`).join("")}</ul>` : ""}
-<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);" class="no-print">🖨️ Drucken / Als PDF sichern</button>
-<style>@media print { .no-print { display:none; } }</style>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    });
+    if (s.links || (s.attachments || []).length) blocks.push({ t: "linie" });
+    if (s.links) blocks.push({ t: "text", text: `Link: ${s.links}` });
+    if ((s.attachments || []).length) { blocks.push({ t: "h3", text: "Anhänge" }); blocks.push({ t: "liste", items: s.attachments.map((a) => a.name) }); }
+    oeffneBericht({ titel: `Protokoll ${s.title}`, untertitel: "Ausschuss-Protokoll", dateiname: `Protokoll_${s.title}_${s.date}`, blocks });
   }
 
   // --- Führerschein ---
@@ -791,28 +787,11 @@ ${(s.attachments || []).length > 0 ? `<p><strong>Anhänge:</strong></p><ul>${s.a
     }).catch(() => {});
   }
 
-  function openPreviewPage(bodyHtml, title) {
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px 60px;color:#2C2F2A;}
-table{border-collapse:collapse;width:100%;margin-top:12px;}
-th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left;}
-th{background:#F3F1EC;} h2{margin-bottom:4px;}
-.print-btn{position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.25);}
-@media print { .print-btn { display:none; } }</style>
-</head><body><button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button><style>@media print { .no-print { display:none !important; } } @media screen { body { padding-top: 46px !important; } }</style>${bodyHtml}
-<p style="margin-top:24px;font-size:12px;color:#8A8C86;">Am Handy: über das Teilen-Symbol deines Browsers zusätzlich speichern/weiterleiten möglich.</p>
-<button class="print-btn" onclick="window.print()">🖨️ Drucken / Als PDF sichern</button>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-  }
   function exportCSV(rows, filename) {
-    const title = filename.replace(/\.csv$/i, "").replace(/_/g, " ");
-    const [header, ...body] = rows;
-    const theadHtml = `<tr>${header.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
-    const tbodyHtml = body.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
-    openPreviewPage(`<h2>${escapeHtml(title)}</h2><table><thead>${theadHtml}</thead><tbody>${tbodyHtml}</tbody></table>`, title);
+    const titel = filename.replace(/\.csv$/i, "").replace(/_/g, " ");
+    const [kopf, ...zeilen] = rows;
+    oeffneBericht({ titel, untertitel: `${titel} · erstellt am ${fmtDate(todayISO())}`, dateiname: filename.replace(/\.csv$/i, ""), querformat: kopf.length > 6,
+      blocks: [{ t: "tabelle", kopf, zeilen }, { t: "text", text: "Vertraulich – nur für den dienstlichen Gebrauch.", klein: true, grau: true }] });
   }
   function exportFuehrerschein() {
     const rows = [["Name", "PKW Status", "PKW bestätigt von", "PKW Datum", "LKW Status", "LKW bestätigt von", "LKW Datum", "LKW gültig bis"]];
@@ -1020,7 +999,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     return () => clearTimeout(t);
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
-  const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, openPreviewPage, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
+  const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
   Object.assign(appCtx, { bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
@@ -1688,6 +1667,8 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           </div>
         </div>
       )}
+
+      {bericht && <BerichtAnsicht modell={bericht} onClose={() => setBericht(null)} />}
 
       {lightboxSrc && (
         <div style={styles.lightboxBackdrop} onClick={() => setLightboxSrc(null)}>

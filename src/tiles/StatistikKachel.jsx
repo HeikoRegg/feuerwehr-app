@@ -3,8 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronDown, Printer } from "lucide-react";
 import { styles } from "../lib/styles";
-import { LION_ICON } from "../lib/icons";
-import { STATISTIK_REITER, berechneStatistik, jahreAuswahl, pct, statistikBerichtHtml } from "../lib/statistik";
+import { oeffneBericht } from "../lib/bericht";
+import { STATISTIK_REITER, berechneStatistik, jahreAuswahl, pct, statistikBericht } from "../lib/statistik";
 import { useApp } from "../AppContext";
 
 function Balken({ value, max, color }) {
@@ -75,13 +75,10 @@ export default function StatistikKachel() {
   const stat = useMemo(() => (akten ? berechneStatistik({ jahr, roster, events, sitzungen, vehicles, bewegung, akten }) : null), [akten, jahr, roster, events, sitzungen, vehicles, bewegung]);
 
   function drucken() {
-    const w = window.open("", "_blank");
-    if (!w) { flashError("Das Druckfenster wurde vom Browser blockiert."); return; }
-    w.document.open();
-    w.document.write(statistikBerichtHtml(stat, jahr, mitNamen, LION_ICON));
-    w.document.close();
+    if (!oeffneBericht(statistikBericht(stat, jahr, mitNamen))) { flashError("Das Druckfenster wurde vom Browser blockiert."); return; }
     setDruckAuswahl(false);
   }
+
 
   const d = stat && stat[reiter];
   return (

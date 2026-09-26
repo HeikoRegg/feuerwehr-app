@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient";
 import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, RUNDE_GEBURTSTAGE_EXTRA } from "../lib/constants";
 import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
-import { LION_ICON } from "../lib/icons";
+import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 
 // ============================================================================
@@ -216,20 +216,16 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   }
   async function arbeitgeberlisteDrucken() {
     if (agSelected.length === 0) return;
-    const w = window.open("", "_blank"); // sofort öffnen, sonst blockiert das Handy das Fenster
+    const w = bereiteFensterVor(); // PC: Fenster sofort öffnen, sonst blockiert der Browser es
     const r = await akteCall({ action: "arbeitgeber", names: agSelected });
     if (!r.ok) { if (w) w.close(); if (r.data.error !== "abgebrochen" && r.data.code !== "PIN_NOETIG") flashError(r.data.error || "Liste konnte nicht erstellt werden."); return; }
-    if (!w) { flashError("Das Druckfenster wurde vom Browser blockiert."); return; }
-    const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const rows = (r.data.items || []).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.arbeitgeber.name) || "—"}</td><td>${esc(i.arbeitgeber.telefon) || "—"}</td><td>${esc(i.arbeitgeber.email) || "—"}</td></tr>`).join("");
-    w.document.open();
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Arbeitgeberliste</title>
-<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px 70px;color:#2C2F2A;}table{border-collapse:collapse;width:100%;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left;}th{background:#F3F1EC;}.print-btn{position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;}@media print{.print-btn{display:none;}}</style></head><body><button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button><style>@media print { .no-print { display:none !important; } } @media screen { body { padding-top: 46px !important; } }</style>
-<div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:12px;"><img src="${LION_ICON}" style="width:44px;height:44px;object-fit:contain;"/><div><div style="font-size:19px;font-weight:700;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">Arbeitgeberliste · erstellt am ${fmtDate(todayISO())}</div></div></div>
-<table><thead><tr><th>Name</th><th>Arbeitgeber</th><th>Telefon</th><th>E-Mail</th></tr></thead><tbody>${rows}</tbody></table>
-<p style="font-size:11px;color:#8A8C86;margin-top:18px;">Vertraulich – enthält personenbezogene Daten. Nur für den dienstlichen Gebrauch.</p>
-<button class="print-btn" onclick="window.print()">🖨️ Drucken / Als PDF sichern</button></body></html>`);
-    w.document.close();
+    const zeilen = (r.data.items || []).map((i) => [i.name, i.arbeitgeber.name || "—", i.arbeitgeber.telefon || "—", i.arbeitgeber.email || "—"]);
+    const ok = oeffneBericht({ titel: "Arbeitgeberliste", untertitel: `Arbeitgeberliste · erstellt am ${fmtDate(todayISO())}`, dateiname: `Arbeitgeberliste_${todayISO()}`,
+      blocks: [
+        { t: "tabelle", kopf: ["Name", "Arbeitgeber", "Telefon", "E-Mail"], zeilen, breiten: [2, 3, 2, 3] },
+        { t: "text", text: "Vertraulich – enthält personenbezogene Daten. Nur für den dienstlichen Gebrauch.", klein: true, grau: true },
+      ] }, w);
+    if (!ok) { flashError("Das Druckfenster wurde vom Browser blockiert."); return; }
     setAgMode(false);
   }
   function upd(patch) { setAkte((a) => ({ ...a, ...patch })); setDirty(true); }

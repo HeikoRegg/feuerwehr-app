@@ -214,34 +214,32 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
   return { personal, ausbildung, einsatz, dienst };
 }
 
-// ---------------- Druckbericht (HTML) ----------------
-export function statistikBerichtHtml(stat, jahr, mitNamen, logo) {
-  const esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const bar = (value, max, color) => `<div style="flex:1;background:#EEEEEC;border-radius:4px;height:12px;overflow:hidden;"><div style="width:${max ? Math.min(100, Math.round((value / max) * 100)) : 0}%;background:${color || "#4A6670"};height:100%;border-radius:0 4px 4px 0;"></div></div>`;
-  const namen = (names, label) => (mitNamen && names && names.length ? `<div style="font-size:11px;color:#5C5F58;margin:0 0 5px 0;">${label ? esc(label) + ": " : ""}${esc(names.join(", "))}</div>` : "");
-  const zeile = (label, barHtml, wert) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;"><div style="width:180px;font-size:12px;">${esc(label)}</div>${barHtml}<div style="width:110px;text-align:right;font-size:12px;font-weight:700;">${wert}</div></div>`;
-  const section = (s) => {
-    if (s.nurMitNamen && !mitNamen) return "";
-    let inner;
-    if (!s.items.length) inner = `<div style="font-size:12px;color:#8A8C86;">${esc(s.empty || "Keine Daten.")}</div>`;
-    else if (s.type === "bars") {
-      const max = Math.max(1, ...s.items.map((i) => i.value || 0));
-      inner = s.items.map((i) => zeile(i.label, bar(i.value || 0, max, i.color || s.color), `${esc(i.value ?? "–")}${esc(i.suffix || "")}`) + namen(i.names)).join("");
-    } else {
-      inner = s.items.map((i) => zeile(i.label, bar(i.value, i.max, "#1F6F5C"), `${i.value} / ${i.max} (${pct(i.value, i.max)} %)`) + namen(i.names, i.namesLabel)).join("");
-    }
-    return `<div style="margin:14px 0;page-break-inside:avoid;"><div style="font-weight:700;font-size:13.5px;margin-bottom:4px;">${esc(s.title)}</div>${inner}${s.note ? `<div style="font-size:10.5px;color:#8A8C86;margin-top:3px;">${esc(s.note)}</div>` : ""}</div>`;
-  };
-  const teile = STATISTIK_REITER.map((t) => {
+// ---------------- Jahresbericht als Berichtsmodell (siehe lib/bericht.js) ----------------
+export function statistikBericht(stat, jahr, mitNamen) {
+  const blocks = [];
+  STATISTIK_REITER.forEach((t) => {
     const d = stat[t.key];
-    const kpis = d.kpis.map((k) => `<div style="flex:1;border:1px solid #E2DFD6;border-radius:6px;padding:8px;text-align:center;"><div style="font-size:18px;font-weight:700;">${esc(k.value)}${esc(k.suffix || "")}</div><div style="font-size:10.5px;color:#8A8C86;">${esc(k.label)}</div></div>`).join("");
-    return `<h2 style="border-bottom:2px solid #C1272D;padding-bottom:4px;margin-top:26px;font-size:16px;page-break-after:avoid;">${esc(t.label)}</h2>${d.note ? `<div style="font-size:11px;color:#8A8C86;">${esc(d.note)}</div>` : ""}<div style="display:flex;gap:8px;margin:10px 0;">${kpis}</div>${d.sections.map(section).join("")}`;
-  }).join("");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Jahresbericht ${jahr}</title>
-<style>body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;padding:0 16px 70px;color:#2C2F2A;} .print-btn{position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;} @media print{.print-btn,.no-print{display:none !important;}} @media screen{body{padding-top:46px !important;}}</style></head><body>
-<button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button>
-<div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:12px;"><img src="${logo}" style="width:48px;height:48px;object-fit:contain;"/><div><div style="font-size:20px;font-weight:700;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">Jahresbericht ${jahr} · Statistik · erstellt am ${new Date().toLocaleDateString("de-DE")}${mitNamen ? " · mit Namen – vertraulich" : ""}</div></div></div>
-${teile}
-<p style="font-size:10.5px;color:#8A8C86;margin-top:24px;">Gesperrte (ausgetretene) Mitglieder sind nicht mitgezählt, außer bei der Mitgliederentwicklung.</p>
-<button class="print-btn" onclick="window.print()">🖨️ Drucken / Als PDF sichern</button></body></html>`;
+    blocks.push({ t: "h2", text: t.label });
+    if (d.note) blocks.push({ t: "text", text: d.note, klein: true, grau: true });
+    blocks.push({ t: "kpis", items: d.kpis.map((k) => ({ value: `${k.value}${k.suffix || ""}`, label: k.label })) });
+    d.sections.forEach((s) => {
+      if (s.nurMitNamen && !mitNamen) return;
+      blocks.push({ t: "h3", text: s.title });
+      if (!s.items.length) blocks.push({ t: "text", text: s.empty || "Keine Daten.", grau: true });
+      else if (s.type === "bars") {
+        const max = Math.max(1, ...s.items.map((i) => i.value || 0));
+        blocks.push({ t: "balken", zeilen: s.items.map((i) => ({ label: i.label, value: i.value || 0, max, color: i.color || s.color, rechts: `${i.value ?? "–"}${i.suffix || ""}`, unter: mitNamen && i.names && i.names.length ? i.names.join(", ") : "" })) });
+      } else {
+        blocks.push({ t: "balken", zeilen: s.items.map((i) => ({ label: i.label, value: i.value, max: i.max, color: "#1F6F5C", rechts: `${i.value} / ${i.max} (${pct(i.value, i.max)} %)`, unter: mitNamen && i.names && i.names.length ? `${i.namesLabel ? i.namesLabel + ": " : ""}${i.names.join(", ")}` : "" })) });
+      }
+      if (s.note) blocks.push({ t: "text", text: s.note, klein: true, grau: true });
+    });
+  });
+  blocks.push({ t: "text", text: "Gesperrte (ausgetretene) Mitglieder sind nicht mitgezählt, außer bei der Mitgliederentwicklung.", klein: true, grau: true });
+  return {
+    titel: `Jahresbericht ${jahr}`,
+    untertitel: `Jahresbericht ${jahr} · Statistik · erstellt am ${new Date().toLocaleDateString("de-DE")}${mitNamen ? " · mit Namen – vertraulich" : ""}`,
+    dateiname: `Jahresbericht_${jahr}${mitNamen ? "_mit_Namen" : ""}`,
+    blocks,
+  };
 }

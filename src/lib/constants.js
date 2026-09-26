@@ -1,10 +1,9 @@
 import React from "react";
 
 export const APP_NAME = "Feuerwehr Regglisweiler";
-export const APP_VERSION = "2.6";
+export const APP_VERSION = "2.7";
 export const CHANGELOG = [
-  "Neue Kachel Statistik (Admin): Personal, Ausbildung, Einsatzbereitschaft und Dienstbetrieb mit Jahresauswahl",
-  "Jahresbericht zum Drucken oder als PDF – wahlweise mit oder ohne Namen",
+  "Drucken am Handy: Berichte und Listen öffnen sich jetzt mit Vorschau und dem Knopf \"Als PDF teilen / drucken\" – darüber drucken, in Dateien sichern oder per Mail verschicken",
 ];
 
 export const CATEGORIES = {
