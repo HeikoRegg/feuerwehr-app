@@ -59,6 +59,34 @@ export async function handler(event) {
       return json(200, { items });
     }
 
+    if (action === "statistik") {
+      // Nur für Admins; liefert ausschließlich die für die Statistik nötigen, reduzierten Werte –
+      // keine Adressen, Telefonnummern, Arbeitgeber oder Fotos.
+      if (!isAdmin) return json(403, { error: "Nur für Admins." });
+      const jahrVon = (d) => (d && /^\d{4}/.test(d) ? Number(d.slice(0, 4)) : null);
+      const { data } = await db.from("personalakten").select("name,data");
+      const items = (data || []).map((row) => {
+        const a = row.data || {};
+        const geb = a.geburtsdatum || "";
+        const ein = a.eintrittsdatum || "";
+        // Dienstjahre erst ab dem 14. Geburtstag
+        let beginn = ein;
+        if (ein && geb) { const mit14 = `${Number(geb.slice(0, 4)) + 14}${geb.slice(4)}`; if (mit14 > ein) beginn = mit14; }
+        return {
+          name: row.name,
+          geburtsjahr: jahrVon(geb),
+          eintrittsjahr: jahrVon(ein),
+          dienstbeginnJahr: jahrVon(beginn),
+          rang: aktuellerRang(a),
+          funktionen: (a.funktionen || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv" } : f)).filter((f) => f.status !== "ad").map((f) => f.name),
+          lehrgaenge: (a.lehrgaenge || []).map((l) => ({ titel: l.titel || "", jahr: jahrVon(l.datum) })),
+          leistungsabzeichen: (a.leistungsabzeichen || []).map((l) => ({ titel: l.titel || "", jahr: jahrVon(l.datum) })),
+          verlauf: (a.mitgliedsverlauf || []).map((v) => ({ text: v.text || "", jahr: jahrVon(v.datum) })),
+        };
+      });
+      return json(200, { items });
+    }
+
     if (action === "list") {
       if (!isAdmin) return json(403, { error: "Nur für Admins." });
       const { data } = await db.from("personalakten").select("name,data");

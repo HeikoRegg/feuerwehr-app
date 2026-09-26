@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, ArrowLeft, Bell, Car, ChevronDown, ChevronRight, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Bell, Car, ChevronDown, ChevronRight, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -17,6 +17,7 @@ const kachelImporte = {
   einstellungen: () => import("./tiles/EinstellungenKachel"),
   personalakte: () => import("./tiles/PersonalakteKachel"),
   bewegung: () => import("./tiles/BewegungsfahrtenKachel"),
+  statistik: () => import("./tiles/StatistikKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
@@ -24,6 +25,7 @@ const AusschussKachel = lazy(kachelImporte.ausschuss);
 const EinstellungenKachel = lazy(kachelImporte.einstellungen);
 const PersonalakteView = lazy(kachelImporte.personalakte);
 const BewegungsfahrtenKachel = lazy(kachelImporte.bewegung);
+const StatistikKachel = lazy(kachelImporte.statistik);
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
 
@@ -81,6 +83,7 @@ export default function App() {
   const [vehicles, setVehicles] = useState([]);
   const [bewegung, setBewegung] = useState(normalizeBewegung());
   const [showBewegung, setShowBewegung] = useState(false);
+  const [showStatistik, setShowStatistik] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
   const [sitzungDraft, setSitzungDraft] = useState(emptySitzungDraft());
   const [sitzungError, setSitzungError] = useState("");
@@ -245,12 +248,13 @@ export default function App() {
     return callServer(fn, { ...body, token: tok });
   }
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
   function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
   function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
+  function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTilePersonalakte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowPersonalakte(true); }
   function openTileSettings() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSettings(true); }
@@ -1442,6 +1446,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                 <span style={styles.tileLabel}>Bewegungsfahrten</span>
               </button>
             )}
+            {isAdmin && (
+              <button style={styles.tile} onClick={openTileStatistik}>
+                <BarChart3 size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Statistik</span>
+              </button>
+            )}
             <button style={styles.tile} onClick={openTilePersonalakte}>
               <FolderOpen size={26} color="#B8791A" />
               <span style={styles.tileLabel}>Personalakte</span>
@@ -1477,6 +1487,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
 
       {showSitzungen && <Suspense fallback={<KachelLaden />}><AusschussKachel /></Suspense>}
       {showBewegung && <Suspense fallback={<KachelLaden />}><BewegungsfahrtenKachel /></Suspense>}
+      {showStatistik && isAdmin && <Suspense fallback={<KachelLaden />}><StatistikKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>

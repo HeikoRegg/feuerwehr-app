@@ -1,10 +1,10 @@
 import React from "react";
 
 export const APP_NAME = "Feuerwehr Regglisweiler";
-export const APP_VERSION = "2.5";
+export const APP_VERSION = "2.6";
 export const CHANGELOG = [
-  "Neue Kachel Bewegungsfahrten: monatliche Einteilung der Maschinisten, Abfahrtskontrolle als Checkliste, Mängelmeldung an Admin und Gerätewart",
-  "Funktionen in der Personalakte mit Status aktiv / a.D. und Datum – Gruppenführer, Maschinist und Gerätewart werden daraus automatisch übernommen",
+  "Neue Kachel Statistik (Admin): Personal, Ausbildung, Einsatzbereitschaft und Dienstbetrieb mit Jahresauswahl",
+  "Jahresbericht zum Drucken oder als PDF – wahlweise mit oder ohne Namen",
 ];
 
 export const CATEGORIES = {
