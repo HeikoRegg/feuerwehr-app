@@ -77,6 +77,16 @@ async function migrate() {
   });
   if (changed) await setKv("roster", cleaned);
 
+  // Bisheriges Häkchen "Kann als Gruppenführer eingeteilt werden" einmalig als Funktion in die Personalakte übernehmen.
+  for (const r of cleaned) {
+    if (!r || !r.gruppenfuehrer) continue;
+    const { data: row } = await db.from("personalakten").select("data").eq("name", r.name).maybeSingle();
+    const akte = (row && row.data) || {};
+    const funktionen = akte.funktionen || [];
+    if (funktionen.some((f) => (typeof f === "string" ? f : f.name) === "Gruppenführer")) continue;
+    await db.from("personalakten").upsert({ name: r.name, data: { ...akte, funktionen: [...funktionen, { name: "Gruppenführer", status: "aktiv", seit: "", adSeit: "" }] }, updated_at: new Date().toISOString() });
+  }
+
   // Admin-Rechte einmalig aus der Konfiguration übernehmen (danach gilt nur noch app_users).
   const { data: admins } = await db.from("app_users").select("name").eq("is_admin", true);
   if (!admins || admins.length === 0) {

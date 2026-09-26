@@ -25,8 +25,8 @@ export async function handler(event) {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   try {
-    const { bereich, title, text, sender } = JSON.parse(event.body || "{}");
-    if (!bereich) return { statusCode: 400, body: "bereich fehlt" };
+    const { bereich, title, text, sender, an } = JSON.parse(event.body || "{}");
+    if (!bereich && !Array.isArray(an)) return { statusCode: 400, body: "bereich fehlt" };
 
     const roster = (await getKv("roster")) || [];
     const config = (await getKv("config")) || {};
@@ -38,7 +38,10 @@ export async function handler(event) {
 
     const { data: subs, error } = await supabase.from("push_subscriptions").select("*");
     if (error) throw error;
-    const relevant = (subs || []).filter((s) => s.name && s.name !== sender && siehtBereich(s.name));
+    // Entweder gezielt an bestimmte Personen (z. B. Bewegungsfahrt, Mangel) oder an einen ganzen Bereich.
+    const relevant = (subs || []).filter((s) => s.name && !eintrag(s.name).gesperrt && (Array.isArray(an)
+      ? an.includes(s.name)
+      : s.name !== sender && siehtBereich(s.name)));
 
     await Promise.allSettled(relevant.map(async (sub) => {
       const badge = (sub.badge_count || 0) + 1;

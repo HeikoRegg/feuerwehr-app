@@ -6,7 +6,7 @@ import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadco
 import { styles } from "../lib/styles";
 
 // Einfache Liste zum Pflegen von Auswahlwerten (Ränge, Funktionen) in den Einstellungen.
-export function SimpleListEditor({ items, onChange, placeholder }) {
+export function SimpleListEditor({ items, onChange, placeholder, locked = [] }) {
   const [input, setInput] = useState("");
   const add = () => { const t = input.trim(); if (!t || items.includes(t)) return; onChange([...items, t]); setInput(""); };
   const move = (idx, dir) => { const next = [...items]; const j = idx + dir; if (j < 0 || j >= next.length) return; [next[idx], next[j]] = [next[j], next[idx]]; onChange(next); };
@@ -18,11 +18,11 @@ export function SimpleListEditor({ items, onChange, placeholder }) {
       </div>
       {items.map((it, idx) => (
         <div key={it} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: "5px 8px", marginBottom: 4 }}>
-          <span style={{ fontSize: 12.5 }}>{it}</span>
+          <span style={{ fontSize: 12.5 }}>{it}{locked.includes(it) && <Lock size={11} color="#A5A79F" style={{ marginLeft: 6, verticalAlign: -1 }} />}</span>
           <div style={{ display: "flex", gap: 4 }}>
             <button style={styles.tinyIconBtn} aria-label="nach oben" onClick={() => move(idx, -1)}><ChevronDown size={12} style={{ transform: "rotate(180deg)" }} /></button>
             <button style={styles.tinyIconBtn} aria-label="nach unten" onClick={() => move(idx, 1)}><ChevronDown size={12} /></button>
-            <button style={styles.tinyIconBtn} aria-label="entfernen" onClick={() => onChange(items.filter((x) => x !== it))}><X size={12} /></button>
+            {!locked.includes(it) && <button style={styles.tinyIconBtn} aria-label="entfernen" onClick={() => onChange(items.filter((x) => x !== it))}><X size={12} /></button>}
           </div>
         </div>
       ))}
@@ -48,7 +48,7 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}</span>
+        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}
@@ -83,9 +83,10 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
             </div>
           )}
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" checked={r.atemschutz} onChange={onToggleAtemschutz} /> Atemschutzträger (G26.3-Pflicht)</label>
-          {r.bereiche.includes("einsatzabteilung") && (
-            <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" checked={r.gruppenfuehrer} onChange={onToggleGruppenfuehrer} /> Kann als Gruppenführer eingeteilt werden</label>
-          )}
+          <div style={{ marginTop: 8, fontSize: 11.5, color: "#5C5F58" }}>
+            Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.maschinist && "Maschinist", r.geraetewart && "Gerätewart"].filter(Boolean).join(", ") || "—"}
+            <div style={{ fontSize: 10.5, color: "#A5A79F", marginTop: 2 }}>Wird in der Personalakte gepflegt.</div>
+          </div>
         </div>
       )}
     </div>

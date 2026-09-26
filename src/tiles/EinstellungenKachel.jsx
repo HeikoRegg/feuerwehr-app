@@ -1,6 +1,6 @@
 import React from "react";
 import { ArrowLeft, Check, ChevronDown, Plus, X } from "lucide-react";
-import { APP_VERSION } from "../lib/constants";
+import { APP_VERSION, FESTE_FUNKTIONEN, MONTHS } from "../lib/constants";
 import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
@@ -34,7 +34,6 @@ export default function EinstellungenKachel() {
                     onToggleBereich={(b) => toggleBereichAssignment(r.name, b)}
                     onTogglePerm={(b, f) => togglePermission(r.name, b, f)}
                     onToggleAtemschutz={() => toggleAtemschutz(r.name)}
-                    onToggleGruppenfuehrer={() => toggleGruppenfuehrer(r.name)}
                     onToggleAusschuss={() => toggleAusschuss(r.name)}
                     onToggleAusschussRecht={(f) => toggleAusschussRecht(r.name, f)}
                   />
@@ -58,7 +57,28 @@ export default function EinstellungenKachel() {
               <label style={{ ...styles.label, marginTop: 22 }}>Ränge (Auswahlliste für die Personalakte)</label>
               <SimpleListEditor items={config.raenge || []} onChange={(v) => persistConfig({ ...config, raenge: v })} placeholder="z. B. Oberfeuerwehrmann" />
               <label style={{ ...styles.label, marginTop: 16 }}>Funktionen / Qualifikationen (Auswahlliste)</label>
-              <SimpleListEditor items={config.funktionen || []} onChange={(v) => persistConfig({ ...config, funktionen: v })} placeholder="z. B. Maschinist" />
+              <SimpleListEditor items={config.funktionen || []} onChange={(v) => persistConfig({ ...config, funktionen: v })} placeholder="z. B. Sprechfunker" locked={FESTE_FUNKTIONEN} />
+              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Gruppenführer, Maschinist und Gerätewart sind fest und steuern Rechte in der App (Gruppenführer-Auswahl, Bewegungsfahrten, Mängelmeldungen).</div>
+              <label style={{ ...styles.label, marginTop: 22 }}>Bewegungsfahrten</label>
+              <div style={styles.capacityBox}>
+                <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 6 }}>Personen pro Fahrt</div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  {[1, 2].map((n) => (
+                    <button key={n} onClick={() => persistConfig({ ...config, bewegung: { ...config.bewegung, personen: n } })} style={{ ...styles.categoryChip, background: config.bewegung.personen === n ? "#2C2F2A" : "#F3F1EC", color: config.bewegung.personen === n ? "white" : "#5C5F58", borderColor: config.bewegung.personen === n ? "#2C2F2A" : "#E2DFD6" }}>{n === 1 ? "1 Person" : "2 Personen"}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 6 }}>In welchen Monaten wird gefahren?</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+                  {MONTHS.map((name, i) => {
+                    const m = i + 1; const an = (config.bewegung.monate || []).includes(m);
+                    return <button key={m} onClick={() => persistConfig({ ...config, bewegung: { ...config.bewegung, monate: an ? config.bewegung.monate.filter((x) => x !== m) : [...config.bewegung.monate, m].sort((a, b) => a - b) } })} style={{ ...styles.categoryChip, fontSize: 11.5, padding: "4px 9px", background: an ? "#1F6F5C" : "#F3F1EC", color: an ? "white" : "#8A8C86", borderColor: an ? "#1F6F5C" : "#E2DFD6", textDecoration: an ? "none" : "line-through" }}>{name.slice(0, 3)}</button>;
+                  })}
+                </div>
+                <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 6 }}>Checkliste – vor der Fahrt</div>
+                <SimpleListEditor items={config.bewegung.checklisteVor || []} onChange={(v) => persistConfig({ ...config, bewegung: { ...config.bewegung, checklisteVor: v } })} placeholder="Neuer Prüfpunkt" />
+                <div style={{ fontSize: 12, color: "#5C5F58", margin: "10px 0 6px" }}>Checkliste – nach der Fahrt</div>
+                <SimpleListEditor items={config.bewegung.checklisteNach || []} onChange={(v) => persistConfig({ ...config, bewegung: { ...config.bewegung, checklisteNach: v } })} placeholder="Neuer Prüfpunkt" />
+              </div>
               <label style={{ ...styles.label, marginTop: 22 }}>Zugangscode ändern</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input style={{ ...styles.input, flex: 1 }} placeholder={`aktuell: ${config.accessCode}`} value={newCode} onChange={(e) => setNewCode(e.target.value)} />

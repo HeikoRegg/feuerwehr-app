@@ -1,6 +1,6 @@
 import React from "react";
 import { supabase } from "../supabaseClient";
-import { BEREICH_KEYS, MONTHS, WEEKDAYS_SHORT } from "./constants";
+import { BEREICH_KEYS, BEWEGUNG_DEFAULT, FESTE_FUNKTIONEN, MONTHS, WEEKDAYS_SHORT } from "./constants";
 
 export function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 export function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -31,6 +31,8 @@ export const emptyRosterEntry = (name, hasPin) => ({
   rechte: BEREICH_KEYS.reduce((acc, k) => ({ ...acc, [k]: { calendar: false, news: false } }), {}),
   atemschutz: false,
   gruppenfuehrer: false,
+  maschinist: false,
+  geraetewart: false,
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },
   g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null },
@@ -144,8 +146,10 @@ export function normalizeConfig(cfg) {
   const legacyAdmin = cfg.adminName;
   return {
     doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear(),
-    raenge: [], funktionen: [],
+    raenge: [],
     ...cfg,
+    funktionen: [...FESTE_FUNKTIONEN, ...((cfg.funktionen || []).filter((f) => !FESTE_FUNKTIONEN.includes(f)))],
+    bewegung: { ...BEWEGUNG_DEFAULT, ...(cfg.bewegung || {}) },
     adminNames: cfg.adminNames || (legacyAdmin ? [legacyAdmin] : []),
     mainAdminName: cfg.mainAdminName || legacyAdmin || (cfg.adminNames && cfg.adminNames[0]) || null,
   };
@@ -200,4 +204,42 @@ export function dienstbeginn(eintrittsdatum, geburtsdatum) {
 export function dienstjahreImJahr(eintrittsdatum, geburtsdatum, jahr = currentYear()) {
   const beginn = dienstbeginn(eintrittsdatum, geburtsdatum);
   return beginn ? jahr - Number(beginn.slice(0, 4)) : null;
+}
+
+// ---------------- Bewegungsfahrten ----------------
+export function monatKey(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+export function monatLabel(key) { const [y, m] = key.split("-").map(Number); return `${MONTHS[m - 1]} ${y}`; }
+export function normalizeBewegung(b) {
+  return { plan: {}, maengel: [], ...(b || {}) };
+}
+// Wer darf ein Fahrzeug bewegen? Maschinist + gültiger LKW-Führerschein + Einweisung auf dem Fahrzeug.
+export function bewegungKandidaten(mitglieder, fahrzeugId) {
+  const heute = todayISO();
+  return mitglieder.filter((r) => r.maschinist && !r.gesperrt && r.fuehrerschein && r.fuehrerschein.lkw && r.fuehrerschein.lkw.hasLicense
+    && (!r.fuehrerschein.lkw.ablaufDatum || r.fuehrerschein.lkw.ablaufDatum >= heute)
+    && r.fahrzeuge && r.fahrzeuge[fahrzeugId] && r.fahrzeuge[fahrzeugId].confirmedBy);
+}
+// Letzter Monat, in dem jemand eingeteilt war (ausgesetzte Monate zählen nicht).
+function zuletztEingeteilt(plan, name, vorMonat) {
+  let last = "0000-00";
+  Object.entries(plan || {}).forEach(([key, m]) => {
+    if (key >= vorMonat || !m || m.status === "ausgesetzt") return;
+    Object.values(m.fahrzeuge || {}).forEach((f) => { if ((f.personen || []).includes(name) && key > last) last = key; });
+  });
+  return last;
+}
+// Faire Einteilung für einen Monat: wer am längsten nicht dran war, kommt zuerst.
+export function erstelleMonatsplan(bewegung, mitglieder, lkwFahrzeuge, personen, key) {
+  const fahrzeuge = {};
+  const vergeben = new Set();
+  const mix = (name) => { let h = 0; for (const c of name + key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+  lkwFahrzeuge.forEach((v) => {
+    const kandidaten = bewegungKandidaten(mitglieder, v.id)
+      .map((r) => ({ name: r.name, last: zuletztEingeteilt(bewegung.plan, r.name, key), neu: vergeben.has(r.name) ? 1 : 0 }))
+      .sort((a, b) => a.neu - b.neu || a.last.localeCompare(b.last) || mix(a.name) - mix(b.name));
+    const auswahl = kandidaten.slice(0, personen).map((k) => k.name);
+    auswahl.forEach((n) => vergeben.add(n));
+    fahrzeuge[v.id] = { personen: auswahl, erledigt: null };
+  });
+  return { status: "geplant", erstellt: todayISO(), fahrzeuge };
 }

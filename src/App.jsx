@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { BereichIcon } from "./components/BereichIcon";
-import { atemschutzStatus, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, fmtDate, formatDateParts, matchesSearch, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
+import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
 import { AppContext } from "./AppContext";
@@ -16,12 +16,14 @@ const kachelImporte = {
   ausschuss: () => import("./tiles/AusschussKachel"),
   einstellungen: () => import("./tiles/EinstellungenKachel"),
   personalakte: () => import("./tiles/PersonalakteKachel"),
+  bewegung: () => import("./tiles/BewegungsfahrtenKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
 const AusschussKachel = lazy(kachelImporte.ausschuss);
 const EinstellungenKachel = lazy(kachelImporte.einstellungen);
 const PersonalakteView = lazy(kachelImporte.personalakte);
+const BewegungsfahrtenKachel = lazy(kachelImporte.bewegung);
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
 
@@ -77,6 +79,8 @@ export default function App() {
   const [showSitzungen, setShowSitzungen] = useState(false);
   const [sitzungen, setSitzungen] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [bewegung, setBewegung] = useState(normalizeBewegung());
+  const [showBewegung, setShowBewegung] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
   const [sitzungDraft, setSitzungDraft] = useState(emptySitzungDraft());
   const [sitzungError, setSitzungError] = useState("");
@@ -112,7 +116,11 @@ export default function App() {
   const myEntry = roster.find((r) => r.name === me);
   // Gesperrte Mitglieder (ausgetreten) tauchen in keiner Liste mehr auf – ihre Daten bleiben aber erhalten.
   const aktiveMitglieder = useMemo(() => roster.filter((r) => !r.gesperrt), [roster]);
+  const isMaschinist = !!(myEntry && myEntry.maschinist);
+  const isGeraetewart = !!(myEntry && myEntry.geraetewart);
+  const lkwFahrzeuge = useMemo(() => vehicles.filter((v) => v.type === "lkw"), [vehicles]);
   const isAdmin = !!(me && config && config.adminNames && config.adminNames.includes(me));
+  const canSeeBewegung = isAdmin || isMaschinist || isGeraetewart;
   const isMainAdmin = !!(me && config && me === config.mainAdminName);
   const myBereiche = isAdmin ? BEREICH_KEYS : (myEntry ? myEntry.bereiche : []);
   const inEinsatzabteilung = myEntry && myEntry.bereiche.includes("einsatzabteilung");
@@ -127,8 +135,8 @@ export default function App() {
   const editableNewsBereiche = myBereiche.filter((b) => canEditNewsFor(b));
   const canEditAtemschutzUnterweisung = isAdmin || canEditCalendarFor("atemschutz");
 
-  const configRef = useRef(null); const rosterRef = useRef([]); const eventsRef = useRef([]); const noticesRef = useRef([]); const sitzungenRef = useRef([]); const vehiclesRef = useRef([]);
-  const lastEditRef = useRef({ config: 0, roster: 0, events: 0, notices: 0, sitzungen: 0, vehicles: 0 });
+  const configRef = useRef(null); const rosterRef = useRef([]); const eventsRef = useRef([]); const noticesRef = useRef([]); const sitzungenRef = useRef([]); const vehiclesRef = useRef([]); const bewegungRef = useRef(normalizeBewegung());
+  const lastEditRef = useRef({ config: 0, roster: 0, events: 0, notices: 0, sitzungen: 0, vehicles: 0, bewegungsfahrten: 0 });
   const EDIT_COOLDOWN_MS = 8000;
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { rosterRef.current = roster; }, [roster]);
@@ -136,6 +144,7 @@ export default function App() {
   useEffect(() => { noticesRef.current = notices; }, [notices]);
   useEffect(() => { sitzungenRef.current = sitzungen; }, [sitzungen]);
   useEffect(() => { vehiclesRef.current = vehicles; }, [vehicles]);
+  useEffect(() => { bewegungRef.current = bewegung; }, [bewegung]);
 
   async function fetchAllData(isInitial = false) {
     const cfgRaw = await storageGetSafe("config", true);
@@ -144,6 +153,7 @@ export default function App() {
     const noticesRaw = await storageGetSafe("notices", true);
     const sitzungenRaw = await storageGetSafe("sitzungen", true);
     const vehiclesRaw = await storageGetSafe("vehicles", true);
+    const bewegungRaw = await storageGetSafe("bewegungsfahrten", true);
 
     // Bei Folge-Abrufen NIE mit leeren Ergebnissen überschreiben, falls
     // ein Abruf mal fehlschlägt — nur beim allerersten Laden gilt "nichts gefunden" = leer.
@@ -153,6 +163,7 @@ export default function App() {
     let nts = noticesRaw ? JSON.parse(noticesRaw) : (isInitial ? [] : noticesRef.current);
     let szg = sitzungenRaw ? JSON.parse(sitzungenRaw).map(normalizeSitzung) : (isInitial ? [] : sitzungenRef.current);
     let vhs = vehiclesRaw ? JSON.parse(vehiclesRaw).map(normalizeVehicle) : (isInitial ? [] : vehiclesRef.current);
+    let bwg = bewegungRaw ? normalizeBewegung(JSON.parse(bewegungRaw)) : (isInitial ? normalizeBewegung() : bewegungRef.current);
 
     if (!isInitial) {
       const now = Date.now();
@@ -162,6 +173,7 @@ export default function App() {
       if (now - lastEditRef.current.notices < EDIT_COOLDOWN_MS) nts = noticesRef.current;
       if (now - lastEditRef.current.sitzungen < EDIT_COOLDOWN_MS) szg = sitzungenRef.current;
       if (now - lastEditRef.current.vehicles < EDIT_COOLDOWN_MS) vhs = vehiclesRef.current;
+      if (now - lastEditRef.current.bewegungsfahrten < EDIT_COOLDOWN_MS) bwg = bewegungRef.current;
     }
 
     // Automatische Endlöschung: Termine, die länger als 3 Jahre zurückliegen, werden endgültig entfernt.
@@ -172,7 +184,7 @@ export default function App() {
       if (evs.length !== before) storageSetWithRetry("events", JSON.stringify(evs), true);
     }
 
-    setConfig(cfg); setRoster(rst); setEvents(evs); setNotices(nts); setSitzungen(szg); setVehicles(vhs);
+    setConfig(cfg); setRoster(rst); setEvents(evs); setNotices(nts); setSitzungen(szg); setVehicles(vhs); setBewegung(bwg);
     return cfg;
   }
 
@@ -233,12 +245,13 @@ export default function App() {
     return callServer(fn, { ...body, token: tok });
   }
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
   function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
   function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
+  function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTilePersonalakte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowPersonalakte(true); }
   function openTileSettings() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSettings(true); }
 
@@ -293,6 +306,7 @@ export default function App() {
         else if (key === "notices") setNotices(rawValue || []);
         else if (key === "sitzungen") setSitzungen((rawValue || []).map(normalizeSitzung));
         else if (key === "vehicles") setVehicles((rawValue || []).map(normalizeVehicle));
+        else if (key === "bewegungsfahrten") setBewegung(normalizeBewegung(rawValue));
       } catch (e) { /* ignorieren, nächste Änderung kommt sicher */ }
     };
     const channel = supabase
@@ -420,6 +434,16 @@ export default function App() {
   function toggleAusschuss(name) { updateRosterEntry(name, (r) => ({ ...r, ausschuss: !r.ausschuss })); }
   function toggleAusschussRecht(name, field) { updateRosterEntry(name, (r) => ({ ...r, ausschussRechte: { ...r.ausschussRechte, [field]: !r.ausschussRechte[field] } })); }
   async function persistSitzungen(next) { lastEditRef.current.sitzungen = Date.now(); setSitzungen(next); const r = await storageSetWithRetry("sitzungen", JSON.stringify(next), true); if (!r.ok) flashError("Sitzung evtl. nicht dauerhaft gespeichert."); }
+  async function persistBewegung(next) { lastEditRef.current.bewegungsfahrten = Date.now(); setBewegung(next); const r = await storageSetWithRetry("bewegungsfahrten", JSON.stringify(next), true); if (!r.ok) flashError("Bewegungsfahrten evtl. nicht dauerhaft gespeichert."); }
+  // Gezielte Benachrichtigung an bestimmte Personen (Einteilung, Mängel).
+  function notifyPersons(an, title, text) {
+    if (!an || an.length === 0) return;
+    fetch("/.netlify/functions/send-push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ an, title, text, sender: me }) }).catch(() => {});
+  }
+  // Aus der Personalakte übernommene Funktionen (nur Ja/Nein) in der Mitgliederliste setzen.
+  function setFunktionsFlags(name, flags) {
+    updateRosterEntry(name, (r) => ({ ...r, ...flags }));
+  }
   async function persistVehicles(next) { lastEditRef.current.vehicles = Date.now(); setVehicles(next); const r = await storageSetWithRetry("vehicles", JSON.stringify(next), true); if (!r.ok) flashError("Fahrzeugliste evtl. nicht dauerhaft gespeichert."); }
 
   const effectiveBereiche = selectedBereiche === null ? myBereiche : selectedBereiche;
@@ -872,8 +896,18 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
         list.push({ key: "g26-due", text: `G26.3-Untersuchung ${when} (${fmtDate(myEntry.g26.dueDate)}).`, doctor: true, target: "atemschutz" });
       }
     }
+    const bm = bewegung.plan[monatKey()];
+    if (bm && bm.status === "geplant") {
+      lkwFahrzeuge.forEach((v) => {
+        const f = bm.fahrzeuge[v.id];
+        if (f && !f.erledigt && (f.personen || []).includes(me)) {
+          const mit = f.personen.filter((n) => n !== me);
+          list.push({ key: `bewegung-${monatKey()}-${v.id}`, text: `Bewegungsfahrt diesen Monat: ${v.name}${mit.length ? ` (mit ${mit.join(", ")})` : ""}. Bitte bis Monatsende erledigen und die Abfahrtskontrolle abhaken.`, target: "bewegung" });
+        }
+      });
+    }
     return list.filter((r) => !dismissedReminders[r.key]);
-  }, [myEntry, inEinsatzabteilung, dismissedReminders]);
+  }, [myEntry, inEinsatzabteilung, dismissedReminders, bewegung, lkwFahrzeuge, me]);
 
   const anmeldeschlussReminders = useMemo(() => {
     if (!me) return [];
@@ -960,7 +994,30 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
     }
   }, [phase, myEntry]);
 
+  // Automatische Einteilung der Bewegungsfahrten: sobald ein neuer (aktiver) Monat beginnt,
+  // teilt die App fair ein und benachrichtigt die Eingeteilten.
+  useEffect(() => {
+    if (phase !== "app" || !config || lkwFahrzeuge.length === 0) return;
+    const key = monatKey();
+    const monat = Number(key.slice(5));
+    if (!(config.bewegung.monate || []).includes(monat)) return;
+    if (bewegung.plan[key]) return;
+    // Noch niemand geeignet (z. B. direkt nach dem Update)? Dann erst einteilen, wenn Maschinisten hinterlegt sind.
+    if (lkwFahrzeuge.every((v) => bewegungKandidaten(aktiveMitglieder, v.id).length === 0)) return;
+    const t = setTimeout(() => {
+      if (bewegungRef.current.plan[key]) return;
+      const plan = erstelleMonatsplan(bewegungRef.current, aktiveMitglieder, lkwFahrzeuge, config.bewegung.personen || 2, key);
+      persistBewegung({ ...bewegungRef.current, plan: { ...bewegungRef.current.plan, [key]: plan } });
+      lkwFahrzeuge.forEach((v) => {
+        const p = plan.fahrzeuge[v.id].personen;
+        notifyPersons(p, `Bewegungsfahrt ${monatLabel(key)}`, `Du bist für ${v.name} eingeteilt${p.length > 1 ? ` (mit ${p.join(", ")})` : ""}.`);
+      });
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
+
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, openPreviewPage, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
+  Object.assign(appCtx, { bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
@@ -1127,7 +1184,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
           {myReminders.map((r) => (
             <div key={r.key} style={styles.reminderCard} className="card-enter">
               <AlertTriangle size={16} color="#B8791A" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) { setKachelReturnTo("calendar"); setShowKontrollen(r.target); } }}>
+              <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) { setKachelReturnTo("calendar"); if (r.target === "bewegung") setShowBewegung(true); else setShowKontrollen(r.target); } }}>
                 <div style={styles.reminderText}>{r.text}</div>
                 {r.doctor && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
                   <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
@@ -1379,6 +1436,12 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
                 {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
               </button>
             )}
+            {canSeeBewegung && (
+              <button style={styles.tile} onClick={openTileBewegung}>
+                <Truck size={26} color="#B8791A" />
+                <span style={styles.tileLabel}>Bewegungsfahrten</span>
+              </button>
+            )}
             <button style={styles.tile} onClick={openTilePersonalakte}>
               <FolderOpen size={26} color="#B8791A" />
               <span style={styles.tileLabel}>Personalakte</span>
@@ -1413,6 +1476,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       )}
 
       {showSitzungen && <Suspense fallback={<KachelLaden />}><AusschussKachel /></Suspense>}
+      {showBewegung && <Suspense fallback={<KachelLaden />}><BewegungsfahrtenKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>
@@ -1592,7 +1656,7 @@ th{background:#F3F1EC;} h2{margin-bottom:4px;}
       {showPersonalakte && (
         <div style={styles.fullscreenPage}>
           <Suspense fallback={<KachelLaden />}><PersonalakteView me={me} isAdmin={isAdmin} roster={roster} config={config} callAuthed={callAuthed} flashError={flashError}
-            onOpenPhoto={setLightboxSrc} onSetKlassen={setFuehrerscheinKlassen} onClose={closeKachelView} /></Suspense>
+            onOpenPhoto={setLightboxSrc} onSetKlassen={setFuehrerscheinKlassen} onSetFlags={setFunktionsFlags} onClose={closeKachelView} /></Suspense>
         </div>
       )}
 

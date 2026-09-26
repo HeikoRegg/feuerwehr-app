@@ -14,6 +14,7 @@ export const styles = {
   rosterItem: { width: "100%", padding: "10px 12px", borderRadius: 6, border: "1.5px solid #E2DFD6", background: "white", fontSize: 14, fontWeight: 500, textAlign: "left", color: "#2C2F2A", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
   adminTag: { fontSize: 9.5, fontWeight: 700, color: "#C1272D", background: "#FBEAEA", padding: "1px 6px", borderRadius: 3, textTransform: "uppercase" },
   adminTagHeader: { fontSize: 9.5, fontWeight: 700, color: "#1F2422", background: "#E8A33D", padding: "1px 6px", borderRadius: 3, textTransform: "uppercase", marginLeft: 4 },
+  funktionTag: { fontSize: 9, fontWeight: 700, color: "#4A6670", background: "#EAF0F1", padding: "1px 5px", borderRadius: 3, marginLeft: 5 },
   pinPendingTag: { fontSize: 9, fontWeight: 700, color: "#B8791A", background: "#FBF1E1", padding: "1px 6px", borderRadius: 3, textTransform: "uppercase", marginLeft: 5 },
   miniBereichTag: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: "#5C5F58", background: "#EEEEEC", padding: "1px 6px", borderRadius: 3 },
   miniBereichTagDark: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: "#B8BCB6", background: "#2C2F2A", padding: "1px 6px", borderRadius: 3 },

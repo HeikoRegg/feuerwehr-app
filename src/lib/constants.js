@@ -1,11 +1,10 @@
 import React from "react";
 
 export const APP_NAME = "Feuerwehr Regglisweiler";
-export const APP_VERSION = "2.4";
+export const APP_VERSION = "2.5";
 export const CHANGELOG = [
-  "Neue Reihenfolge der Bereiche: Einsatzabteilung, Jugendfeuerwehr, Wettkampfgruppe, Altersabteilung, Atemschutz, Führungskräfte",
-  "Fotos werden vor dem Hochladen automatisch verkleinert – spart Speicher und geht schneller",
-  "Personalakte (Admin): Übersicht der runden Geburtstage im ganzen Jahr, Dienstjahre zählen ab dem 14. Lebensjahr",
+  "Neue Kachel Bewegungsfahrten: monatliche Einteilung der Maschinisten, Abfahrtskontrolle als Checkliste, Mängelmeldung an Admin und Gerätewart",
+  "Funktionen in der Personalakte mit Status aktiv / a.D. und Datum – Gruppenführer, Maschinist und Gerätewart werden daraus automatisch übernommen",
 ];
 
 export const CATEGORIES = {
@@ -47,3 +46,30 @@ export const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", war
 
 // Runde Geburtstage, die in der Jahresübersicht erscheinen (zusätzlich zu allen Zehnern ab 20).
 export const RUNDE_GEBURTSTAGE_EXTRA = [18];
+
+// Diese drei Funktionen steuern Rechte in der App und lassen sich nicht löschen oder umbenennen.
+export const FESTE_FUNKTIONEN = ["Gruppenführer", "Maschinist", "Gerätewart"];
+export const FUNKTION_FLAG = { "Gruppenführer": "gruppenfuehrer", "Maschinist": "maschinist", "Gerätewart": "geraetewart" };
+
+// Bewegungsfahrten – Standardwerte (in den Einstellungen änderbar)
+export const BEWEGUNG_DEFAULT = {
+  personen: 2,
+  monate: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11], // August und Dezember anfangs aus
+  checklisteVor: [
+    "Ladeerhaltung und Abgasabsaugung abgenommen",
+    "Motoröl und Kühlwasser geprüft",
+    "Reifen: Zustand und Luftdruck (Sichtprüfung)",
+    "Druckluft: Vorratsdruck aufgebaut",
+    "Beleuchtung, Blinker, Bremslicht",
+    "Blaulicht und Martinshorn kurz geprüft",
+    "Scheibenwischer und Waschwasser",
+    "Fahrzeugfunk geprüft",
+    "Geräteräume geschlossen, Beladung gesichert",
+  ],
+  checklisteNach: [
+    "Bremsen während der Fahrt ohne Auffälligkeiten",
+    "Getankt (mindestens ¾ voll)",
+    "Ladeerhaltung und Abgasabsaugung wieder angeschlossen",
+    "Fahrzeug einsatzbereit abgestellt",
+  ],
+};

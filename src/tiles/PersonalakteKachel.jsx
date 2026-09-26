@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ArrowLeft, ChevronRight, KeyRound, Plus, Printer, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { FUEHRERSCHEIN_KLASSEN, JUBILAEUMS_JAHRE, RUNDE_GEBURTSTAGE_EXTRA } from "../lib/constants";
+import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, RUNDE_GEBURTSTAGE_EXTRA } from "../lib/constants";
 import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { LION_ICON } from "../lib/icons";
@@ -26,7 +26,9 @@ export function normalizeAkte(d) {
     ...b, ...d,
     arbeitgeber: { ...b.arbeitgeber, ...(d.arbeitgeber || {}) },
     notfallkontakt: { ...b.notfallkontakt, ...(d.notfallkontakt || {}) },
-    lehrgaenge: d.lehrgaenge || [], leistungsabzeichen: d.leistungsabzeichen || [], funktionen: d.funktionen || [],
+    lehrgaenge: d.lehrgaenge || [], leistungsabzeichen: d.leistungsabzeichen || [],
+    // Funktionen früher nur als Name gespeichert – jetzt mit Status aktiv / a.D. und Datum.
+    funktionen: (d.funktionen || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv", seit: "", adSeit: "" } : { status: "aktiv", seit: "", adSeit: "", ...f })),
     mitgliedsverlauf: d.mitgliedsverlauf || [], befoerderungen: d.befoerderungen || [], ehrungen: d.ehrungen || [],
   };
 }
@@ -108,7 +110,54 @@ export function ChipPicker({ options, selected, onToggle, readOnly, emptyHint })
   );
 }
 
-export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onClose }) {
+// Aktive Funktionen als Ja/Nein für die gekoppelten Rechte (Gruppenführer, Maschinist, Gerätewart)
+export function funktionsFlags(funktionen) {
+  const flags = {};
+  Object.entries(FUNKTION_FLAG).forEach(([name, flag]) => { flags[flag] = (funktionen || []).some((f) => f.name === name && f.status === "aktiv"); });
+  return flags;
+}
+function FunktionenEditor({ items, onChange, options, readOnly }) {
+  const [neu, setNeu] = useState("");
+  const update = (name, patch) => onChange(items.map((f) => (f.name === name ? { ...f, ...patch } : f)));
+  const frei = options.filter((o) => !items.some((f) => f.name === o));
+  if (readOnly) return <div style={{ fontSize: 12.5, color: "#2C2F2A" }}>{items.length ? items.map((f) => `${f.name}${f.status === "ad" ? " a.D." : ""}`).join(", ") : "—"}</div>;
+  return (
+    <div>
+      {items.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Funktionen.</div>}
+      {items.map((f) => (
+        <div key={f.name} style={{ border: "1px solid #E2DFD6", borderRadius: 6, padding: "7px 8px", marginBottom: 6, background: f.status === "ad" ? "#F3F1EC" : "white" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: f.status === "ad" ? "#8A8C86" : "#2C2F2A" }}>{f.name}{f.status === "ad" ? " a.D." : ""}</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => update(f.name, { status: "aktiv", adSeit: "" })} style={{ ...styles.tinyBtn, background: f.status === "aktiv" ? "#1F6F5C" : "#F3F1EC", color: f.status === "aktiv" ? "white" : "#5C5F58", borderColor: f.status === "aktiv" ? "#1F6F5C" : "#E2DFD6" }}>aktiv</button>
+              <button onClick={() => update(f.name, { status: "ad", adSeit: f.adSeit || todayISO() })} style={{ ...styles.tinyBtn, background: f.status === "ad" ? "#5C5F58" : "#F3F1EC", color: f.status === "ad" ? "white" : "#5C5F58", borderColor: f.status === "ad" ? "#5C5F58" : "#E2DFD6" }}>a.D.</button>
+              <button style={styles.tinyIconBtn} aria-label="Entfernen" onClick={() => onChange(items.filter((x) => x.name !== f.name))}><X size={12} /></button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#8A8C86" }}>seit</span>
+            <input style={{ ...styles.input, width: 135, padding: "4px 7px", fontSize: 12 }} type="date" value={f.seit || ""} onChange={(e) => update(f.name, { seit: e.target.value })} />
+            {f.status === "ad" && (<>
+              <span style={{ fontSize: 11, color: "#8A8C86" }}>a.D. seit</span>
+              <input style={{ ...styles.input, width: 135, padding: "4px 7px", fontSize: 12 }} type="date" value={f.adSeit || ""} onChange={(e) => update(f.name, { adSeit: e.target.value })} />
+            </>)}
+          </div>
+        </div>
+      ))}
+      {frei.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+          <select style={{ ...styles.input, flex: 1, padding: "6px 8px", fontSize: 12.5 }} value={neu} onChange={(e) => setNeu(e.target.value)}>
+            <option value="">— Funktion hinzufügen —</option>
+            {frei.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <button style={{ ...styles.saveBtn, flex: "none", padding: "0 12px" }} disabled={!neu} onClick={() => { onChange([...items, { name: neu, status: "aktiv", seit: todayISO(), adSeit: "" }]); setNeu(""); }}><Plus size={14} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onSetFlags, onClose }) {
   const [target, setTarget] = useState(isAdmin ? null : me);
   const [search, setSearch] = useState("");
   const [akte, setAkte] = useState(null);
@@ -189,7 +238,16 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
     const clean = { ...data, lehrgaenge: data.lehrgaenge.map(({ photoUrl, ...rest }) => rest) };
     const r = await akteCall({ action: "save", target, data: clean });
     setSaving(false);
-    if (r.ok) { setDirty(false); return true; }
+    if (r.ok) {
+      setDirty(false);
+      // Gekoppelte Funktionen (nur Ja/Nein) in die Mitgliederliste übernehmen – nur der Admin darf Funktionen ändern.
+      if (isAdmin && onSetFlags) {
+        const entry = roster.find((x) => x.name === target);
+        const flags = funktionsFlags(data.funktionen);
+        if (entry && Object.keys(flags).some((k) => !!entry[k] !== flags[k])) onSetFlags(target, flags);
+      }
+      return true;
+    }
     if (r.data.error !== "abgebrochen") flashError(r.data.error || "Personalakte konnte nicht gespeichert werden.");
     return false;
   }
@@ -360,8 +418,8 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()}){dienstbeginnDatum !== akte.eintrittsdatum ? `, gezählt ab dem 14. Geburtstag (${fmtDate(dienstbeginnDatum)})` : ""}</div>}
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
             <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="z. B. Übertritt Einsatzabteilung" />
-            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen</div>
-            <ChipPicker options={config.funktionen || []} selected={akte.funktionen} onToggle={(f) => upd({ funktionen: akte.funktionen.includes(f) ? akte.funktionen.filter((x) => x !== f) : [...akte.funktionen, f] })} emptyHint="Noch keine Funktionen angelegt (Admin: Einstellungen)." />
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen{!isAdmin ? " (trägt der Admin ein)" : ""}</div>
+            <FunktionenEditor items={akte.funktionen} onChange={(v) => upd({ funktionen: v })} options={config.funktionen || []} readOnly={!isAdmin} />
           </AkteSection>
 
           <AkteSection title="RANG & BEFÖRDERUNGEN" adminOnly>

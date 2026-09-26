@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BUCKET = "personalakte";
-const ADMIN_ONLY_FIELDS = ["befoerderungen", "ehrungen"]; // Rang, Beförderungen, Ehrungen: nur Admin
+const ADMIN_ONLY_FIELDS = ["befoerderungen", "ehrungen", "funktionen"]; // Rang, Beförderungen, Ehrungen, Funktionen: nur Admin
 
 const json = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const folderFor = (name) => String(name || "").replace(/[^a-z0-9]+/gi, "_");
