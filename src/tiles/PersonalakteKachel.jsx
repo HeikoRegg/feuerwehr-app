@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, ChevronRight, KeyRound, Plus, Printer, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, KeyRound, Lock, Plus, Printer, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, RUNDE_GEBURTSTAGE_EXTRA } from "../lib/constants";
-import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, matchesSearch, todayISO, uid } from "../lib/helpers";
+import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, MASCHINIST_LEHRGANG, RUNDE_GEBURTSTAGE_EXTRA, VERLAUF_VORLAGEN } from "../lib/constants";
+import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, geschlechtsForm, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
@@ -13,6 +13,7 @@ import { SearchBox } from "../components/Shared";
 // "personalakte" (Netlify), nie direkt über die öffentliche Datenbank.
 // ============================================================================
 export const emptyAkte = () => ({
+  geschlecht: "",
   strasse: "", plz: "", ort: "", email: "", telefon: "", geburtsdatum: "",
   arbeitgeber: { name: "", telefon: "", email: "" },
   notfallkontakt: { name: "", telefon: "" },
@@ -32,6 +33,21 @@ export function normalizeAkte(d) {
     mitgliedsverlauf: d.mitgliedsverlauf || [], befoerderungen: d.befoerderungen || [], ehrungen: d.ehrungen || [],
   };
 }
+// Seit 2.8 ist Maschinist ein Lehrgang: eine noch aktive Funktion "Maschinist" wird beim Öffnen in einen Lehrgang umgewandelt.
+// (Der Server macht das einmalig für alle Akten – das hier ist nur das Sicherheitsnetz.)
+export function maschinistUmziehen(akte) {
+  const alt = akte.funktionen.find((f) => f.name === MASCHINIST_LEHRGANG && f.status === "aktiv");
+  if (!alt) return akte;
+  const hatLehrgang = akte.lehrgaenge.some((l) => l.titel === MASCHINIST_LEHRGANG);
+  return {
+    ...akte,
+    funktionen: akte.funktionen.filter((f) => f !== alt),
+    lehrgaenge: hatLehrgang ? akte.lehrgaenge : [...akte.lehrgaenge, { id: uid(), titel: MASCHINIST_LEHRGANG, datum: alt.seit || "", photoPath: null }],
+  };
+}
+export const hatMaschinistLehrgang = (lehrgaenge) => (lehrgaenge || []).some((l) => l.titel === MASCHINIST_LEHRGANG);
+// Jugendliche = Jugendfeuerwehr, aber (noch) nicht in der Einsatzabteilung. Nur diese verwaltet der Jugendwart.
+export const istJugendlicher = (r) => !!r && r.bereiche.includes("jugendfeuerwehr") && !r.bereiche.includes("einsatzabteilung");
 export function aktuellerRang(akte) {
   const list = [...((akte && akte.befoerderungen) || [])].filter((b) => b.rang).sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
   return list.length ? list[list.length - 1] : null;
@@ -67,8 +83,30 @@ export function AkteField({ label, value, onChange, type = "text", readOnly, pla
     </div>
   );
 }
-// Liste aus Einträgen mit Titel/Datum (Leistungsabzeichen, Ehrungen, Mitgliedsverlauf, Beförderungen)
-export function AkteList({ items, onChange, readOnly, textKey = "titel", textLabel = "Bezeichnung", options, addLabel = "Eintrag hinzufügen" }) {
+// Auswahl aus einer Liste – auf Wunsch mit "Anderer (selbst eintragen)" für Besonderes.
+const FREI = "__frei__";
+export function AuswahlOderFrei({ value, frei, options, label = (x) => x, onChange, placeholder = "Bitte wählen", erlaubeFrei = true, style }) {
+  const inListe = options.includes(value);
+  if (erlaubeFrei && options.length === 0) {
+    return <input style={{ ...styles.input, padding: "6px 8px", fontSize: 12.5, ...style }} placeholder={placeholder} value={value || ""} onChange={(e) => onChange(e.target.value, true)} />;
+  }
+  const zeigeFrei = erlaubeFrei && (frei || (!!value && !inListe));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, ...style }}>
+      <select style={{ ...styles.input, padding: "6px 8px", fontSize: 12.5 }} value={zeigeFrei ? FREI : (value || "")}
+        onChange={(e) => { const v = e.target.value; if (v === FREI) onChange("", true); else onChange(v, false); }}>
+        <option value="">— {placeholder} —</option>
+        {options.map((o) => <option key={o} value={o}>{label(o)}</option>)}
+        {!erlaubeFrei && value && !inListe && <option value={value}>{label(value)}</option>}
+        {erlaubeFrei && <option value={FREI}>Anderer – selbst eintragen …</option>}
+      </select>
+      {zeigeFrei && <input style={{ ...styles.input, padding: "6px 8px", fontSize: 12.5 }} autoFocus={!value} placeholder="Bezeichnung eintragen" value={value || ""} onChange={(e) => onChange(e.target.value, true)} />}
+    </div>
+  );
+}
+
+// Liste aus Einträgen mit Titel/Datum (Leistungsabzeichen, Ehrungen, Mitgliedsverlauf, Dienstgrade)
+export function AkteList({ items, onChange, readOnly, textKey = "titel", textLabel = "Bezeichnung", options, frei = false, label = (x) => x, addLabel = "Eintrag hinzufügen" }) {
   const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   const sorted = [...items].sort((a, b) => (a.datum || "9999").localeCompare(b.datum || "9999"));
   return (
@@ -76,15 +114,12 @@ export function AkteList({ items, onChange, readOnly, textKey = "titel", textLab
       {sorted.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Einträge.</div>}
       {sorted.map((it) => (
         readOnly ? (
-          <div key={it.id} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{it[textKey] || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
+          <div key={it.id} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{label(it[textKey]) || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
         ) : (
-          <div key={it.id} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <div key={it.id} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
             {options ? (
-              <select style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })}>
-                <option value="">— {textLabel} wählen —</option>
-                {options.map((o) => <option key={o} value={o}>{o}</option>)}
-                {it[textKey] && !options.includes(it[textKey]) && <option value={it[textKey]}>{it[textKey]}</option>}
-              </select>
+              <AuswahlOderFrei style={{ flex: 1, minWidth: 140 }} value={it[textKey]} frei={it.frei} options={options} label={label} erlaubeFrei={frei}
+                placeholder={`${textLabel} wählen`} onChange={(v, istFrei) => update(it.id, { [textKey]: v, frei: istFrei })} />
             ) : (
               <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder={textLabel} value={it[textKey] || ""} onChange={(e) => update(it.id, { [textKey]: e.target.value })} />
             )}
@@ -116,18 +151,18 @@ export function funktionsFlags(funktionen) {
   Object.entries(FUNKTION_FLAG).forEach(([name, flag]) => { flags[flag] = (funktionen || []).some((f) => f.name === name && f.status === "aktiv"); });
   return flags;
 }
-function FunktionenEditor({ items, onChange, options, readOnly }) {
+function FunktionenEditor({ items, onChange, options, readOnly, label = (x) => x }) {
   const [neu, setNeu] = useState("");
   const update = (name, patch) => onChange(items.map((f) => (f.name === name ? { ...f, ...patch } : f)));
   const frei = options.filter((o) => !items.some((f) => f.name === o));
-  if (readOnly) return <div style={{ fontSize: 12.5, color: "#2C2F2A" }}>{items.length ? items.map((f) => `${f.name}${f.status === "ad" ? " a.D." : ""}`).join(", ") : "—"}</div>;
+  if (readOnly) return <div style={{ fontSize: 12.5, color: "#2C2F2A" }}>{items.length ? items.map((f) => `${label(f.name)}${f.status === "ad" ? " a.D." : ""}`).join(", ") : "—"}</div>;
   return (
     <div>
       {items.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Funktionen.</div>}
       {items.map((f) => (
         <div key={f.name} style={{ border: "1px solid #E2DFD6", borderRadius: 6, padding: "7px 8px", marginBottom: 6, background: f.status === "ad" ? "#F3F1EC" : "white" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: f.status === "ad" ? "#8A8C86" : "#2C2F2A" }}>{f.name}{f.status === "ad" ? " a.D." : ""}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: f.status === "ad" ? "#8A8C86" : "#2C2F2A" }}>{label(f.name)}{f.status === "ad" ? " a.D." : ""}</span>
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => update(f.name, { status: "aktiv", adSeit: "" })} style={{ ...styles.tinyBtn, background: f.status === "aktiv" ? "#1F6F5C" : "#F3F1EC", color: f.status === "aktiv" ? "white" : "#5C5F58", borderColor: f.status === "aktiv" ? "#1F6F5C" : "#E2DFD6" }}>aktiv</button>
               <button onClick={() => update(f.name, { status: "ad", adSeit: f.adSeit || todayISO() })} style={{ ...styles.tinyBtn, background: f.status === "ad" ? "#5C5F58" : "#F3F1EC", color: f.status === "ad" ? "white" : "#5C5F58", borderColor: f.status === "ad" ? "#5C5F58" : "#E2DFD6" }}>a.D.</button>
@@ -148,7 +183,7 @@ function FunktionenEditor({ items, onChange, options, readOnly }) {
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
           <select style={{ ...styles.input, flex: 1, padding: "6px 8px", fontSize: 12.5 }} value={neu} onChange={(e) => setNeu(e.target.value)}>
             <option value="">— Funktion hinzufügen —</option>
-            {frei.map((o) => <option key={o} value={o}>{o}</option>)}
+            {frei.map((o) => <option key={o} value={o}>{label(o)}</option>)}
           </select>
           <button style={{ ...styles.saveBtn, flex: "none", padding: "0 12px" }} disabled={!neu} onClick={() => { onChange([...items, { name: neu, status: "aktiv", seit: todayISO(), adSeit: "" }]); setNeu(""); }}><Plus size={14} /></button>
         </div>
@@ -157,8 +192,15 @@ function FunktionenEditor({ items, onChange, options, readOnly }) {
   );
 }
 
-export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onSetFlags, onClose }) {
-  const [target, setTarget] = useState(isAdmin ? null : me);
+// modus "jugend": Jugendwart verwaltet die Jugendlichen (anlegen, Akte pflegen, sperren/entsperren) – ohne Admin-Rechte.
+export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onSetFlags, onClose, modus = "normal", onAddMember, onRequestBlock }) {
+  const jugendModus = modus === "jugend";
+  const uebersicht = isAdmin || jugendModus; // mit Übersicht über mehrere Akten
+  const darfAdminFelder = isAdmin && !jugendModus; // Dienstgrad, Ehrungen, Funktionen
+  const weiblich = (config && config.weiblich) || {};
+  const [target, setTarget] = useState(uebersicht ? null : me);
+  const [neuJ, setNeuJ] = useState({ name: "", geburtsdatum: "", eintritt: todayISO() });
+  const [neuBusy, setNeuBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [akte, setAkte] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -181,7 +223,7 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   }, []);
 
   useEffect(() => {
-    if (!target) { setAkte(null); if (isAdmin && elevated) loadOverview(); return; }
+    if (!target) { setAkte(null); if (uebersicht && elevated) loadOverview(); return; }
     loadAkte(target);
   }, [target, elevated]);
 
@@ -210,8 +252,8 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
     setLoading(true); setErrorText("");
     const r = await akteCall({ action: "get", target: name });
     setLoading(false);
-    if (r.ok) { setAkte(normalizeAkte(r.data.data)); setDirty(false); }
-    else if (r.data.error === "abgebrochen") { if (isAdmin) setTarget(null); else onClose(); }
+    if (r.ok) { setAkte(maschinistUmziehen(normalizeAkte(r.data.data))); setDirty(false); }
+    else if (r.data.error === "abgebrochen") { if (uebersicht) setTarget(null); else onClose(); }
     else if (r.data.code !== "PIN_NOETIG") setErrorText(r.data.error || "Personalakte konnte nicht geladen werden.");
   }
   async function arbeitgeberlisteDrucken() {
@@ -236,10 +278,11 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
     setSaving(false);
     if (r.ok) {
       setDirty(false);
-      // Gekoppelte Funktionen (nur Ja/Nein) in die Mitgliederliste übernehmen – nur der Admin darf Funktionen ändern.
-      if (isAdmin && onSetFlags) {
+      // Gekoppelte Rechte (nur Ja/Nein) in die Mitgliederliste übernehmen: Funktionen darf nur der Admin ändern,
+      // Maschinist ergibt sich aus dem Lehrgang.
+      if (onSetFlags) {
         const entry = roster.find((x) => x.name === target);
-        const flags = funktionsFlags(data.funktionen);
+        const flags = { maschinist: hatMaschinistLehrgang(data.lehrgaenge), ...(darfAdminFelder ? funktionsFlags(data.funktionen) : {}) };
         if (entry && Object.keys(flags).some((k) => !!entry[k] !== flags[k])) onSetFlags(target, flags);
       }
       return true;
@@ -263,25 +306,92 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   }
   function back() {
     if (dirty && !window.confirm("Es gibt ungespeicherte Änderungen. Trotzdem zurück?")) return;
-    if (isAdmin && target) setTarget(null); else onClose();
+    if (uebersicht && target) setTarget(null); else onClose();
+  }
+  // Jugendwart: neue Jugendliche anlegen – Mitgliederliste (Bereich Jugendfeuerwehr) + Akte mit Eintritt im Mitgliedsverlauf.
+  async function jugendlichenAnlegen() {
+    const name = neuJ.name.trim();
+    if (!name) { flashError("Bitte einen Namen eingeben."); return; }
+    if (roster.some((r) => r.name.toLowerCase() === name.toLowerCase())) { flashError("Diesen Namen gibt es schon."); return; }
+    if (!neuJ.eintritt) { flashError("Bitte das Eintrittsdatum eingeben."); return; }
+    setNeuBusy(true);
+    const ok = await onAddMember(name, ["jugendfeuerwehr"]);
+    if (!ok) { setNeuBusy(false); return; }
+    const r = await akteCall({ action: "jugendAnlegen", target: name, geburtsdatum: neuJ.geburtsdatum, eintrittsdatum: neuJ.eintritt });
+    setNeuBusy(false);
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Personalakte konnte nicht angelegt werden."); return; }
+    setNeuJ({ name: "", geburtsdatum: "", eintritt: todayISO() });
+    setTarget(name);
   }
 
-  // ---------- Admin-Übersicht ----------
-  if (isAdmin && !target && !elevated) {
+  // ---------- Übersicht: PIN-Freischaltung ----------
+  if (uebersicht && !target && !elevated) {
     return (
       <div>
         <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Zurück</button></div>
-        <div style={styles.modalTitle}>Personalakten</div>
+        <div style={styles.modalTitle}>{jugendModus ? "Jugendfeuerwehr" : "Personalakten"}</div>
         <div style={{ ...styles.kontrollRow, marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "18px 14px" }}>
           <KeyRound size={22} color="#C1272D" style={{ marginBottom: 8 }} />
-          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Zum Öffnen der Personalakten bitte deine PIN eingeben</div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Zum Öffnen der {jugendModus ? "Akten der Jugendlichen" : "Personalakten"} bitte deine PIN eingeben</div>
           <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 12 }}>Die Freischaltung gilt, bis du diese Kachel wieder schließt.</div>
           <input style={{ ...styles.gateInput, letterSpacing: "0.5em", maxWidth: 180 }} type="password" inputMode="numeric" maxLength={4} value={pinInput} autoFocus
             onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))} onKeyDown={(e) => e.key === "Enter" && freischalten()} />
           {errorText && <div style={styles.errorText}>{errorText}</div>}
           <button style={{ ...styles.saveBtn, marginTop: 12, width: "100%", maxWidth: 220 }} disabled={pinBusy} onClick={freischalten}>{pinBusy ? "Prüfe …" : "Freischalten"}</button>
         </div>
-        <button style={{ ...styles.rosterItem, marginTop: 10 }} onClick={() => setTarget(me)}><span>Nur meine eigene Akte öffnen</span><ChevronRight size={15} color="#A5A79F" /></button>
+        {!jugendModus && <button style={{ ...styles.rosterItem, marginTop: 10 }} onClick={() => setTarget(me)}><span>Nur meine eigene Akte öffnen</span><ChevronRight size={15} color="#A5A79F" /></button>}
+      </div>
+    );
+  }
+
+  // ---------- Jugendwart-Übersicht ----------
+  if (jugendModus && !target) {
+    const alter = (geb) => { if (!geb) return null; const [y, m, d] = geb.split("-").map(Number); const h = new Date(); let a = h.getFullYear() - y; if (h.getMonth() + 1 < m || (h.getMonth() + 1 === m && h.getDate() < d)) a--; return a; };
+    const gebByName = Object.fromEntries((overview || []).map((i) => [i.name, i.geburtsdatum]));
+    const jugendliche = roster.filter((r) => istJugendlicher(r) && !r.gesperrt);
+    const gesperrte = roster.filter((r) => istJugendlicher(r) && r.gesperrt);
+    return (
+      <div>
+        <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Zurück</button></div>
+        <div style={styles.modalTitle}>Jugendfeuerwehr</div>
+        <div style={{ fontSize: 11.5, color: "#8A8C86", margin: "2px 0 12px" }}>Jugendliche anlegen, ihre Akten pflegen und bei Austritt sperren. Jugendliche, die schon in der Einsatzabteilung sind, verwaltet der Admin.</div>
+        {errorText && <div style={styles.errorText}>{errorText}</div>}
+        <AkteSection title="JUGENDLICHE ANLEGEN">
+          <AkteField label="Vor- und Nachname" value={neuJ.name} onChange={(v) => setNeuJ({ ...neuJ, name: v })} placeholder="Vorname Nachname" />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 130 }}><AkteField label="Geburtsdatum" type="date" value={neuJ.geburtsdatum} onChange={(v) => setNeuJ({ ...neuJ, geburtsdatum: v })} /></div>
+            <div style={{ flex: 1, minWidth: 130 }}><AkteField label="Eintritt Jugendfeuerwehr" type="date" value={neuJ.eintritt} onChange={(v) => setNeuJ({ ...neuJ, eintritt: v })} /></div>
+          </div>
+          <button style={{ ...styles.saveBtn, width: "100%", marginTop: 4 }} disabled={neuBusy} onClick={jugendlichenAnlegen}>{neuBusy ? "Legt an …" : "Anlegen"}</button>
+          <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Kommt automatisch in den Bereich Jugendfeuerwehr, im Mitgliedsverlauf steht „Eintritt Jugendfeuerwehr“. Die PIN vergibt sich die Person beim ersten Login selbst.</div>
+        </AkteSection>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "14px 0 6px", letterSpacing: "0.04em" }}>JUGENDLICHE ({jugendliche.length})</div>
+        <SearchBox value={search} onChange={setSearch} placeholder="Name suchen …" />
+        {overview === null && !errorText && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>}
+        {jugendliche.filter((r) => matchesSearch(r.name, search)).map((r) => (
+          <div key={r.name} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <button style={{ ...styles.rosterItem, flex: 1 }} onClick={() => setTarget(r.name)}>
+              <span>{r.name}{alter(gebByName[r.name]) !== null && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {alter(gebByName[r.name])} Jahre</span>}</span>
+              <ChevronRight size={15} color="#A5A79F" />
+            </button>
+            {onRequestBlock && <button style={{ ...styles.rosterRemoveBtn, width: 40 }} title="Sperren" aria-label={`${r.name} sperren`} onClick={() => onRequestBlock({ name: r.name, gesperrt: true })}><Lock size={14} /></button>}
+          </div>
+        ))}
+        {jugendliche.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F" }}>Noch keine Jugendlichen eingetragen.</div>}
+        {gesperrte.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "14px 0 6px", letterSpacing: "0.04em" }}>GESPERRT (AUSGETRETEN)</div>
+            {gesperrte.map((r) => (
+              <div key={r.name} style={{ ...styles.rosterManageItemFull, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, opacity: 0.8 }}>
+                <span style={{ fontSize: 13 }}>{r.name}{r.gesperrtSeit && <span style={{ fontSize: 11, color: "#8A8C86" }}> · seit {fmtDate(r.gesperrtSeit)}</span>}</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button style={styles.tinyBtn} onClick={() => setTarget(r.name)}>Akte</button>
+                  {onRequestBlock && <button style={styles.tinyBtn} onClick={() => onRequestBlock({ name: r.name, gesperrt: false })}>Entsperren</button>}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     );
   }
@@ -350,7 +460,7 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <SearchBox value={search} onChange={setSearch} placeholder="Name suchen …" />
             {aktive.filter((r) => matchesSearch(r.name, search)).map((r) => (
               <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => setTarget(r.name)}>
-                <span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {byName[r.name].rang}</span>}</span>
+                <span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {geschlechtsForm(byName[r.name].rang, byName[r.name].geschlecht, weiblich)}</span>}</span>
                 <ChevronRight size={15} color="#A5A79F" />
               </button>
             ))}
@@ -377,17 +487,28 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   const rang = akte ? aktuellerRang(akte) : null;
   const dienstjahre = akte ? dienstjahreImJahr(akte.eintrittsdatum, akte.geburtsdatum) : null;
   const dienstbeginnDatum = akte ? dienstbeginn(akte.eintrittsdatum, akte.geburtsdatum) : null;
+  const form = (name) => geschlechtsForm(name, akte && akte.geschlecht, weiblich);
+  const fremdeAkte = target !== me;
+  const jugendlicherZiel = istJugendlicher(entry);
   return (
     <div>
-      <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
+      <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {jugendModus ? "Alle Jugendlichen" : isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
       <div style={styles.modalTitle}>Personalakte {target}</div>
-      {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{rang.rang}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
-      <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 12px" }}>Nur {isAdmin && target !== me ? `${target} und` : "du und"} der Admin können diese Akte sehen.</div>
+      {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{form(rang.rang)}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
+      <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 12px" }}>Nur {fremdeAkte ? `${target},` : "du,"} {jugendlicherZiel ? "die Jugendwarte und " : ""}der Admin können diese Akte sehen.</div>
       {errorText && <div style={styles.errorText}>{errorText}</div>}
       {loading && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>}
       {akte && !loading && (
         <>
           <AkteSection title="PERSÖNLICHES">
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2 }}>Geschlecht (für Bezeichnungen wie Truppführer/Truppführerin)</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[["m", "männlich"], ["w", "weiblich"]].map(([k, l]) => (
+                  <button key={k} onClick={() => upd({ geschlecht: akte.geschlecht === k ? "" : k })} style={{ ...styles.categoryChip, fontSize: 12, padding: "5px 12px", background: akte.geschlecht === k ? "#2C2F2A" : "#F3F1EC", color: akte.geschlecht === k ? "white" : "#5C5F58", borderColor: akte.geschlecht === k ? "#2C2F2A" : "#E2DFD6" }}>{l}</button>
+                ))}
+              </div>
+            </div>
             <AkteField label="Geburtsdatum" type="date" value={akte.geburtsdatum} onChange={(v) => upd({ geburtsdatum: v })} />
             <AkteField label="Straße und Hausnummer" value={akte.strasse} onChange={(v) => upd({ strasse: v })} />
             <div style={{ display: "flex", gap: 8 }}>
@@ -398,12 +519,12 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <AkteField label="E-Mail" type="email" value={akte.email} onChange={(v) => upd({ email: v })} />
           </AkteSection>
 
-          <AkteSection title="NOTFALLKONTAKT">
+          <AkteSection title={jugendlicherZiel ? "NOTFALLKONTAKT / ERZIEHUNGSBERECHTIGTE" : "NOTFALLKONTAKT"}>
             <AkteField label="Name" value={akte.notfallkontakt.name} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, name: v } })} />
             <AkteField label="Telefon" type="tel" value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
           </AkteSection>
 
-          <AkteSection title="ARBEITGEBER">
+          <AkteSection title={jugendlicherZiel ? "ARBEITGEBER / SCHULE" : "ARBEITGEBER"}>
             <AkteField label="Name" value={akte.arbeitgeber.name} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, name: v } })} />
             <AkteField label="Telefon" type="tel" value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
             <AkteField label="E-Mail" type="email" value={akte.arbeitgeber.email} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, email: v } })} />
@@ -413,30 +534,31 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <AkteField label="Eintrittsdatum" type="date" value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
             {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()}){dienstbeginnDatum !== akte.eintrittsdatum ? `, gezählt ab dem 14. Geburtstag (${fmtDate(dienstbeginnDatum)})` : ""}</div>}
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
-            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="z. B. Übertritt Einsatzabteilung" />
-            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen / Qualifikationen{!isAdmin ? " (trägt der Admin ein)" : ""}</div>
-            <FunktionenEditor items={akte.funktionen} onChange={(v) => upd({ funktionen: v })} options={config.funktionen || []} readOnly={!isAdmin} />
+            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="Eintrag" options={VERLAUF_VORLAGEN} frei />
+            <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen{!darfAdminFelder ? " (trägt der Admin ein)" : ""}</div>
+            <FunktionenEditor items={akte.funktionen} onChange={(v) => upd({ funktionen: v })} options={config.funktionen || []} readOnly={!darfAdminFelder} label={form} />
           </AkteSection>
 
-          <AkteSection title="RANG & BEFÖRDERUNGEN" adminOnly>
-            <AkteList items={akte.befoerderungen} onChange={(v) => upd({ befoerderungen: v })} readOnly={!isAdmin} textKey="rang" textLabel="Rang" options={config.raenge || []} addLabel="Beförderung eintragen" />
-            {isAdmin && (config.raenge || []).length === 0 && <div style={{ fontSize: 11, color: "#B8791A", marginTop: 4 }}>Bitte zuerst die Ränge in den Einstellungen anlegen.</div>}
+          <AkteSection title="DIENSTGRAD" adminOnly>
+            <AkteList items={akte.befoerderungen} onChange={(v) => upd({ befoerderungen: v })} readOnly={!darfAdminFelder} textKey="rang" textLabel="Dienstgrad" options={config.raenge || []} label={form} addLabel="Dienstgrad eintragen" />
+            {darfAdminFelder && (config.raenge || []).length === 0 && <div style={{ fontSize: 11, color: "#B8791A", marginTop: 4 }}>Bitte zuerst die Dienstgrade in den Einstellungen anlegen.</div>}
           </AkteSection>
 
           <AkteSection title="EHRUNGEN & AUSZEICHNUNGEN" adminOnly>
-            <AkteList items={akte.ehrungen} onChange={(v) => upd({ ehrungen: v })} readOnly={!isAdmin} textLabel="z. B. Ehrenzeichen Silber" addLabel="Ehrung eintragen" />
+            <AkteList items={akte.ehrungen} onChange={(v) => upd({ ehrungen: v })} readOnly={!darfAdminFelder} textLabel="Ehrung" options={config.ehrungen || []} frei label={form} addLabel="Ehrung eintragen" />
           </AkteSection>
 
           <AkteSection title="LEISTUNGSABZEICHEN">
-            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} textLabel="z. B. Leistungsabzeichen Bronze" addLabel="Abzeichen eintragen" />
+            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} textLabel="Abzeichen" options={config.leistungsabzeichen || []} frei label={form} addLabel="Abzeichen eintragen" />
           </AkteSection>
 
           <AkteSection title="LEHRGÄNGE">
             {akte.lehrgaenge.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Lehrgänge.</div>}
             {akte.lehrgaenge.map((l) => (
               <div key={l.id} style={{ borderBottom: "1px dashed #E2DFD6", paddingBottom: 8, marginBottom: 8 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                  <input style={{ ...styles.input, flex: 1, minWidth: 140, padding: "6px 8px", fontSize: 12.5 }} placeholder="z. B. Truppführer" value={l.titel || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, titel: e.target.value } : x)) })} />
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <AuswahlOderFrei style={{ flex: 1, minWidth: 140 }} value={l.titel} frei={l.frei} options={config.lehrgaenge || []} label={form} placeholder="Lehrgang wählen"
+                    onChange={(v, istFrei) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, titel: v, frei: istFrei } : x)) })} />
                   <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={l.datum || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, datum: e.target.value } : x)) })} />
                   <button style={styles.tinyIconBtn} aria-label="Lehrgang entfernen" onClick={() => { if (window.confirm("Lehrgang samt Nachweis-Foto entfernen?")) upd({ lehrgaenge: akte.lehrgaenge.filter((x) => x.id !== l.id) }); }}><X size={12} /></button>
                 </div>
@@ -452,10 +574,10 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <button style={styles.smallAddBtn} onClick={() => upd({ lehrgaenge: [...akte.lehrgaenge, { id: uid(), titel: "", datum: "", photoPath: null }] })}><Plus size={12} /> Lehrgang hinzufügen</button>
           </AkteSection>
 
-          <AkteSection title="FÜHRERSCHEINKLASSEN">
+          {!(jugendModus && fremdeAkte) && <AkteSection title="FÜHRERSCHEINKLASSEN">
             <ChipPicker options={FUEHRERSCHEIN_KLASSEN} selected={klassen} onToggle={(k) => onSetKlassen(target, klassen.includes(k) ? klassen.filter((x) => x !== k) : [...klassen, k])} />
             <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Wird sofort gespeichert. Bestimmt, ob PKW/LKW bei der Führerscheinkontrolle und den Fahrzeugeinweisungen erscheinen. FF = Feuerwehrführerschein.</div>
-          </AkteSection>
+          </AkteSection>}
 
           <AkteSection title="BEMERKUNG">
             <AkteField label="" type="textarea" value={akte.bemerkung} onChange={(v) => upd({ bemerkung: v })} placeholder="Freitext …" />

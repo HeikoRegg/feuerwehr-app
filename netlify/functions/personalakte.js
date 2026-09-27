@@ -1,7 +1,8 @@
 // netlify/functions/personalakte.js
 // Personalakten liegen in der geschützten Tabelle "personalakten" und die Nachweis-Fotos
 // im privaten Speicher "personalakte". Lesen und Schreiben ist nur über diese Funktion
-// möglich – und nur für die Person selbst und für Admins.
+// möglich – und nur für die Person selbst und für Admins. Jugendwarte (Funktion "Jugendwart" in der
+// eigenen Akte, die nur der Admin vergeben kann) dürfen zusätzlich die Akten der Jugendlichen pflegen.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -23,6 +24,21 @@ async function loadAkte(name) {
   const { data } = await db.from("personalakten").select("data").eq("name", name).maybeSingle();
   return (data && data.data) || {};
 }
+async function getKv(key) {
+  const { data } = await db.from("kv_store").select("value").eq("key", key).maybeSingle();
+  return data ? data.value : null;
+}
+function aktiveFunktionen(akte) {
+  return ((akte && akte.funktionen) || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv" } : f)).filter((f) => f.status !== "ad").map((f) => f.name);
+}
+async function istJugendwart(name) { return aktiveFunktionen(await loadAkte(name)).includes("Jugendwart"); }
+// Jugendliche = Bereich Jugendfeuerwehr, aber nicht Einsatzabteilung, und kein Admin.
+async function jugendlicheNamen() {
+  const roster = (await getKv("roster")) || [];
+  const { data: admins } = await db.from("app_users").select("name").eq("is_admin", true);
+  const adminSet = new Set((admins || []).map((a) => a.name));
+  return new Set(roster.filter((r) => r && (r.bereiche || []).includes("jugendfeuerwehr") && !(r.bereiche || []).includes("einsatzabteilung") && !adminSet.has(r.name)).map((r) => r.name));
+}
 function photoPaths(akte) {
   return ((akte && akte.lehrgaenge) || []).map((l) => l.photoPath).filter(Boolean);
 }
@@ -43,9 +59,15 @@ export async function handler(event) {
     const { action, target } = body;
 
     // Fremde Akten (und Übersicht/Arbeitgeberliste) nur mit frischer PIN-Freischaltung.
-    const brauchtFreischaltung = action === "list" || action === "arbeitgeber" || (target && target !== me.name);
+    const brauchtFreischaltung = action === "list" || action === "arbeitgeber" || action === "jugendAnlegen" || (target && target !== me.name);
+    let jugendwartZugriff = false; // Jugendwart arbeitet an der Akte eines Jugendlichen
     if (brauchtFreischaltung) {
-      if (!isAdmin) return json(403, { error: "Du darfst nur deine eigene Personalakte sehen." });
+      if (!isAdmin) {
+        const erlaubt = action !== "arbeitgeber" && (await istJugendwart(me.name))
+          && (action === "list" || (target && (await jugendlicheNamen()).has(target)));
+        if (!erlaubt) return json(403, { error: "Du darfst nur deine eigene Personalakte sehen." });
+        jugendwartZugriff = true;
+      }
       const ok = body.elevatedToken && me.elevated_token === body.elevatedToken && me.elevated_until && new Date(me.elevated_until) > new Date();
       if (!ok) return json(403, { error: "Bitte PIN eingeben.", code: "PIN_NOETIG" });
     }
@@ -78,7 +100,8 @@ export async function handler(event) {
           eintrittsjahr: jahrVon(ein),
           dienstbeginnJahr: jahrVon(beginn),
           rang: aktuellerRang(a),
-          funktionen: (a.funktionen || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv" } : f)).filter((f) => f.status !== "ad").map((f) => f.name),
+          geschlecht: a.geschlecht || "",
+          funktionen: aktiveFunktionen(a),
           lehrgaenge: (a.lehrgaenge || []).map((l) => ({ titel: l.titel || "", jahr: jahrVon(l.datum) })),
           leistungsabzeichen: (a.leistungsabzeichen || []).map((l) => ({ titel: l.titel || "", jahr: jahrVon(l.datum) })),
           verlauf: (a.mitgliedsverlauf || []).map((v) => ({ text: v.text || "", jahr: jahrVon(v.datum) })),
@@ -88,19 +111,37 @@ export async function handler(event) {
     }
 
     if (action === "list") {
-      if (!isAdmin) return json(403, { error: "Nur für Admins." });
       const { data } = await db.from("personalakten").select("name,data");
-      const items = (data || []).map((row) => ({
+      const nurJugend = jugendwartZugriff ? await jugendlicheNamen() : null;
+      const items = (data || []).filter((row) => !nurJugend || nurJugend.has(row.name)).map((row) => ({
         name: row.name,
         geburtsdatum: (row.data && row.data.geburtsdatum) || "",
         eintrittsdatum: (row.data && row.data.eintrittsdatum) || "",
         rang: aktuellerRang(row.data),
+        geschlecht: (row.data && row.data.geschlecht) || "",
       }));
       return json(200, { items });
     }
 
     if (!target) return json(400, { error: "Person fehlt." });
-    if (!isAdmin && target !== me.name) return json(403, { error: "Du darfst nur deine eigene Personalakte sehen." });
+    if (!isAdmin && !jugendwartZugriff && target !== me.name) return json(403, { error: "Du darfst nur deine eigene Personalakte sehen." });
+
+    if (action === "jugendAnlegen") {
+      // Neue(r) Jugendliche(r): Geburtsdatum, Eintritt und "Eintritt Jugendfeuerwehr" im Mitgliedsverlauf.
+      const old = await loadAkte(target);
+      const eintritt = /^\d{4}-\d{2}-\d{2}$/.test(body.eintrittsdatum || "") ? body.eintrittsdatum : new Date().toISOString().slice(0, 10);
+      const verlauf = old.mitgliedsverlauf || [];
+      const next = {
+        ...old,
+        geburtsdatum: old.geburtsdatum || (/^\d{4}-\d{2}-\d{2}$/.test(body.geburtsdatum || "") ? body.geburtsdatum : ""),
+        eintrittsdatum: old.eintrittsdatum || eintritt,
+        mitgliedsverlauf: verlauf.some((v) => v.text === "Eintritt Jugendfeuerwehr") ? verlauf
+          : [...verlauf, { id: Math.random().toString(36).slice(2, 12), text: "Eintritt Jugendfeuerwehr", datum: eintritt }],
+      };
+      const { error } = await db.from("personalakten").upsert({ name: target, data: next, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return json(200, { ok: true });
+    }
 
     if (action === "get") {
       const akte = await loadAkte(target);

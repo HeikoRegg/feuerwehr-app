@@ -54,11 +54,17 @@ function Abschnitt({ s }) {
 }
 
 export default function StatistikKachel() {
-  const { roster, events, sitzungen, vehicles, bewegung, callAuthed, flashError, closeKachelView, kachelReturnTo } = useApp();
-  const jahre = useMemo(() => jahreAuswahl(events), [events]);
-  const [jahr, setJahr] = useState(jahre[0]);
+  const { roster, events, sitzungen, vehicles, bewegung, callAuthed, flashError, closeKachelView, kachelReturnTo, config } = useApp();
+  // Nach der Hauptversammlung im November kann das Einsatzjahr schon das nächste Kalenderjahr sein – dann zur Auswahl anbieten.
+  const jahre = useMemo(() => {
+    const j = jahreAuswahl(events);
+    const ej = Number(config && config.einsatzjahr && config.einsatzjahr.name);
+    return ej && !j.includes(ej) ? [ej, ...j].sort((x, y) => y - x) : j;
+  }, [events, config]);
+  const [jahr, setJahr] = useState(new Date().getFullYear());
   const [reiter, setReiter] = useState("personal");
   const [akten, setAkten] = useState(null);
+  const [einsaetze, setEinsaetze] = useState(undefined); // undefined = lädt, null = Fehler
   const [fehler, setFehler] = useState("");
   const [druckAuswahl, setDruckAuswahl] = useState(false);
   const [mitNamen, setMitNamen] = useState(false);
@@ -69,10 +75,12 @@ export default function StatistikKachel() {
       if (r.ok) setAkten(r.data.items || []);
       else if (r.data && r.data.error === "abgebrochen") closeKachelView();
       else { setAkten([]); setFehler((r.data && r.data.error) || "Daten aus den Personalakten konnten nicht geladen werden."); }
+      const e = await callAuthed("einsatzbericht", { action: "statistik" });
+      setEinsaetze(e.ok ? e.data.items || [] : null);
     })();
   }, []);
 
-  const stat = useMemo(() => (akten ? berechneStatistik({ jahr, roster, events, sitzungen, vehicles, bewegung, akten }) : null), [akten, jahr, roster, events, sitzungen, vehicles, bewegung]);
+  const stat = useMemo(() => (akten && einsaetze !== undefined ? berechneStatistik({ jahr, roster, events, sitzungen, vehicles, bewegung, akten, einsaetze }) : null), [akten, einsaetze, jahr, roster, events, sitzungen, vehicles, bewegung]);
 
   function drucken() {
     if (!oeffneBericht(statistikBericht(stat, jahr, mitNamen))) { flashError("Das Druckfenster wurde vom Browser blockiert."); return; }

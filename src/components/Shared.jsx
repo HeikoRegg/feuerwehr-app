@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { ChevronDown, Clock, EyeOff, HandHelping, Landmark, Lock, MapPin, Pencil, Plus, RotateCcw, Search, UserCheck, UserCog, UserX, Users, X } from "lucide-react";
 import { BEREICHE, BEREICH_KEYS, CATEGORIES, GRUPPENFUEHRER_CATEGORIES } from "../lib/constants";
 import { BereichIcon } from "./BereichIcon";
-import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadcount } from "../lib/helpers";
+import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadcount, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
 
 // Einfache Liste zum Pflegen von Auswahlwerten (Ränge, Funktionen) in den Einstellungen.
@@ -30,6 +30,55 @@ export function SimpleListEditor({ items, onChange, placeholder, locked = [] }) 
   );
 }
 
+// Auswahlliste mit männlicher und weiblicher Form (Dienstgrade, Funktionen, Lehrgänge …).
+// onChange(items, weiblich) – beides zusammen, damit nichts gegenseitig überschrieben wird.
+export function GeschlechtListEditor({ items, weiblich, onChange, placeholder, locked = [] }) {
+  const [input, setInput] = useState("");
+  const [offen, setOffen] = useState(null); // Eintrag, dessen weibliche Form gerade bearbeitet wird
+  const [wInput, setWInput] = useState("");
+  const add = () => {
+    const t = input.trim(); if (!t || items.includes(t)) return;
+    const w = weiblichVorschlag(t);
+    onChange([...items, t], w && w !== t ? { ...weiblich, [t]: w } : weiblich);
+    setInput("");
+  };
+  const move = (idx, dir) => { const next = [...items]; const j = idx + dir; if (j < 0 || j >= next.length) return; [next[idx], next[j]] = [next[j], next[idx]]; onChange(next, weiblich); };
+  const remove = (it) => { const w = { ...weiblich }; delete w[it]; onChange(items.filter((x) => x !== it), w); };
+  const saveW = (it) => { const w = { ...weiblich }; const v = wInput.trim(); if (v && v !== it) w[it] = v; else delete w[it]; onChange(items, w); setOffen(null); };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <input style={{ ...styles.input, flex: 1 }} placeholder={placeholder} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={add}><Plus size={16} /></button>
+      </div>
+      {items.map((it, idx) => (
+        <div key={it} style={{ background: "white", border: "1px solid #E2DFD6", borderRadius: 6, padding: "5px 8px", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <span style={{ fontSize: 12.5, minWidth: 0 }}>
+              {it}{locked.includes(it) && <Lock size={11} color="#A5A79F" style={{ marginLeft: 6, verticalAlign: -1 }} />}
+              <button onClick={() => { setOffen(offen === it ? null : it); setWInput((weiblich || {})[it] || ""); }} style={{ background: "none", border: "none", padding: "0 0 0 6px", fontSize: 11.5, color: (weiblich || {})[it] ? "#8A3B5C" : "#A5A79F", textDecoration: "underline dotted" }}>
+                {(weiblich || {})[it] ? `/ ${(weiblich || {})[it]}` : "+ weibliche Form"}
+              </button>
+            </span>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              <button style={styles.tinyIconBtn} aria-label="nach oben" onClick={() => move(idx, -1)}><ChevronDown size={12} style={{ transform: "rotate(180deg)" }} /></button>
+              <button style={styles.tinyIconBtn} aria-label="nach unten" onClick={() => move(idx, 1)}><ChevronDown size={12} /></button>
+              {!locked.includes(it) && <button style={styles.tinyIconBtn} aria-label="entfernen" onClick={() => remove(it)}><X size={12} /></button>}
+            </div>
+          </div>
+          {offen === it && (
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input style={{ ...styles.input, flex: 1, padding: "5px 8px", fontSize: 12.5 }} autoFocus placeholder={`weibliche Form, z. B. ${weiblichVorschlag(it)}`} value={wInput} onChange={(e) => setWInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveW(it); }} />
+              <button style={{ ...styles.tinyBtnPrimary }} onClick={() => saveW(it)}>OK</button>
+            </div>
+          )}
+        </div>
+      ))}
+      <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Rechts neben dem Eintrag steht die weibliche Form – antippen zum Ändern. Leer lassen, wenn sie gleich ist.</div>
+    </div>
+  );
+}
+
 export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onToggleHas }) {
   const ok = !data.hasLicense || data.confirmedYear === currentYear();
   return (
@@ -48,7 +97,7 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}</span>
+        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}
@@ -84,7 +133,7 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
           )}
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" checked={r.atemschutz} onChange={onToggleAtemschutz} /> Atemschutzträger (G26.3-Pflicht)</label>
           <div style={{ marginTop: 8, fontSize: 11.5, color: "#5C5F58" }}>
-            Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.maschinist && "Maschinist", r.geraetewart && "Gerätewart"].filter(Boolean).join(", ") || "—"}
+            Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.geraetewart && "Gerätewart", r.jugendwart && "Jugendwart", r.maschinist && "Maschinist (Lehrgang)"].filter(Boolean).join(", ") || "—"}
             <div style={{ fontSize: 10.5, color: "#A5A79F", marginTop: 2 }}>Wird in der Personalakte gepflegt.</div>
           </div>
         </div>

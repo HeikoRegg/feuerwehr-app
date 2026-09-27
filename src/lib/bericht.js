@@ -10,7 +10,26 @@
 //  { t: "tabelle", kopf: [..], zeilen: [[..]], breiten?: [anteile] }
 //  { t: "kpis", items: [{ value, label }] }
 //  { t: "balken", zeilen: [{ label, value, max, color, rechts, unter? }] }
-import { LION_ICON } from "./icons";
+//  { t: "felder", items: [{ label, value }] }          – Angaben paarweise nebeneinander (z. B. Kopf eines Einsatzberichts)
+//  { t: "bild", src: dataUrl, text? }                    – Foto (JPEG/PNG als data-URL)
+import { DIETENHEIM_LOGO } from "./logo";
+import { DRUCK_NAME } from "./constants";
+
+// Logo für alle Ausdrucke: Standard ist das Dietenheim-Logo, der Admin kann in den Einstellungen ein anderes hochladen.
+let druckLogo = DIETENHEIM_LOGO;
+export function setzeDruckLogo(url) { druckLogo = url || DIETENHEIM_LOGO; }
+export function aktuellesDruckLogo() { return druckLogo; }
+async function logoBytes(src) {
+  if (src.startsWith("data:")) {
+    const b64 = src.slice(src.indexOf(",") + 1);
+    const bin = atob(b64); const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return { bytes: out, png: src.startsWith("data:image/png") };
+  }
+  const res = await fetch(src);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  return { bytes: buf, png: buf[0] === 0x89 && buf[1] === 0x50 };
+}
 
 export function istMobil() {
   if (typeof navigator === "undefined") return false;
@@ -50,6 +69,11 @@ function blockHtml(b) {
     case "tabelle": return `<table style="border-collapse:collapse;width:100%;margin-top:10px;"><thead><tr>${b.kopf.map((h) => `<th style="border:1px solid #ccc;padding:6px 8px;font-size:12.5px;text-align:left;background:#F3F1EC;">${esc(h)}</th>`).join("")}</tr></thead><tbody>${b.zeilen.map((z) => `<tr>${z.map((c) => `<td style="border:1px solid #ccc;padding:6px 8px;font-size:12.5px;">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     case "kpis": return `<div style="display:flex;gap:8px;margin:10px 0;">${b.items.map((k) => `<div style="flex:1;border:1px solid #E2DFD6;border-radius:6px;padding:8px;text-align:center;"><div style="font-size:18px;font-weight:700;">${esc(k.value)}</div><div style="font-size:10.5px;color:#8A8C86;">${esc(k.label)}</div></div>`).join("")}</div>`;
     case "balken": return b.zeilen.map((z) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;"><div style="width:170px;font-size:12px;">${esc(z.label)}</div><div style="flex:1;background:#EEEEEC;border-radius:4px;height:11px;overflow:hidden;"><div style="width:${pct(z.value, z.max)}%;background:${z.color || "#4A6670"};height:100%;"></div></div><div style="width:110px;text-align:right;font-size:12px;font-weight:700;">${esc(z.rechts)}</div></div>${z.unter ? `<div style="font-size:11px;color:#5C5F58;margin:0 0 5px;">${esc(z.unter)}</div>` : ""}`).join("");
+    case "felder": {
+      const zellen = b.items.map((f) => `<div style="flex:1 1 45%;min-width:200px;border-bottom:1px solid #EEEEEC;padding:5px 0;"><div style="font-size:10.5px;color:#8A8C86;text-transform:uppercase;letter-spacing:0.04em;">${esc(f.label)}</div><div style="font-size:13.5px;font-weight:700;">${esc(f.value || "—")}</div></div>`).join("");
+      return `<div style="display:flex;flex-wrap:wrap;column-gap:24px;margin:8px 0;">${zellen}</div>`;
+    }
+    case "bild": return `<div style="margin:10px 0;page-break-inside:avoid;"><img src="${b.src}" alt="" style="max-width:100%;max-height:420px;border:1px solid #E2DFD6;border-radius:4px;"/>${b.text ? `<div style="font-size:11px;color:#8A8C86;">${esc(b.text)}</div>` : ""}</div>`;
     default: return "";
   }
 }
@@ -59,7 +83,7 @@ export function berichtHtml(modell, { vorschau = false } = {}) {
 <button class="no-print" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;box-shadow:0 3px 10px rgba(0,0,0,0.25);">🖨️ Drucken / Als PDF sichern</button>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(modell.titel)}</title>
 <style>html,body{-webkit-text-size-adjust:100%;text-size-adjust:100%;} body{font-family:Arial,sans-serif;max-width:${modell.querformat ? 1000 : 800}px;margin:${vorschau ? 12 : 24}px auto;padding:0 16px ${vorschau ? 20 : 70}px;color:#2C2F2A;line-height:1.4;} @media print{.no-print{display:none !important;} @page{size:A4 ${modell.querformat ? "landscape" : "portrait"};}} @media screen{body{padding-top:${vorschau ? 0 : 46}px;}}</style></head><body>${knoepfe}
-<div style="display:flex;align-items:center;gap:14px;border-bottom:3px solid #C1272D;padding-bottom:12px;"><img src="${LION_ICON}" alt="" style="width:46px;height:46px;object-fit:contain;"/><div><div style="font-size:19px;font-weight:700;letter-spacing:0.02em;">FEUERWEHR REGGLISWEILER</div><div style="font-size:12px;color:#8A8C86;">${esc(modell.untertitel || modell.titel)}</div></div></div>
+<div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #C1272D;padding-bottom:12px;"><img src="${druckLogo}" alt="" style="height:50px;width:auto;max-width:140px;object-fit:contain;"/><div><div style="font-size:17px;font-weight:700;letter-spacing:0.02em;">${esc(DRUCK_NAME.toUpperCase())}</div><div style="font-size:12px;color:#8A8C86;">${esc(modell.untertitel || modell.titel)}</div></div></div>
 ${modell.blocks.map(blockHtml).join("\n")}
 </body></html>`;
 }
@@ -75,12 +99,13 @@ export async function berichtPdf(modell) {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const doc = await PDFDocument.create();
   doc.setTitle(modell.titel || "Bericht");
-  doc.setAuthor("Feuerwehr Regglisweiler");
+  doc.setAuthor(DRUCK_NAME);
   const reg = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const ital = await doc.embedFont(StandardFonts.HelveticaOblique);
   let logo = null;
-  try { logo = await doc.embedPng(LION_ICON); } catch (e) { logo = null; }
+  try { const l = await logoBytes(druckLogo); logo = l.png ? await doc.embedPng(l.bytes) : await doc.embedJpg(l.bytes); }
+  catch (e) { try { logo = await doc.embedPng((await logoBytes(DIETENHEIM_LOGO)).bytes); } catch (e2) { logo = null; } }
 
   const [W, H] = modell.querformat ? [841.89, 595.28] : [595.28, 841.89];
   const M = 40, BREITE = W - 2 * M, UNTEN = 46;
@@ -129,10 +154,13 @@ export async function berichtPdf(modell) {
 
   // Kopf
   neueSeite();
-  if (logo) { const s = 38 / logo.height; page.drawImage(logo, { x: M, y: y - 38, width: logo.width * s, height: 38 }); }
-  const tx = M + (logo ? 50 : 0);
-  schreibe("FEUERWEHR REGGLISWEILER", tx, y - 17, bold, 15, SCHWARZ);
-  umbrechen(modell.untertitel || modell.titel, reg, 9, BREITE - 50).slice(0, 2).forEach((z, i) => schreibe(z, tx, y - 31 - i * 11, reg, 9, GRAU));
+  let logoBreite = 0;
+  if (logo) { const s = Math.min(40 / logo.height, 110 / logo.width); logoBreite = logo.width * s; page.drawImage(logo, { x: M, y: y - 20 - (logo.height * s) / 2, width: logoBreite, height: logo.height * s }); }
+  const tx = M + (logo ? logoBreite + 14 : 0);
+  const kopfName = sauber(DRUCK_NAME.toUpperCase(), bold);
+  const kopfGroesse = Math.min(14, Math.max(9, 14 * (W - M - tx) / Math.max(1, bold.widthOfTextAtSize(kopfName, 14))));
+  schreibe(kopfName, tx, y - 17, bold, kopfGroesse, SCHWARZ);
+  umbrechen(modell.untertitel || modell.titel, reg, 9, W - M - tx).slice(0, 2).forEach((z, i) => schreibe(z, tx, y - 31 - i * 11, reg, 9, GRAU));
   y -= 48;
   page.drawRectangle({ x: M, y, width: BREITE, height: 2, color: ROT });
   y -= 14;
@@ -173,6 +201,35 @@ export async function berichtPdf(modell) {
         unter.forEach((u) => { platz(10); schreibe(u, M, y - 7, reg, 8, DUNKELGRAU); y -= 10; });
       });
       y -= 2;
+    }
+    else if (b.t === "felder") {
+      const spalte = (BREITE - 20) / 2;
+      for (let i = 0; i < b.items.length; i += 2) {
+        const paar = b.items.slice(i, i + 2).map((f) => ({ l: umbrechen(String(f.label || "").toUpperCase(), reg, 7.5, spalte)[0] || "", v: umbrechen(f.value || "—", bold, 10.5, spalte) }));
+        const h = 12 + Math.max(...paar.map((p) => p.v.length)) * 13 + 6;
+        platz(h);
+        paar.forEach((p, k) => {
+          const x = M + k * (spalte + 20);
+          schreibe(p.l, x, y - 8, reg, 7.5, GRAU);
+          p.v.forEach((z, j) => schreibe(z, x, y - 21 - j * 13, bold, 10.5, SCHWARZ));
+        });
+        y -= h;
+        page.drawRectangle({ x: M, y: y + 3, width: BREITE, height: 0.5, color: LINIE });
+      }
+      y -= 4;
+    }
+    else if (b.t === "bild") {
+      try {
+        const l = await logoBytes(b.src);
+        const img = l.png ? await doc.embedPng(l.bytes) : await doc.embedJpg(l.bytes);
+        const maxH = 300; const s = Math.min(BREITE / img.width, maxH / img.height, 1);
+        const w = img.width * s, h = img.height * s;
+        platz(h + (b.text ? 20 : 10));
+        y -= 6;
+        page.drawImage(img, { x: M, y: y - h, width: w, height: h });
+        y -= h + 4;
+        if (b.text) { schreibe(b.text, M, y - 8, reg, 8, GRAU); y -= 12; }
+      } catch (e) { textBlock("(Foto konnte nicht eingefügt werden)", ital, 8.5, GRAU); }
     }
     else if (b.t === "tabelle") {
       const n = b.kopf.length; const anteile = b.breiten && b.breiten.length === n ? b.breiten : Array(n).fill(1);

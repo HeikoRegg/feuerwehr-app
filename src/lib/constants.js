@@ -1,9 +1,15 @@
 import React from "react";
 
 export const APP_NAME = "Feuerwehr Regglisweiler";
-export const APP_VERSION = "2.7";
+// Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
+export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
+export const APP_VERSION = "2.8";
 export const CHANGELOG = [
-  "Drucken am Handy: Berichte und Listen öffnen sich jetzt mit Vorschau und dem Knopf \"Als PDF teilen / drucken\" – darüber drucken, in Dateien sichern oder per Mail verschicken",
+  "Neue Kachel Einsatzberichte: Gruppenführer erfassen Einsätze mit Fahrzeugen, Mannschaft, Geräten und Fotos. Alle können die Berichte lesen – ohne Namen, nur mit der Anzahl der Einsatzkräfte",
+  "Personalakte: Lehrgänge, Leistungsabzeichen und Ehrungen aus einer Liste auswählen, Besonderes weiterhin selbst eintragen. Maschinist ist jetzt ein Lehrgang",
+  "Personalakte: Geschlecht wählbar – Bezeichnungen erscheinen dann automatisch passend (z. B. Truppführerin, Feuerwehrfrau). „Rang & Beförderungen“ heißt jetzt „Dienstgrad“",
+  "Jugendwarte können Jugendliche selbst anlegen und sperren/entsperren",
+  "Ausdrucke tragen jetzt „Feuerwehr Dietenheim Abt. Regglisweiler“ und das Logo der Feuerwehr Stadt Dietenheim",
 ];
 
 export const CATEGORIES = {
@@ -46,9 +52,27 @@ export const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", war
 // Runde Geburtstage, die in der Jahresübersicht erscheinen (zusätzlich zu allen Zehnern ab 20).
 export const RUNDE_GEBURTSTAGE_EXTRA = [18];
 
-// Diese drei Funktionen steuern Rechte in der App und lassen sich nicht löschen oder umbenennen.
-export const FESTE_FUNKTIONEN = ["Gruppenführer", "Maschinist", "Gerätewart"];
-export const FUNKTION_FLAG = { "Gruppenführer": "gruppenfuehrer", "Maschinist": "maschinist", "Gerätewart": "geraetewart" };
+// Diese Funktionen steuern Rechte in der App und lassen sich nicht löschen oder umbenennen.
+export const FESTE_FUNKTIONEN = ["Gruppenführer", "Gerätewart", "Jugendwart"];
+export const FUNKTION_FLAG = { "Gruppenführer": "gruppenfuehrer", "Gerätewart": "geraetewart", "Jugendwart": "jugendwart" };
+// Maschinist ist ein Lehrgang: wer ihn in der Personalakte stehen hat, gilt als Maschinist (Bewegungsfahrten).
+export const MASCHINIST_LEHRGANG = "Maschinist";
+export const FESTE_LEHRGAENGE = [MASCHINIST_LEHRGANG];
+// Weibliche Formen der festen Einträge (weitere pflegt der Admin in den Einstellungen).
+export const WEIBLICH_STANDARD = { "Gruppenführer": "Gruppenführerin", "Gerätewart": "Gerätewartin", "Jugendwart": "Jugendwartin", "Maschinist": "Maschinistin" };
+// Vorlagen für den Mitgliedsverlauf in der Personalakte (Freitext bleibt möglich).
+export const VERLAUF_VORLAGEN = ["Eintritt Jugendfeuerwehr", "Übertritt Einsatzabteilung", "Eintritt Einsatzabteilung", "Übertritt Altersabteilung", "Austritt", "Wiedereintritt"];
+
+// Einsatzberichte
+export const EINSATZ_STICHWORTE = ["Brand", "Kleinbrand", "Technische Hilfeleistung", "Verkehrsunfall", "Ölspur", "Unwetter", "Wasserschaden", "Tierrettung", "Türöffnung", "Brandsicherheitswache", "Fehlalarm / Brandmeldeanlage", "Sonstiges"];
+// Geräte & Material – in den Einstellungen änderbar. Die Einheit steht in Klammern.
+export const EINSATZ_GERAETE_STANDARD = [
+  "Betriebsdauer Notstromaggregat (Std.)", "Betriebsdauer TS 8 (Std.)", "Betriebsdauer Motorsäge (Std.)", "Betriebsdauer Tauchpumpe (Std.)",
+  "Betriebsdauer Hochdrucklüfter (Std.)", "Betriebsdauer Wassersauger (Std.)",
+  "B-Schläuche (Stück)", "C-Schläuche (Stück)", "D-Schläuche (Stück)", "Saugschläuche (Stück)",
+  "Ölbindemittel 25-kg-Sack (Stück)", "Ölsperre Gewässer (Stück)", "Ölbindemittel Gewässer, Würfel (Stück)",
+];
+export const EINSATZ_NUMMER_PRAEFIX = "RW";
 
 // Bewegungsfahrten – Standardwerte (in den Einstellungen änderbar)
 export const BEWEGUNG_DEFAULT = {

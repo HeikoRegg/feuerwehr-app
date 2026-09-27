@@ -51,6 +51,21 @@ async function checkPin(user, pin) {
   }
   return null;
 }
+async function loadAkte(name) {
+  const { data } = await db.from("personalakten").select("data").eq("name", name).maybeSingle();
+  return (data && data.data) || {};
+}
+// Jugendwart = aktive Funktion "Jugendwart" in der eigenen (geschützten) Personalakte – vergibt nur der Admin.
+async function istJugendwart(name) {
+  const f = (await loadAkte(name)).funktionen || [];
+  return f.some((x) => (typeof x === "string" ? x === "Jugendwart" : x.name === "Jugendwart" && x.status !== "ad"));
+}
+// Jugendliche: Jugendfeuerwehr, aber nicht Einsatzabteilung.
+async function istJugendlicher(name) {
+  const roster = (await getKv("roster")) || [];
+  const r = roster.find((x) => x && x.name === name);
+  return !!r && (r.bereiche || []).includes("jugendfeuerwehr") && !(r.bereiche || []).includes("einsatzabteilung");
+}
 const GESPERRT_TEXT = "Dein Zugang zur App ist gesperrt. Bei Fragen bitte beim Kommandanten melden.";
 const ELEVATION_STUNDEN = 2; // Sicherheitsnetz, falls die Personalakten-Kachel offen liegen bleibt
 
@@ -85,6 +100,23 @@ async function migrate() {
     const funktionen = akte.funktionen || [];
     if (funktionen.some((f) => (typeof f === "string" ? f : f.name) === "Gruppenführer")) continue;
     await db.from("personalakten").upsert({ name: r.name, data: { ...akte, funktionen: [...funktionen, { name: "Gruppenführer", status: "aktiv", seit: "", adSeit: "" }] }, updated_at: new Date().toISOString() });
+  }
+
+  // Version 2.8: Maschinist ist ein Lehrgang statt einer Funktion – einmalig für alle Akten umstellen.
+  const migrationen = (await getKv("migrationen")) || {};
+  if (!migrationen.maschinistLehrgang) {
+    const { data: akten } = await db.from("personalakten").select("name,data");
+    for (const row of akten || []) {
+      const akte = row.data || {};
+      const funktionen = (akte.funktionen || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv", seit: "", adSeit: "" } : f));
+      const alt = funktionen.find((f) => f.name === "Maschinist" && f.status !== "ad");
+      if (!alt) continue;
+      const lehrgaenge = akte.lehrgaenge || [];
+      const neu = lehrgaenge.some((l) => l.titel === "Maschinist") ? lehrgaenge
+        : [...lehrgaenge, { id: newToken().slice(0, 10), titel: "Maschinist", datum: alt.seit || "", photoPath: null }];
+      await db.from("personalakten").upsert({ name: row.name, data: { ...akte, funktionen: funktionen.filter((f) => f !== alt), lehrgaenge: neu }, updated_at: new Date().toISOString() });
+    }
+    await setKv("migrationen", { ...migrationen, maschinistLehrgang: new Date().toISOString() });
   }
 
   // Admin-Rechte einmalig aus der Konfiguration übernehmen (danach gilt nur noch app_users).
@@ -173,8 +205,8 @@ export async function handler(event) {
     if (action === "verify") return json(200, { name: me.name, isAdmin: !!me.is_admin });
 
     if (action === "elevate") {
-      // Admin schaltet mit erneuter PIN-Eingabe die fremden Personalakten frei.
-      if (!me.is_admin) return json(403, { error: "Nur für Admins." });
+      // Admin (bzw. Jugendwart für die Jugendlichen) schaltet mit erneuter PIN-Eingabe die fremden Personalakten frei.
+      if (!me.is_admin && !(await istJugendwart(me.name))) return json(403, { error: "Nur für Admins." });
       const fehler = await checkPin(me, body.pin);
       // Falsche PIN hier bewusst NICHT als 401 melden – sonst hielte die App das für eine abgelaufene Anmeldung.
       if (fehler) return fehler.statusCode === 401 ? json(403, JSON.parse(fehler.body)) : fehler;
@@ -184,8 +216,9 @@ export async function handler(event) {
     }
 
     if (action === "setBlocked") {
-      if (!me.is_admin) return json(403, { error: "Nur für Admins." });
       const name = body.target;
+      // Jugendwarte dürfen Jugendliche (Jugendfeuerwehr ohne Einsatzabteilung) sperren und entsperren.
+      if (!me.is_admin && !((await istJugendwart(me.name)) && (await istJugendlicher(name)))) return json(403, { error: "Nur für Admins." });
       const gesperrt = !!body.value;
       const target = (await getUser(name)) || { name, tokens: [] };
       if (gesperrt && (target.is_admin || name === me.name)) return json(403, { error: "Admins können nicht gesperrt werden. Bitte zuerst das Admin-Recht entfernen." });

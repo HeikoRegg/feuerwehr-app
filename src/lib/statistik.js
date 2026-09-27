@@ -41,11 +41,13 @@ export const STATISTIK_REITER = [
   { key: "ausbildung", label: "Ausbildung" },
   { key: "einsatz", label: "Einsatzbereitschaft" },
   { key: "dienst", label: "Dienstbetrieb" },
+  { key: "einsaetze", label: "Einsätze" },
 ];
 
 // roster: nur aktive (nicht gesperrte) Mitglieder
 // akten: vom Server gelieferte, auf das Nötigste reduzierte Daten aus den Personalakten (auch Gesperrte, für Austritte)
-export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, bewegung, akten }) {
+// einsaetze: Einsatzberichte vom Server (nur Admin, mit Namen); gezählt wird nach Einsatzjahr (Hauptversammlung bis Hauptversammlung)
+export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, bewegung, akten, einsaetze }) {
   const heute = todayISO();
   const jahrStr = String(jahr);
   const imJahr = (datum) => String(datum || "").slice(0, 4) === jahrStr;
@@ -81,9 +83,9 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
         items: gruppiere(roster.filter((r) => aktenByName[r.name] && aktenByName[r.name].dienstbeginnJahr).map((r) => ({ wert: Math.max(0, jahr - aktenByName[r.name].dienstbeginnJahr), name: r.name })), 5, 0, 40),
         empty: "Noch keine Eintrittsdaten in den Personalakten eingetragen.",
         note: "Gezählt ab Eintritt, frühestens ab dem 14. Geburtstag." },
-      { id: "raenge", title: "Ränge (aktuell)", type: "bars",
+      { id: "raenge", title: "Dienstgrade (aktuell)", type: "bars",
         items: zaehle(roster.filter((r) => aktenByName[r.name] && aktenByName[r.name].rang).map((r) => [aktenByName[r.name].rang, r.name])),
-        empty: "Noch keine Ränge in den Personalakten eingetragen." },
+        empty: "Noch keine Dienstgrade in den Personalakten eingetragen." },
       { id: "entwicklung", title: `Mitgliederentwicklung ${jahr}`, type: "bars",
         items: [
           { label: "Eintritte", names: (akten || []).filter((a) => a.eintrittsjahr === jahr).map((a) => a.name) },
@@ -100,14 +102,18 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
   const lehrgaenge = zaehle(aktenAktiv.flatMap((a) => (a.lehrgaenge || []).filter((l) => l.jahr === jahr).map((l) => [l.titel || "ohne Bezeichnung", a.name])));
   const abzeichen = zaehle(aktenAktiv.flatMap((a) => (a.leistungsabzeichen || []).filter((l) => l.jahr === jahr).map((l) => [l.titel || "ohne Bezeichnung", a.name])));
   const summe = (l) => l.reduce((s, x) => s + x.value, 0);
+  // Qualifikationen: alle Lehrgänge der aktiven Mitglieder (egal aus welchem Jahr), jede Person einmal je Lehrgang
+  const qualifikationen = zaehle(aktenAktiv.flatMap((a) => [...new Set((a.lehrgaenge || []).map((l) => l.titel).filter(Boolean))].map((t) => [t, a.name])));
+  const maschinisten = aktenAktiv.filter((a) => (a.lehrgaenge || []).some((l) => l.titel === "Maschinist") || (a.funktionen || []).includes("Maschinist")).length;
   const ausbildung = {
     kpis: [
       { label: `Lehrgänge ${jahr}`, value: summe(lehrgaenge) },
       { label: `Leistungsabz. ${jahr}`, value: summe(abzeichen) },
-      { label: "Maschinisten", value: (funktionen.find((f) => f.label === "Maschinist") || { value: 0 }).value },
+      { label: "Maschinisten", value: maschinisten },
     ],
     sections: [
-      { id: "funktionen", title: "Aktive Funktionen / Qualifikationen", type: "bars", items: funktionen, empty: "Noch keine Funktionen in den Personalakten eingetragen." },
+      { id: "funktionen", title: "Aktive Funktionen", type: "bars", items: funktionen, empty: "Noch keine Funktionen in den Personalakten eingetragen." },
+      { id: "qualifikationen", title: "Qualifikationen (alle Lehrgänge, aktueller Stand)", type: "bars", items: qualifikationen, empty: "Noch keine Lehrgänge in den Personalakten eingetragen." },
       { id: "lehrgaenge", title: `Lehrgänge ${jahr}`, type: "bars", items: lehrgaenge, empty: `Keine Lehrgänge mit Datum ${jahr} eingetragen.` },
       { id: "abzeichen", title: `Leistungsabzeichen ${jahr}`, type: "bars", items: abzeichen, empty: `Keine Leistungsabzeichen mit Datum ${jahr} eingetragen.` },
     ],
@@ -211,7 +217,36 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
     ],
   };
 
-  return { personal, ausbildung, einsatz, dienst };
+  // ---------------- EINSÄTZE (nach Einsatzjahr) ----------------
+  const zahl = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; };
+  const rund = (n) => Math.round(n * 10) / 10;
+  const ej = (einsaetze || []).filter((b) => String(b.einsatzjahr) === jahrStr);
+  const stdGesamt = ej.reduce((s, b) => s + (b.stunden || 0), 0);
+  const proPerson = {};
+  ej.forEach((b) => (b.mannschaft || []).forEach((m) => { const p = (proPerson[m.name] ||= { anzahl: 0, std: 0 }); p.anzahl++; p.std += zahl(m.ein); }));
+  const monate = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+  const fzZaehler = {};
+  ej.forEach((b) => (b.fahrzeuge || []).forEach((id) => { const n = (b.fahrzeugNamen || {})[id] || "Fahrzeug"; fzZaehler[n] = (fzZaehler[n] || 0) + 1; }));
+  const einsaetzeStat = {
+    note: einsaetze === null ? "Einsatzberichte konnten nicht geladen werden." : `Einsatzjahr ${jahr} – von Hauptversammlung zu Hauptversammlung, wie in der Kachel Einsatzberichte.`,
+    kpis: [
+      { label: `Einsätze ${jahr}`, value: ej.length },
+      { label: "Einsatzstunden", value: rund(stdGesamt) },
+      { label: "Ø Einsatzkräfte", value: ej.length ? rund(ej.reduce((s, b) => s + (b.kraefte || 0), 0) / ej.length) : "–" },
+    ],
+    sections: [
+      { id: "arten", title: "Einsätze nach Art", type: "bars", color: "#C1272D", items: zaehle(ej.map((b) => [b.einsatz || "ohne Angabe", b.nummer || ""])).map((x) => ({ label: x.label, value: x.value })), empty: `Keine Einsätze im Einsatzjahr ${jahr}.` },
+      { id: "monate", title: "Einsätze nach Monat", type: "bars", color: "#C1272D",
+        items: ej.length ? monate.map((m, i) => ({ label: m, value: ej.filter((b) => Number(String(b.datum || "").slice(5, 7)) === i + 1).length })).filter((x) => x.value > 0) : [],
+        empty: `Keine Einsätze im Einsatzjahr ${jahr}.` },
+      { id: "fahrzeuge", title: "Eingesetzte Fahrzeuge", type: "bars", items: Object.entries(fzZaehler).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value), empty: "Keine Fahrzeuge eingetragen." },
+      { id: "personen", title: "Einsätze und Einsatzstunden pro Person", type: "bars", nurMitNamen: true,
+        items: Object.entries(proPerson).map(([name, p]) => ({ label: name, value: p.anzahl, suffix: ` · ${rund(p.std)} Std.` })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "de")),
+        empty: "Keine Einsatzkräfte eingetragen." },
+    ],
+  };
+
+  return { personal, ausbildung, einsatz, dienst, einsaetze: einsaetzeStat };
 }
 
 // ---------------- Jahresbericht als Berichtsmodell (siehe lib/bericht.js) ----------------

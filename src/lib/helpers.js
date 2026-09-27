@@ -1,6 +1,6 @@
 import React from "react";
 import { supabase } from "../supabaseClient";
-import { BEREICH_KEYS, BEWEGUNG_DEFAULT, FESTE_FUNKTIONEN, MONTHS, WEEKDAYS_SHORT } from "./constants";
+import { BEREICH_KEYS, BEWEGUNG_DEFAULT, EINSATZ_GERAETE_STANDARD, FESTE_FUNKTIONEN, FESTE_LEHRGAENGE, MASCHINIST_LEHRGANG, MONTHS, WEEKDAYS_SHORT, WEIBLICH_STANDARD } from "./constants";
 
 export function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 export function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -33,6 +33,7 @@ export const emptyRosterEntry = (name, hasPin) => ({
   gruppenfuehrer: false,
   maschinist: false,
   geraetewart: false,
+  jugendwart: false,
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },
   g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null },
@@ -146,13 +147,41 @@ export function normalizeConfig(cfg) {
   const legacyAdmin = cfg.adminName;
   return {
     doctorName: "", doctorAddress: "", doctorPhone: "", lastCleanupYear: currentYear(),
-    raenge: [],
+    raenge: [], leistungsabzeichen: [], ehrungen: [], druckLogoUrl: "",
     ...cfg,
-    funktionen: [...FESTE_FUNKTIONEN, ...((cfg.funktionen || []).filter((f) => !FESTE_FUNKTIONEN.includes(f)))],
+    // Maschinist ist seit Version 2.8 ein Lehrgang und keine Funktion mehr.
+    funktionen: [...FESTE_FUNKTIONEN, ...((cfg.funktionen || []).filter((f) => !FESTE_FUNKTIONEN.includes(f) && f !== MASCHINIST_LEHRGANG))],
+    lehrgaenge: [...FESTE_LEHRGAENGE, ...((cfg.lehrgaenge || []).filter((f) => !FESTE_LEHRGAENGE.includes(f)))],
+    weiblich: { ...WEIBLICH_STANDARD, ...(cfg.weiblich || {}) },
+    einsatzGeraete: cfg.einsatzGeraete || EINSATZ_GERAETE_STANDARD,
     bewegung: { ...BEWEGUNG_DEFAULT, ...(cfg.bewegung || {}) },
     adminNames: cfg.adminNames || (legacyAdmin ? [legacyAdmin] : []),
     mainAdminName: cfg.mainAdminName || legacyAdmin || (cfg.adminNames && cfg.adminNames[0]) || null,
   };
+}
+
+// ---------------- männliche / weibliche Bezeichnungen ----------------
+// Gespeichert wird immer die Grundform aus der Auswahlliste (z. B. "Truppführer").
+// Angezeigt wird für Frauen die in den Einstellungen hinterlegte weibliche Form.
+export function geschlechtsForm(name, geschlecht, weiblich) {
+  if (!name || geschlecht !== "w" || !weiblich) return name;
+  return weiblich[name] || name;
+}
+// Vorschlag für die weibliche Form beim Anlegen eines neuen Listeneintrags (kann angepasst werden).
+export function weiblichVorschlag(name) {
+  const t = String(name || "").trim();
+  if (!t) return "";
+  if (/mann/i.test(t)) return t.replace(/Männer/g, "Frauen").replace(/mann/g, "frau").replace(/Mann/g, "Frau");
+  // Nur das erste Wort anpassen ("Leiter Atemschutz" → "Leiterin Atemschutz", "Ehrenzeichen Silber" bleibt).
+  const woerter = t.split(" ");
+  if (!/(er|ist|wart|ant|eur|or)$/i.test(woerter[0])) return t;
+  woerter[0] = woerter[0] + "in";
+  return woerter.join(" ");
+}
+// Einheit aus "Bezeichnung (Einheit)" lesen.
+export function geraetTeile(eintrag) {
+  const m = String(eintrag || "").match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  return m ? { name: m[1], einheit: m[2] } : { name: String(eintrag || ""), einheit: "" };
 }
 
 export function matchesSearch(name, query) { if (!query.trim()) return true; return name.toLowerCase().includes(query.trim().toLowerCase()); }

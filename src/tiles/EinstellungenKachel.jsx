@@ -1,15 +1,40 @@
-import React from "react";
+import React, { useState } from "react";
 import { ArrowLeft, Check, ChevronDown, Plus, X } from "lucide-react";
-import { APP_VERSION, FESTE_FUNKTIONEN, MONTHS } from "../lib/constants";
-import { matchesSearch } from "../lib/helpers";
+import { APP_VERSION, EINSATZ_GERAETE_STANDARD, FESTE_FUNKTIONEN, FESTE_LEHRGAENGE, MONTHS } from "../lib/constants";
+import { matchesSearch, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
-import { RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
+import { GeschlechtListEditor, RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
+import { supabase } from "../supabaseClient";
+import { DIETENHEIM_LOGO } from "../lib/logo";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 export default function EinstellungenKachel() {
-  const { alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht } = useApp();
+  const [logoUpload, setLogoUpload] = useState(false);
+  const { flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht } = useApp();
+  // Ein Listen-Paar (Einträge + weibliche Formen) gemeinsam speichern.
+  const listeSpeichern = (key) => (items, weiblich) => persistConfig({ ...config, [key]: items, weiblich });
+  // Einträge ohne weibliche Form, für die es einen Vorschlag gibt (z. B. ältere Listen von vor Version 2.8).
+  const fehlendeWeiblich = {};
+  ["raenge", "funktionen", "lehrgaenge", "leistungsabzeichen", "ehrungen"].forEach((k) => (config[k] || []).forEach((it) => {
+    const w = weiblichVorschlag(it);
+    if (!(config.weiblich || {})[it] && w && w !== it) fehlendeWeiblich[it] = w;
+  }));
+  async function logoHochladen(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg)$/.test(file.type)) { flashError("Bitte ein PNG- oder JPG-Bild wählen."); return; }
+    if (file.size > 3 * 1024 * 1024) { flashError("Das Bild ist zu groß (max. 3 MB)."); return; }
+    setLogoUpload(true);
+    try {
+      const path = `logo/druck_${Date.now()}.${file.type === "image/png" ? "png" : "jpg"}`;
+      const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data } = supabase.storage.from("anhaenge").getPublicUrl(path);
+      persistConfig({ ...config, druckLogoUrl: data.publicUrl });
+    } catch (e) { flashError("Logo-Upload fehlgeschlagen."); }
+    setLogoUpload(false);
+  }
   return (
         <div style={styles.fullscreenPage}>
           <div style={styles.fullscreenHeader}>
@@ -54,11 +79,46 @@ export default function EinstellungenKachel() {
                   </div>
                 )}
               </div>
-              <label style={{ ...styles.label, marginTop: 22 }}>Ränge (Auswahlliste für die Personalakte)</label>
-              <SimpleListEditor items={config.raenge || []} onChange={(v) => persistConfig({ ...config, raenge: v })} placeholder="z. B. Oberfeuerwehrmann" />
-              <label style={{ ...styles.label, marginTop: 16 }}>Funktionen / Qualifikationen (Auswahlliste)</label>
-              <SimpleListEditor items={config.funktionen || []} onChange={(v) => persistConfig({ ...config, funktionen: v })} placeholder="z. B. Sprechfunker" locked={FESTE_FUNKTIONEN} />
-              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Gruppenführer, Maschinist und Gerätewart sind fest und steuern Rechte in der App (Gruppenführer-Auswahl, Bewegungsfahrten, Mängelmeldungen).</div>
+              <div style={{ ...styles.label, marginTop: 22, fontSize: 13 }}>Auswahllisten für die Personalakte</div>
+              <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 8 }}>Gespeichert wird immer die erste Form. Bei Frauen zeigt die App automatisch die weibliche Form (Geschlecht wählt jedes Mitglied in seiner Personalakte).</div>
+              {Object.keys(fehlendeWeiblich).length > 0 && (
+                <div style={{ ...styles.capacityBox, marginTop: 4, marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 6 }}>Für {Object.keys(fehlendeWeiblich).length} Einträge fehlt noch die weibliche Form, z. B. {Object.entries(fehlendeWeiblich).slice(0, 2).map(([m, w]) => `${m} → ${w}`).join(", ")}.</div>
+                  <button style={styles.tinyBtnPrimary} onClick={() => persistConfig({ ...config, weiblich: { ...fehlendeWeiblich, ...config.weiblich } })}>Vorschläge übernehmen</button>
+                  <span style={{ fontSize: 10.5, color: "#8A8C86", marginLeft: 8 }}>danach einzeln prüfbar</span>
+                </div>
+              )}
+              <label style={{ ...styles.label, marginTop: 10 }}>Dienstgrade</label>
+              <GeschlechtListEditor items={config.raenge || []} weiblich={config.weiblich} onChange={listeSpeichern("raenge")} placeholder="z. B. Oberfeuerwehrmann" />
+              <label style={{ ...styles.label, marginTop: 16 }}>Funktionen</label>
+              <GeschlechtListEditor items={config.funktionen || []} weiblich={config.weiblich} onChange={listeSpeichern("funktionen")} placeholder="z. B. Sprechfunker" locked={FESTE_FUNKTIONEN} />
+              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Gruppenführer, Gerätewart und Jugendwart sind fest und steuern Rechte in der App (Einsatzberichte, Mängelmeldungen, Jugendliche verwalten).</div>
+              <label style={{ ...styles.label, marginTop: 16 }}>Lehrgänge</label>
+              <GeschlechtListEditor items={config.lehrgaenge || []} weiblich={config.weiblich} onChange={listeSpeichern("lehrgaenge")} placeholder="z. B. Truppführer" locked={FESTE_LEHRGAENGE} />
+              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Maschinist ist fest: Wer diesen Lehrgang in der Akte hat, wird bei den Bewegungsfahrten eingeteilt.</div>
+              <label style={{ ...styles.label, marginTop: 16 }}>Leistungsabzeichen</label>
+              <GeschlechtListEditor items={config.leistungsabzeichen || []} weiblich={config.weiblich} onChange={listeSpeichern("leistungsabzeichen")} placeholder="z. B. Leistungsabzeichen THL Bronze" />
+              <label style={{ ...styles.label, marginTop: 16 }}>Ehrungen & Auszeichnungen</label>
+              <GeschlechtListEditor items={config.ehrungen || []} weiblich={config.weiblich} onChange={listeSpeichern("ehrungen")} placeholder="z. B. Ehrenzeichen Silber" />
+              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Bei Lehrgängen, Leistungsabzeichen und Ehrungen kann zusätzlich immer etwas frei eingetragen werden.</div>
+
+              <label style={{ ...styles.label, marginTop: 22 }}>Einsatzbericht – Geräte & Material</label>
+              <SimpleListEditor items={config.einsatzGeraete || []} onChange={(v) => persistConfig({ ...config, einsatzGeraete: v })} placeholder="z. B. Betriebsdauer Rettungsspreizer (Std.)" />
+              <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }}>Die Einheit in Klammern dahinter schreiben. Kilometer und Pumpenstunden kommen automatisch je Fahrzeug dazu, Atemschutz aus der Mannschaftsliste.
+                {" "}<button style={{ ...styles.tinyBtn, marginTop: 4 }} onClick={() => persistConfig({ ...config, einsatzGeraete: EINSATZ_GERAETE_STANDARD })}>Standardliste wiederherstellen</button></div>
+
+              <label style={{ ...styles.label, marginTop: 22 }}>Logo für Ausdrucke</label>
+              <div style={{ ...styles.capacityBox, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <img src={config.druckLogoUrl || DIETENHEIM_LOGO} alt="Logo" style={{ height: 46, width: "auto", maxWidth: 140, objectFit: "contain", background: "white", border: "1px solid #E2DFD6", borderRadius: 4, padding: 4 }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={styles.smallAddBtn}>
+                    {logoUpload ? "Lädt hoch …" : <><Plus size={12} /> Anderes Logo hochladen</>}
+                    <input type="file" accept="image/png,image/jpeg" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) logoHochladen(e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                  {config.druckLogoUrl && <button style={styles.tinyBtn} onClick={() => persistConfig({ ...config, druckLogoUrl: "" })}>Standard-Logo verwenden</button>}
+                </div>
+                <div style={{ fontSize: 10.5, color: "#8A8C86", width: "100%" }}>Am besten ein PNG mit durchsichtigem Hintergrund. Das Standard-Logo ist aus dem Papier-Einsatzzettel ausgeschnitten.</div>
+              </div>
               <label style={{ ...styles.label, marginTop: 22 }}>Bewegungsfahrten</label>
               <div style={styles.capacityBox}>
                 <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 6 }}>Personen pro Fahrt</div>
