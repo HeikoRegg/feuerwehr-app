@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, Landmark, MessageCircle, Plus, Send, Shield, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, ChevronRight, Landmark, MessageCircle, Plus, Send, Shield, Trash2, Wrench } from "lucide-react";
 import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { SearchBox } from "../components/Shared";
@@ -195,6 +195,7 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
   }
 
   const nachrichten = (daten && daten.nachrichten) || [];
+  const gelesenBis = (daten && daten.andereGelesenTs) || 0; // ✓✓ = mindestens ein anderer Beteiligter hat gelesen
   const mitleser = ((daten && daten.teilnehmer) || []).filter((n) => n !== ich);
   const titel = alsKamerad ? NAME[gruppe] : kamerad;
   const untertitel = alsKamerad
@@ -230,7 +231,12 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
               {nameZeigen && <div style={{ fontSize: 10.5, color: "#8A8C86", margin: "4px 6px 2px" }}>{m.von}</div>}
               <div style={{ maxWidth: "82%", padding: "8px 11px", borderRadius: 12, borderBottomRightRadius: eigen ? 3 : 12, borderBottomLeftRadius: eigen ? 12 : 3, background: eigen ? "#C1272D" : "white", color: eigen ? "white" : "#2C2F2A", border: eigen ? "none" : "1px solid #E2DFD6", fontSize: 13.5, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                 {m.text}
-                <div style={{ fontSize: 9.5, marginTop: 3, textAlign: "right", color: eigen ? "rgba(255,255,255,0.75)" : "#A5A79F" }}>{zeitText(m.ts)}</div>
+                <div style={{ fontSize: 9.5, marginTop: 3, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, color: eigen ? "rgba(255,255,255,0.75)" : "#A5A79F" }}>
+                  <span>{zeitText(m.ts)}</span>
+                  {eigen && (Date.parse(m.ts) <= gelesenBis
+                    ? <span aria-label="gelesen" title="Gelesen" style={{ display: "inline-flex" }}><CheckCheck size={13} color="#9BE7FF" strokeWidth={2.6} /></span>
+                    : <span aria-label="gesendet" title="Gesendet" style={{ display: "inline-flex" }}><Check size={13} color="rgba(255,255,255,0.8)" strokeWidth={2.4} /></span>)}
+                </div>
               </div>
             </div>
           );

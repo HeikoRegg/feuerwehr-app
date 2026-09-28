@@ -46,7 +46,7 @@ export function oeffneBericht(modell, fenster) {
   if (istMobil() && anzeigeFn) { if (fenster) fenster.close(); anzeigeFn(modell); return true; }
   const w = fenster || window.open("", "_blank");
   if (!w) return false;
-  w.document.open(); w.document.write(berichtHtml(modell)); w.document.close();
+  w.document.open(); w.document.write(modell.htmlFn ? modell.htmlFn({ vorschau: false }) : berichtHtml(modell)); w.document.close();
   return true;
 }
 export function dateiname(modell) {

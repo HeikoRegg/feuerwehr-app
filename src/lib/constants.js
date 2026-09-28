@@ -3,12 +3,13 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.10";
+export const APP_VERSION = "2.11";
 export const CHANGELOG = [
+  "Neu: Geräte – alle Geräte je Fahrzeug und Fach mit Sichtprüfung, Funktionsprüfung, Elektroprüfung, Tank u. a. Jedes Gerät bekommt einen QR-Code zum Aufkleben; mit der Kamera scannen öffnet direkt das Gerät",
+  "Mangel melden mit Foto: Gerätewart, Kommandant und Stellvertreter werden sofort benachrichtigt und können Notizen und den Status (offen / in Bearbeitung / behoben) eintragen – der Melder wird informiert",
+  "Fahrzeug-Rundgang: alle Geräte eines Fahrzeugs nacheinander abhaken. Für den Gerätewart gibt es eine Übersicht mit fälligen Prüfungen und Mängeln",
+  "Nachrichten: Häkchen zeigen, ob deine Nachricht gesendet (✓) und von jemandem gelesen wurde (✓✓)",
   "Neu: Nachrichten – schreib direkt an den Ausschuss, die Kommandantschaft oder den Entwickler der App. Die Sprechblase oben zeigt ungelesene Nachrichten",
-  "Ausschuss und Kommandantschaft können Kameraden auch von sich aus anschreiben. Untereinander schreiben ist nicht möglich",
-  "Jeder Beteiligte kann eine Unterhaltung für alle löschen; nach 6 Monaten ohne neue Nachricht wird sie automatisch gelöscht",
-  "Neue feste Funktionen in der Personalakte: Kommandant und stellv. Kommandant",
 ];
 
 export const CATEGORIES = {

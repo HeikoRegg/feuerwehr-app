@@ -127,12 +127,18 @@ export async function handler(event) {
         return json(200, { thread: null, teilnehmer: lage.gruppen[gruppe] || [], nachrichten: [] });
       }
       if (!darfThread(lage, t)) return json(403, { error: "Kein Zugriff auf diese Unterhaltung." });
-      const { data: n } = await db.from("chat_nachrichten").select("id,von,text,ts").eq("thread", t.id);
+      const [{ data: n }, { data: gel }] = await Promise.all([
+        db.from("chat_nachrichten").select("id,von,text,ts").eq("thread", t.id),
+        db.from("chat_gelesen").select("name,ts").eq("thread", t.id),
+      ]);
+      // Für die Häkchen: Zeitpunkt, bis zu dem mindestens ein ANDERER Beteiligter gelesen hat (ohne Namen).
+      const andereGelesenTs = (gel || []).filter((x) => x.name !== ich).reduce((m, x) => Math.max(m, zeit(x.ts)), 0);
       await alsGelesen(t.id, ich);
       return json(200, {
         thread: { id: t.id, gruppe: t.gruppe, kamerad: t.kamerad, seite: t.kamerad === ich ? "kamerad" : "fuehrung" },
         teilnehmer: lage.gruppen[t.gruppe] || [],
         nachrichten: (n || []).sort((a, b) => zeit(a.ts) - zeit(b.ts)),
+        andereGelesenTs,
       });
     }
 

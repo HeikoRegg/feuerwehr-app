@@ -15,7 +15,7 @@ export default function BerichtAnsicht({ modell, onClose }) {
   useEffect(() => {
     let aktiv = true;
     setDatei(null); setFehler(""); setHinweis("");
-    berichtPdf(modell).then((f) => { if (aktiv) setDatei(f); }).catch(() => { if (aktiv) setFehler("Die PDF-Datei konnte nicht erstellt werden."); });
+    (modell.pdfFn ? modell.pdfFn() : berichtPdf(modell)).then((f) => { if (aktiv) setDatei(f); }).catch(() => { if (aktiv) setFehler("Die PDF-Datei konnte nicht erstellt werden."); });
     return () => { aktiv = false; };
   }, [modell]);
 
@@ -46,7 +46,7 @@ export default function BerichtAnsicht({ modell, onClose }) {
         <button onClick={onClose} aria-label="Schließen" style={{ display: "flex", alignItems: "center", gap: 4, background: "#2C2F2A", color: "white", border: "none", borderRadius: 20, padding: "7px 12px", fontSize: 13, fontWeight: 700, flexShrink: 0 }}><X size={14} /> Schließen</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", background: "white" }}>
-        <iframe ref={iframeRef} title="Vorschau" srcDoc={berichtHtml(modell, { vorschau: true })} onLoad={hoeheAnpassen}
+        <iframe ref={iframeRef} title="Vorschau" srcDoc={modell.htmlFn ? modell.htmlFn({ vorschau: true }) : berichtHtml(modell, { vorschau: true })} onLoad={hoeheAnpassen}
           style={{ width: "100%", height: hoehe, border: "none", display: "block" }} />
       </div>
       <div style={{ padding: "10px 16px calc(12px + env(safe-area-inset-bottom))", borderTop: "1px solid #E2DFD6", background: "#F3F1EC" }}>
