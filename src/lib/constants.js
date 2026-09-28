@@ -3,12 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.9";
+export const APP_VERSION = "2.10";
 export const CHANGELOG = [
-  "Die App startet schneller – die Daten werden jetzt gleichzeitig statt nacheinander geladen",
-  "Funktionen-Menü: Kacheln in kräftigem Rot mit schwarzen Symbolen",
-  "Alle Ausdrucke und PDFs tragen jetzt das Löwen-Wappen der Abteilung",
-  "Der Admin kann die Kachel „Jugendliche“ jetzt ebenfalls nutzen",
+  "Neu: Nachrichten – schreib direkt an den Ausschuss, die Kommandantschaft oder den Entwickler der App. Die Sprechblase oben zeigt ungelesene Nachrichten",
+  "Ausschuss und Kommandantschaft können Kameraden auch von sich aus anschreiben. Untereinander schreiben ist nicht möglich",
+  "Jeder Beteiligte kann eine Unterhaltung für alle löschen; nach 6 Monaten ohne neue Nachricht wird sie automatisch gelöscht",
+  "Neue feste Funktionen in der Personalakte: Kommandant und stellv. Kommandant",
 ];
 
 export const CATEGORIES = {
@@ -52,13 +52,14 @@ export const ATEMSCHUTZ_UEBUNG_TYPES = { container: "Brandübungscontainer", war
 export const RUNDE_GEBURTSTAGE_EXTRA = [18];
 
 // Diese Funktionen steuern Rechte in der App und lassen sich nicht löschen oder umbenennen.
-export const FESTE_FUNKTIONEN = ["Gruppenführer", "Gerätewart", "Jugendwart"];
-export const FUNKTION_FLAG = { "Gruppenführer": "gruppenfuehrer", "Gerätewart": "geraetewart", "Jugendwart": "jugendwart" };
+// Kommandant und stellv. Kommandant bilden zusammen die Kommandantschaft (eigener Chat).
+export const FESTE_FUNKTIONEN = ["Kommandant", "stellv. Kommandant", "Gruppenführer", "Gerätewart", "Jugendwart"];
+export const FUNKTION_FLAG = { "Kommandant": "kommandant", "stellv. Kommandant": "stellvKommandant", "Gruppenführer": "gruppenfuehrer", "Gerätewart": "geraetewart", "Jugendwart": "jugendwart" };
 // Maschinist ist ein Lehrgang: wer ihn in der Personalakte stehen hat, gilt als Maschinist (Bewegungsfahrten).
 export const MASCHINIST_LEHRGANG = "Maschinist";
 export const FESTE_LEHRGAENGE = [MASCHINIST_LEHRGANG];
 // Weibliche Formen der festen Einträge (weitere pflegt der Admin in den Einstellungen).
-export const WEIBLICH_STANDARD = { "Gruppenführer": "Gruppenführerin", "Gerätewart": "Gerätewartin", "Jugendwart": "Jugendwartin", "Maschinist": "Maschinistin" };
+export const WEIBLICH_STANDARD = { "Kommandant": "Kommandantin", "stellv. Kommandant": "stellv. Kommandantin", "Gruppenführer": "Gruppenführerin", "Gerätewart": "Gerätewartin", "Jugendwart": "Jugendwartin", "Maschinist": "Maschinistin" };
 // Vorlagen für den Mitgliedsverlauf in der Personalakte (Freitext bleibt möglich).
 export const VERLAUF_VORLAGEN = ["Eintritt Jugendfeuerwehr", "Übertritt Einsatzabteilung", "Eintritt Einsatzabteilung", "Übertritt Altersabteilung", "Austritt", "Wiedereintritt"];
 

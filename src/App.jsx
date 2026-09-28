@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, ArrowLeft, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -20,6 +20,7 @@ const kachelImporte = {
   personalakte: () => import("./tiles/PersonalakteKachel"),
   bewegung: () => import("./tiles/BewegungsfahrtenKachel"),
   statistik: () => import("./tiles/StatistikKachel"),
+  nachrichten: () => import("./tiles/NachrichtenKachel"),
   einsatz: () => import("./tiles/EinsatzberichtKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
@@ -29,6 +30,7 @@ const EinstellungenKachel = lazy(kachelImporte.einstellungen);
 const PersonalakteView = lazy(kachelImporte.personalakte);
 const BewegungsfahrtenKachel = lazy(kachelImporte.bewegung);
 const StatistikKachel = lazy(kachelImporte.statistik);
+const NachrichtenKachel = lazy(kachelImporte.nachrichten);
 const EinsatzberichtKachel = lazy(kachelImporte.einsatz);
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
@@ -88,6 +90,8 @@ export default function App() {
   const [bewegung, setBewegung] = useState(normalizeBewegung());
   const [showBewegung, setShowBewegung] = useState(false);
   const [showStatistik, setShowStatistik] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatUngelesen, setChatUngelesen] = useState(0);
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showJugend, setShowJugend] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
@@ -259,13 +263,32 @@ export default function App() {
     if (!tok) return { ok: false, status: 401, data: { error: "abgebrochen" } };
     return callServer(fn, { ...body, token: tok });
   }
+  // Zahl ungelesener Chat-Nachrichten – still im Hintergrund, ohne PIN-Abfrage
+  // (nur wenn das Gerät schon einen Anmelde-Schlüssel hat).
+  async function ladeChatStatus() {
+    if (!me) return;
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return;
+    const r = await callServer("chat", { action: "list", token });
+    if (r.ok && r.data && Array.isArray(r.data.threads)) setChatUngelesen(r.data.threads.reduce((summe, t) => summe + (t.ungelesen || 0), 0));
+  }
+  useEffect(() => {
+    if (phase !== "app" || !me) return;
+    const start = setTimeout(ladeChatStatus, 1500);
+    const t = setInterval(() => { if (document.visibilityState === "visible") ladeChatStatus(); }, 180000);
+    const onVis = () => { if (document.visibilityState === "visible") ladeChatStatus(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearTimeout(start); clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [phase, me]);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowJugend(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
   function openTileAtemschutz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("atemschutz"); }
   function openTileAusschuss() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowSitzungen(true); setSeenSitzungIds(new Set(sitzungen.map((s) => s.id))); }
+  function openTileChat() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowChat(true); }
+  function openChatAusKopf() { setKachelReturnTo("calendar"); setShowChat(true); }
   function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTileEinsatz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowEinsatz(true); }
@@ -1023,7 +1046,7 @@ export default function App() {
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
-  Object.assign(appCtx, { bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
+  Object.assign(appCtx, { ladeChatStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
@@ -1133,6 +1156,12 @@ export default function App() {
             <button style={styles.settingsBtn} onClick={() => subscribeToPush()} aria-label="Benachrichtigungen">
               <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
             </button>
+            {me && (
+              <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={openChatAusKopf} aria-label="Nachrichten">
+                <MessageCircle size={18} color={chatUngelesen > 0 ? "#E8A33D" : "#8FA0A6"} />
+                {chatUngelesen > 0 && <span style={styles.chatHeaderBadge}>{chatUngelesen > 9 ? "9+" : chatUngelesen}</span>}
+              </button>
+            )}
             {me && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
@@ -1468,6 +1497,11 @@ export default function App() {
               <FolderOpen size={26} color="#2C2F2A" />
               <span style={styles.tileLabel}>Personalakte</span>
             </button>
+            <button style={{ ...styles.tile, position: "relative" }} onClick={openTileChat}>
+              <MessageCircle size={26} color="#2C2F2A" />
+              <span style={styles.tileLabel}>Nachrichten</span>
+              {chatUngelesen > 0 && <span style={styles.tileBadge}>{chatUngelesen}</span>}
+            </button>
             {isAdmin && (
               <button style={styles.tile} onClick={openTileSettings}>
                 <Settings size={26} color="#2C2F2A" />
@@ -1500,6 +1534,7 @@ export default function App() {
       {showSitzungen && <Suspense fallback={<KachelLaden />}><AusschussKachel /></Suspense>}
       {showBewegung && <Suspense fallback={<KachelLaden />}><BewegungsfahrtenKachel /></Suspense>}
       {showStatistik && isAdmin && <Suspense fallback={<KachelLaden />}><StatistikKachel /></Suspense>}
+      {showChat && <Suspense fallback={<KachelLaden />}><NachrichtenKachel /></Suspense>}
       {showEinsatz && <Suspense fallback={<KachelLaden />}><EinsatzberichtKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (

@@ -139,6 +139,7 @@ export const styles = {
   tileLabel: { fontSize: 12.5, fontWeight: 600, color: "#2C2F2A" },
   tileBadge: { position: "absolute", top: 8, right: 8, minWidth: 18, height: 18, borderRadius: 9, background: "#E8A33D", color: "white", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" },
   tilePlaceholder: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#F3F1EC", border: "1px dashed #C7C4BC", borderRadius: 12, padding: "18px 10px" },
+  chatHeaderBadge: { position: "absolute", top: -3, right: -5, minWidth: 15, height: 15, borderRadius: 8, background: "#C1272D", color: "white", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", lineHeight: 1 },
   tileHeaderDot: { position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: "#E8A33D" },
   teaserSection: { padding: "0 16px 4px" },
   teaserCard: { display: "flex", alignItems: "center", gap: 10, width: "100%", background: "#F1E9F6", border: "1px solid #DCC8EA", borderRadius: 8, padding: "10px 12px", marginBottom: 8 },
