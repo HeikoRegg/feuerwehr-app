@@ -5,7 +5,7 @@ import { matchesSearch, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { GeschlechtListEditor, RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
 import { supabase } from "../supabaseClient";
-import { DIETENHEIM_LOGO } from "../lib/logo";
+import { LION_ICON } from "../lib/icons";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
@@ -109,7 +109,7 @@ export default function EinstellungenKachel() {
 
               <label style={{ ...styles.label, marginTop: 22 }}>Logo für Ausdrucke</label>
               <div style={{ ...styles.capacityBox, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <img src={config.druckLogoUrl || DIETENHEIM_LOGO} alt="Logo" style={{ height: 46, width: "auto", maxWidth: 140, objectFit: "contain", background: "white", border: "1px solid #E2DFD6", borderRadius: 4, padding: 4 }} />
+                <img src={config.druckLogoUrl || LION_ICON} alt="Logo" style={{ height: 46, width: "auto", maxWidth: 140, objectFit: "contain", background: "white", border: "1px solid #E2DFD6", borderRadius: 4, padding: 4 }} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <label style={styles.smallAddBtn}>
                     {logoUpload ? "Lädt hoch …" : <><Plus size={12} /> Anderes Logo hochladen</>}
@@ -117,7 +117,7 @@ export default function EinstellungenKachel() {
                   </label>
                   {config.druckLogoUrl && <button style={styles.tinyBtn} onClick={() => persistConfig({ ...config, druckLogoUrl: "" })}>Standard-Logo verwenden</button>}
                 </div>
-                <div style={{ fontSize: 10.5, color: "#8A8C86", width: "100%" }}>Am besten ein PNG mit durchsichtigem Hintergrund. Das Standard-Logo ist aus dem Papier-Einsatzzettel ausgeschnitten.</div>
+                <div style={{ fontSize: 10.5, color: "#8A8C86", width: "100%" }}>Am besten ein PNG mit durchsichtigem Hintergrund. Standard ist das Löwen-Wappen.</div>
               </div>
               <label style={{ ...styles.label, marginTop: 22 }}>Bewegungsfahrten</label>
               <div style={styles.capacityBox}>

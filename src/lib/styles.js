@@ -132,7 +132,7 @@ export const styles = {
   lightboxClose: { position: "fixed", top: 16, right: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", padding: 8, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center" },
   tinyBtnPrimary: { fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 4, border: "1px solid #1F6F5C", background: "#1F6F5C", color: "white" },
   tileGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#FBF1E1", border: "0.5px solid #E8C98A", borderRadius: 12, padding: "18px 10px", position: "relative" },
+  tile: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background: "#F2C9C7", border: "1.5px solid #C1272D", borderRadius: 12, padding: "18px 10px", position: "relative" },
   fullscreenPage: { position: "fixed", inset: 0, background: "#F3F1EC", zIndex: 60, overflowY: "auto", padding: "20px 18px 40px" },
   fullscreenHeader: { display: "flex", alignItems: "center", marginBottom: 12 },
   fullscreenBackBtn: { display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none", color: "#5C5F58", fontSize: 13, fontWeight: 600, padding: 0 },

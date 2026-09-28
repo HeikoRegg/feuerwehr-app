@@ -72,8 +72,15 @@ const ELEVATION_STUNDEN = 2; // Sicherheitsnetz, falls die Personalakten-Kachel 
 // Übernimmt evtl. noch öffentlich gespeicherte PINs und Admin-Rechte in den geschützten
 // Speicher und entfernt die PINs danach aus der öffentlichen Mitgliederliste.
 async function migrate() {
-  const roster = (await getKv("roster")) || [];
-  const config = (await getKv("config")) || {};
+  // Alles Nötige gleichzeitig lesen (spart Zeit bei jedem Aufruf dieser Funktion).
+  const [rosterRaw, configRaw, migrationenRaw, adminsRes] = await Promise.all([
+    getKv("roster"), getKv("config"), getKv("migrationen"),
+    db.from("app_users").select("name").eq("is_admin", true),
+  ]);
+  const roster = rosterRaw || [];
+  const config = configRaw || {};
+  const migrationen = { ...(migrationenRaw || {}) };
+  let migrationenGeaendert = false;
   let changed = false;
   for (const r of roster) {
     if (r && r.pin) {
@@ -93,17 +100,20 @@ async function migrate() {
   if (changed) await setKv("roster", cleaned);
 
   // Bisheriges Häkchen "Kann als Gruppenführer eingeteilt werden" einmalig als Funktion in die Personalakte übernehmen.
-  for (const r of cleaned) {
-    if (!r || !r.gruppenfuehrer) continue;
-    const { data: row } = await db.from("personalakten").select("data").eq("name", r.name).maybeSingle();
-    const akte = (row && row.data) || {};
-    const funktionen = akte.funktionen || [];
-    if (funktionen.some((f) => (typeof f === "string" ? f : f.name) === "Gruppenführer")) continue;
-    await db.from("personalakten").upsert({ name: r.name, data: { ...akte, funktionen: [...funktionen, { name: "Gruppenführer", status: "aktiv", seit: "", adSeit: "" }] }, updated_at: new Date().toISOString() });
+  // Seit 2.9 nur noch ein einziges Mal (danach setzt sich das Häkchen ausschließlich aus der Akte).
+  if (!migrationen.gruppenfuehrerFunktion) {
+    for (const r of cleaned) {
+      if (!r || !r.gruppenfuehrer) continue;
+      const { data: row } = await db.from("personalakten").select("data").eq("name", r.name).maybeSingle();
+      const akte = (row && row.data) || {};
+      const funktionen = akte.funktionen || [];
+      if (funktionen.some((f) => (typeof f === "string" ? f : f.name) === "Gruppenführer")) continue;
+      await db.from("personalakten").upsert({ name: r.name, data: { ...akte, funktionen: [...funktionen, { name: "Gruppenführer", status: "aktiv", seit: "", adSeit: "" }] }, updated_at: new Date().toISOString() });
+    }
+    migrationen.gruppenfuehrerFunktion = new Date().toISOString(); migrationenGeaendert = true;
   }
 
   // Version 2.8: Maschinist ist ein Lehrgang statt einer Funktion – einmalig für alle Akten umstellen.
-  const migrationen = (await getKv("migrationen")) || {};
   if (!migrationen.maschinistLehrgang) {
     const { data: akten } = await db.from("personalakten").select("name,data");
     for (const row of akten || []) {
@@ -116,11 +126,12 @@ async function migrate() {
         : [...lehrgaenge, { id: newToken().slice(0, 10), titel: "Maschinist", datum: alt.seit || "", photoPath: null }];
       await db.from("personalakten").upsert({ name: row.name, data: { ...akte, funktionen: funktionen.filter((f) => f !== alt), lehrgaenge: neu }, updated_at: new Date().toISOString() });
     }
-    await setKv("migrationen", { ...migrationen, maschinistLehrgang: new Date().toISOString() });
+    migrationen.maschinistLehrgang = new Date().toISOString(); migrationenGeaendert = true;
   }
+  if (migrationenGeaendert) await setKv("migrationen", migrationen);
 
   // Admin-Rechte einmalig aus der Konfiguration übernehmen (danach gilt nur noch app_users).
-  const { data: admins } = await db.from("app_users").select("name").eq("is_admin", true);
+  const admins = adminsRes && adminsRes.data;
   if (!admins || admins.length === 0) {
     const names = config.adminNames || (config.adminName ? [config.adminName] : []);
     const main = config.mainAdminName || config.adminName || names[0];

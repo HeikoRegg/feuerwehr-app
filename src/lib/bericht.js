@@ -12,12 +12,12 @@
 //  { t: "balken", zeilen: [{ label, value, max, color, rechts, unter? }] }
 //  { t: "felder", items: [{ label, value }] }          – Angaben paarweise nebeneinander (z. B. Kopf eines Einsatzberichts)
 //  { t: "bild", src: dataUrl, text? }                    – Foto (JPEG/PNG als data-URL)
-import { DIETENHEIM_LOGO } from "./logo";
+import { LION_ICON } from "./icons";
 import { DRUCK_NAME } from "./constants";
 
-// Logo für alle Ausdrucke: Standard ist das Dietenheim-Logo, der Admin kann in den Einstellungen ein anderes hochladen.
-let druckLogo = DIETENHEIM_LOGO;
-export function setzeDruckLogo(url) { druckLogo = url || DIETENHEIM_LOGO; }
+// Logo für alle Ausdrucke: Standard ist das Löwen-Wappen der Abteilung, der Admin kann in den Einstellungen ein anderes hochladen.
+let druckLogo = LION_ICON;
+export function setzeDruckLogo(url) { druckLogo = url || LION_ICON; }
 export function aktuellesDruckLogo() { return druckLogo; }
 async function logoBytes(src) {
   if (src.startsWith("data:")) {
@@ -105,7 +105,7 @@ export async function berichtPdf(modell) {
   const ital = await doc.embedFont(StandardFonts.HelveticaOblique);
   let logo = null;
   try { const l = await logoBytes(druckLogo); logo = l.png ? await doc.embedPng(l.bytes) : await doc.embedJpg(l.bytes); }
-  catch (e) { try { logo = await doc.embedPng((await logoBytes(DIETENHEIM_LOGO)).bytes); } catch (e2) { logo = null; } }
+  catch (e) { try { logo = await doc.embedPng((await logoBytes(LION_ICON)).bytes); } catch (e2) { logo = null; } }
 
   const [W, H] = modell.querformat ? [841.89, 595.28] : [595.28, 841.89];
   const M = 40, BREITE = W - 2 * M, UNTEN = 46;

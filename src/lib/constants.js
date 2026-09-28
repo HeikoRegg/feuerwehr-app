@@ -3,13 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.8";
+export const APP_VERSION = "2.9";
 export const CHANGELOG = [
-  "Neue Kachel Einsatzberichte: Gruppenführer erfassen Einsätze mit Fahrzeugen, Mannschaft, Geräten und Fotos. Alle können die Berichte lesen – ohne Namen, nur mit der Anzahl der Einsatzkräfte",
-  "Personalakte: Lehrgänge, Leistungsabzeichen und Ehrungen aus einer Liste auswählen, Besonderes weiterhin selbst eintragen. Maschinist ist jetzt ein Lehrgang",
-  "Personalakte: Geschlecht wählbar – Bezeichnungen erscheinen dann automatisch passend (z. B. Truppführerin, Feuerwehrfrau). „Rang & Beförderungen“ heißt jetzt „Dienstgrad“",
-  "Jugendwarte können Jugendliche selbst anlegen und sperren/entsperren",
-  "Ausdrucke tragen jetzt „Feuerwehr Dietenheim Abt. Regglisweiler“ und das Logo der Feuerwehr Stadt Dietenheim",
+  "Die App startet schneller – die Daten werden jetzt gleichzeitig statt nacheinander geladen",
+  "Funktionen-Menü: Kacheln in kräftigem Rot mit schwarzen Symbolen",
+  "Alle Ausdrucke und PDFs tragen jetzt das Löwen-Wappen der Abteilung",
+  "Der Admin kann die Kachel „Jugendliche“ jetzt ebenfalls nutzen",
 ];
 
 export const CATEGORIES = {

@@ -159,13 +159,16 @@ export default function App() {
   useEffect(() => { bewegungRef.current = bewegung; }, [bewegung]);
 
   async function fetchAllData(isInitial = false) {
-    const cfgRaw = await storageGetSafe("config", true);
-    const rosterRaw = await storageGetSafe("roster", true);
-    const eventsRaw = await storageGetSafe("events", true);
-    const noticesRaw = await storageGetSafe("notices", true);
-    const sitzungenRaw = await storageGetSafe("sitzungen", true);
-    const vehiclesRaw = await storageGetSafe("vehicles", true);
-    const bewegungRaw = await storageGetSafe("bewegungsfahrten", true);
+    // Alle Daten gleichzeitig abrufen statt nacheinander – spart beim Start spürbar Zeit.
+    const [cfgRaw, rosterRaw, eventsRaw, noticesRaw, sitzungenRaw, vehiclesRaw, bewegungRaw] = await Promise.all([
+      storageGetSafe("config", true),
+      storageGetSafe("roster", true),
+      storageGetSafe("events", true),
+      storageGetSafe("notices", true),
+      storageGetSafe("sitzungen", true),
+      storageGetSafe("vehicles", true),
+      storageGetSafe("bewegungsfahrten", true),
+    ]);
 
     // Bei Folge-Abrufen NIE mit leeren Ergebnissen überschreiben, falls
     // ein Abruf mal fehlschlägt — nur beim allerersten Laden gilt "nichts gefunden" = leer.
@@ -202,9 +205,9 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      // Einmalig/automatisch: evtl. noch öffentlich gespeicherte PINs in den geschützten
-      // Server-Speicher übernehmen, bevor irgendetwas anderes gespeichert wird.
-      await callServer("auth", { action: "migrate" });
+      // Einmalige Umstellungen auf dem Server anstoßen – läuft im Hintergrund,
+      // die App wartet beim Start nicht mehr darauf.
+      callServer("auth", { action: "migrate" });
       const cfg = await fetchAllData(true);
       // Dauerhaft angemeldet bleiben: prüfen, ob dieses Gerät sich schon einmal erfolgreich angemeldet hat.
       try {
@@ -1422,52 +1425,52 @@ export default function App() {
           <div style={{ ...styles.tileGrid, marginTop: 14 }}>
             {(inEinsatzabteilung || isAdmin) && (
               <button style={styles.tile} onClick={openTileFuehrerschein}>
-                <Car size={26} color="#B8791A" />
+                <Car size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Führerschein</span>
               </button>
             )}
             {(isAtemschutz) && (
               <button style={styles.tile} onClick={openTileAtemschutz}>
-                <Stethoscope size={26} color="#B8791A" />
+                <Stethoscope size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Atemschutz</span>
               </button>
             )}
             {canSeeAusschuss && (
               <button style={{ ...styles.tile, position: "relative" }} onClick={openTileAusschuss}>
-                <Landmark size={26} color="#B8791A" />
+                <Landmark size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Ausschuss</span>
                 {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
               </button>
             )}
             <button style={styles.tile} onClick={openTileEinsatz}>
-              <ClipboardList size={26} color="#B8791A" />
+              <ClipboardList size={26} color="#2C2F2A" />
               <span style={styles.tileLabel}>Einsatzberichte</span>
             </button>
-            {isJugendwart && (
+            {(isJugendwart || isAdmin) && (
               <button style={styles.tile} onClick={openTileJugend}>
-                <BereichIcon bereich="jugendfeuerwehr" size={26} />
+                <span style={{ display: "flex", mixBlendMode: "multiply" }}><BereichIcon bereich="jugendfeuerwehr" size={26} /></span>
                 <span style={styles.tileLabel}>Jugendliche</span>
               </button>
             )}
             {canSeeBewegung && (
               <button style={styles.tile} onClick={openTileBewegung}>
-                <Truck size={26} color="#B8791A" />
+                <Truck size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Bewegungsfahrten</span>
               </button>
             )}
             {isAdmin && (
               <button style={styles.tile} onClick={openTileStatistik}>
-                <BarChart3 size={26} color="#B8791A" />
+                <BarChart3 size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Statistik</span>
               </button>
             )}
             <button style={styles.tile} onClick={openTilePersonalakte}>
-              <FolderOpen size={26} color="#B8791A" />
+              <FolderOpen size={26} color="#2C2F2A" />
               <span style={styles.tileLabel}>Personalakte</span>
             </button>
             {isAdmin && (
               <button style={styles.tile} onClick={openTileSettings}>
-                <Settings size={26} color="#B8791A" />
+                <Settings size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Einstellungen</span>
               </button>
             )}
@@ -1681,7 +1684,7 @@ export default function App() {
         </div>
       )}
 
-      {showJugend && isJugendwart && (
+      {showJugend && (isJugendwart || isAdmin) && (
         <div style={styles.fullscreenPage}>
           <Suspense fallback={<KachelLaden />}><PersonalakteView modus="jugend" me={me} isAdmin={isAdmin} roster={roster} config={config} callAuthed={callAuthed} flashError={flashError}
             onOpenPhoto={setLightboxSrc} onSetKlassen={setFuehrerscheinKlassen} onSetFlags={setFunktionsFlags} onClose={closeKachelView}
