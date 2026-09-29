@@ -9,7 +9,8 @@ import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 import QrScanner from "../components/QrScanner";
 import { etikettenModell } from "../lib/etiketten";
-import { MANGEL_STATUS, PRUEFART, PRUEFARTEN, STATUS_INFO, artStatus, datumDe, faelligeSchnellpruefungen, geraeteName, geraetStatus, heuteISO, idAusQr, plusMonate, zeitDe } from "../lib/geraete";
+import { MANGEL_STATUS, PRUEFART, PRUEFARTEN, STATUS_INFO, artStatus, datumDe, faelligeSchnellpruefungen, geraeteName, geraetStatus, heuteISO, idAusQr, intervallNormal, intervallText, plusIntervall, zeitDe } from "../lib/geraete";
+import { VORLAGEN_GRUPPEN, vorlagePruefarten } from "../lib/geraeteVorlagen";
 import { useApp } from "../AppContext";
 
 const abschnitt = { fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "18px 0 6px", letterSpacing: "0.04em" };
@@ -89,7 +90,7 @@ function MangelDialog({ g, onClose, onDone, callAuthed, flashError }) {
 // ---------------- Prüfung eintragen ----------------
 function PruefDialog({ g, verwalter, onClose, onDone, callAuthed, flashError }) {
   const arten = (g.pruefarten || []).filter((p) => PRUEFART[p.art]);
-  const [z, setZ] = useState(() => Object.fromEntries(arten.map((p) => [p.art, { wahl: null, text: "", foto: null, gesperrt: false, bis: PRUEFART[p.art].typ === "datum" && p.intervall > 0 ? plusMonate(heuteISO(), p.intervall) : "" }])));
+  const [z, setZ] = useState(() => Object.fromEntries(arten.map((p) => [p.art, { wahl: null, text: "", foto: null, gesperrt: false, bis: PRUEFART[p.art].typ === "datum" && p.intervall > 0 ? plusIntervall(heuteISO(), { intervall: p.intervall, einheit: p.einheit || "monate" }) : "" }])));
   const [busy, setBusy] = useState(false); const [fehler, setFehler] = useState("");
   const set = (art, patch) => setZ((s) => ({ ...s, [art]: { ...s[art], ...patch } }));
   const alleOk = () => setZ((s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, PRUEFART[k].typ === "intervall" ? { ...v, wahl: "ok" } : v])));
@@ -274,7 +275,7 @@ function GeraetDetail({ id, rechte, orte, onBack, onChanged, onBearbeiten, onEti
         return (
           <div key={p.art} style={{ ...styles.kontrollRow, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{def.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{def.name}{def.typ === "intervall" && p.intervall ? <span style={{ fontWeight: 400, color: "#8A8C86" }}> · alle {intervallText(p)}</span> : null}</div>
               <div style={{ fontSize: 11, color: "#8A8C86" }}>
                 {s.stand ? `zuletzt ${zeitDe(s.stand.ts).slice(0, 10)} von ${s.stand.von}${s.stand.ergebnis === "mangel" ? " (Mangel)" : ""}` : "noch nie geprüft"}
                 {s.faelligAm ? ` · ${def.typ === "datum" ? (p.art === "verfall" ? "verfällt" : "gültig bis") : "nächste"} ${datumDe(s.faelligAm)}` : ""}
@@ -315,19 +316,81 @@ function GeraetDetail({ id, rechte, orte, onBack, onChanged, onBearbeiten, onEti
   );
 }
 
+// ---------------- Vorschlagsliste (typische LF-8/6-Geräte + eigene Vorlagen) ----------------
+function VorschlagsWaehler({ daten, einzeln, onWahl, onClose, onVorlagen }) {
+  const { callAuthed, flashError } = useApp();
+  const [suche, setSuche] = useState(""); const [wahl, setWahl] = useState({}); // name -> menge
+  const eigene = (daten.vorlagen || []).map((x) => ({ ...x, eigene: true }));
+  const gruppen = [
+    ...(eigene.length ? [{ gruppe: "Eigene Vorlagen", eintraege: eigene }] : []),
+    ...VORLAGEN_GRUPPEN,
+  ].map((g) => ({ ...g, eintraege: g.eintraege.filter((e) => matchesSearch(`${e.name} ${e.kurzname}`, suche)) })).filter((g) => g.eintraege.length);
+  const anzahl = Object.keys(wahl).length;
+  const alle = [...eigene, ...VORLAGEN_GRUPPEN.flatMap((g) => g.eintraege)];
+  const klick = (e) => {
+    if (einzeln) { onWahl([{ ...e, menge: 1 }]); return; }
+    setWahl((w) => { const n = { ...w }; if (n[e.name]) delete n[e.name]; else n[e.name] = 1; return n; });
+  };
+  async function loesche(e) {
+    const r = await callAuthed("geraete", { action: "deleteVorlage", id: e.id });
+    if (r.ok) onVorlagen(r.data.vorlagen); else if (r.data.error !== "abgebrochen") flashError(r.data.error || "Löschen nicht möglich.");
+  }
+  return (
+    <Dialog titel={einzeln ? "Gerät aus Vorschlagsliste" : "Aus Vorschlagsliste wählen"} onClose={onClose}>
+      <SearchBox value={suche} onChange={setSuche} placeholder="Suchen, z. B. Hohlstrahlrohr …" />
+      <div style={{ maxHeight: "52vh", overflowY: "auto", marginTop: 6 }}>
+        {gruppen.length === 0 && <div style={{ fontSize: 12.5, color: "#8A8C86", padding: "10px 0" }}>Nichts gefunden. Du kannst den Namen auch selbst eintippen.</div>}
+        {gruppen.map((g) => (
+          <div key={g.gruppe}>
+            <div style={abschnitt}>{g.gruppe.toUpperCase()}</div>
+            {g.eintraege.map((e) => (
+              <div key={(e.id || "") + e.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F0EEE7" }}>
+                <button style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", fontSize: 13.5, color: "#2C2F2A" }} onClick={() => klick(e)} aria-label={e.name}>
+                  {!einzeln && <input type="checkbox" readOnly checked={!!wahl[e.name]} style={{ pointerEvents: "none" }} />}
+                  <span>{e.name}</span>
+                </button>
+                {!einzeln && wahl[e.name] && <input aria-label={`Menge ${e.name}`} style={{ ...styles.input, width: 56, padding: "5px 6px", marginTop: 0 }} type="number" min={1} inputMode="numeric" value={wahl[e.name]} onChange={(ev) => setWahl((w) => ({ ...w, [e.name]: Math.max(1, parseInt(ev.target.value, 10) || 1) }))} />}
+                {e.eigene && <button style={styles.iconBtn} aria-label={`Vorlage ${e.name} löschen`} onClick={() => loesche(e)}><Trash2 size={15} color="#C1272D" /></button>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {!einzeln && <button style={{ ...knopfRot, width: "100%", marginTop: 12, flex: "none" }} disabled={!anzahl} onClick={() => onWahl(Object.entries(wahl).map(([name, menge]) => ({ ...alle.find((x) => x.name === name), menge })))}>{anzahl ? `${anzahl} übernehmen` : "Häkchen setzen zum Auswählen"}</button>}
+    </Dialog>
+  );
+}
+
 // ---------------- Gerät anlegen / bearbeiten ----------------
-function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
+function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved, onVorlagen }) {
   const { callAuthed, flashError } = useApp();
   const vorhanden = id ? daten.geraete.find((g) => g.id === id) : null;
-  const [f, setF] = useState(() => vorhanden ? { ...vorhanden, pruefarten: vorhanden.pruefarten || [] } : { name: "", kurzname: "", ort: vorgabeOrt || "", fach: "", menge: 1, inventar: "", seriennummer: "", hersteller: "", baujahr: "", notiz: "", pruefarten: [{ art: "sicht", intervall: 30 }], ausgesondert: false });
+  const [f, setF] = useState(() => vorhanden ? { ...vorhanden, pruefarten: (vorhanden.pruefarten || []).map((p) => ({ art: p.art, ...intervallNormal(p, PRUEFART[p.art] || { standard: 1, einheit: "monate" }) })) } : { name: "", kurzname: "", ort: vorgabeOrt || "", fach: "", menge: 1, inventar: "", seriennummer: "", hersteller: "", baujahr: "", notiz: "", pruefarten: [{ art: "sicht", intervall: PRUEFART.sicht.standard, einheit: PRUEFART.sicht.einheit }], ausgesondert: false });
+  const [waehlerOffen, setWaehlerOffen] = useState(false); const [vorlageHinweis, setVorlageHinweis] = useState("");
   const [foto, setFoto] = useState(null); // neues Foto (nur wenn geändert)
   const [fotoGeaendert, setFotoGeaendert] = useState(false);
   const [busy, setBusy] = useState(false); const [fehler, setFehler] = useState(""); const [loeschenFrage, setLoeschenFrage] = useState(false);
   const set = (patch) => setF((s) => ({ ...s, ...patch }));
   const ort = daten.orte.find((o) => o.id === f.ort);
   const hat = (art) => f.pruefarten.find((p) => p.art === art);
-  const toggleArt = (def) => set({ pruefarten: hat(def.key) ? f.pruefarten.filter((p) => p.art !== def.key) : [...f.pruefarten, { art: def.key, intervall: def.standard }] });
+  const toggleArt = (def) => set({ pruefarten: hat(def.key) ? f.pruefarten.filter((p) => p.art !== def.key) : [...f.pruefarten, { art: def.key, intervall: def.standard, einheit: def.einheit }] });
   const setIntervall = (art, v) => set({ pruefarten: f.pruefarten.map((p) => p.art === art ? { ...p, intervall: Math.max(0, parseInt(v, 10) || 0) } : p) });
+  const setEinheit = (art, e) => set({ pruefarten: f.pruefarten.map((p) => p.art === art ? { ...p, einheit: e } : p) });
+  const vorlagenNamen = [...(daten.vorlagen || []), ...VORLAGEN_GRUPPEN.flatMap((g) => g.eintraege)];
+  function vorlageAnwenden(vor) {
+    set({ name: vor.name, kurzname: vor.kurzname || "", pruefarten: vorlagePruefarten(vor, PRUEFART).map((p) => ({ art: p.art, intervall: p.intervall, einheit: p.einheit })) });
+    setWaehlerOffen(false);
+  }
+  function nameAendern(v) {
+    const treffer = !vorhanden && vorlagenNamen.find((x) => x.name === v);
+    if (treffer) vorlageAnwenden(treffer); else set({ name: v });
+  }
+  async function alsVorlage() {
+    if (!f.name.trim()) { setFehler("Bitte zuerst einen Gerätenamen eingeben."); return; }
+    const r = await callAuthed("geraete", { action: "saveVorlage", vorlage: { name: f.name.trim(), kurzname: f.kurzname, pruefarten: f.pruefarten } });
+    if (r.ok) { onVorlagen(r.data.vorlagen); setVorlageHinweis("Vorlage gespeichert – sie steht jetzt in der Vorschlagsliste unter „Eigene Vorlagen“."); setFehler(""); }
+    else if (r.data.error !== "abgebrochen") setFehler(r.data.error || "Vorlage konnte nicht gespeichert werden.");
+  }
 
   async function speichern() {
     if (!f.name.trim()) { setFehler("Bitte einen Gerätenamen eingeben."); return; }
@@ -353,7 +416,10 @@ function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onBack}><ArrowLeft size={18} /> Zurück</button></div>
       <div style={styles.modalTitle}>{vorhanden ? "Gerät bearbeiten" : "Neues Gerät"}</div>
       <div style={styles.formBody}>
-        {feld("NAME", "name", { placeholder: "z. B. Tragkraftspritze PFPN 10-1500", maxLength: 80 })}
+        {!vorhanden && <button style={{ ...knopf, width: "100%", flex: "none", marginBottom: 6 }} onClick={() => setWaehlerOffen(true)}><ClipboardCheck size={16} /> Aus Vorschlagsliste wählen</button>}
+        <label style={styles.label}>NAME</label>
+        <input style={styles.input} aria-label="NAME" list="geraete-vorschlaege" value={f.name} maxLength={80} placeholder="z. B. Tragkraftspritze PFPN 10-1500" onChange={(e) => nameAendern(e.target.value)} />
+        <datalist id="geraete-vorschlaege">{vorlagenNamen.map((x) => <option key={(x.id || "") + x.name} value={x.name} />)}</datalist>
         {feld("KURZNAME FÜRS ETIKETT (OPTIONAL)", "kurzname", { placeholder: "z. B. TS 10/1500", maxLength: 40 })}
         <label style={styles.label}>STANDORT</label>
         <select style={styles.input} value={f.ort} onChange={(e) => set({ ort: e.target.value, fach: "" })}>
@@ -367,8 +433,8 @@ function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
           <div style={{ flex: 1 }}>{feld("MENGE", "menge", { type: "number", min: 1, inputMode: "numeric" })}</div>
           <div style={{ flex: 1 }}>{feld("BAUJAHR", "baujahr", { inputMode: "numeric", maxLength: 4, placeholder: "z. B. 2019" })}</div>
         </div>
-        {feld("SERIENNUMMER", "seriennummer", { maxLength: 60 })}
-        {feld("INVENTARNUMMER", "inventar", { maxLength: 40 })}
+        {feld("SERIENNUMMER (OPTIONAL)", "seriennummer", { maxLength: 60 })}
+        {feld(vorhanden ? "INVENTARNUMMER" : "INVENTARNUMMER (LEER LASSEN = APP VERGIBT DIE NÄCHSTE)", "inventar", { maxLength: 40, placeholder: "z. B. G-0001" })}
         {feld("HERSTELLER", "hersteller", { maxLength: 60 })}
         <label style={styles.label}>NOTIZ</label>
         <textarea style={{ ...styles.input, minHeight: 60, resize: "vertical" }} value={f.notiz} maxLength={500} onChange={(e) => set({ notiz: e.target.value })} />
@@ -386,14 +452,19 @@ function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
               {p && def.key !== "verfall" && (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#5C5F58" }}>
                   {def.typ === "intervall" ? "alle" : "Vorschlag"}
-                  <input style={{ ...styles.input, width: 56, padding: "5px 6px", marginTop: 0 }} type="number" min={0} inputMode="numeric" value={p.intervall} onChange={(e) => setIntervall(def.key, e.target.value)} />
-                  {def.typ === "intervall" ? "Tage" : "Monate"}
+                  <input style={{ ...styles.input, width: 52, padding: "5px 6px", marginTop: 0 }} aria-label={`${def.name} Zahl`} type="number" min={1} inputMode="numeric" value={p.intervall} onChange={(e) => setIntervall(def.key, e.target.value)} />
+                  <select style={{ ...styles.input, width: "auto", padding: "5px 4px", marginTop: 0 }} aria-label={`${def.name} Einheit`} value={p.einheit === "jahre" ? "jahre" : "monate"} onChange={(e) => setEinheit(def.key, e.target.value)}>
+                    <option value="monate">{p.intervall === 1 ? "Monat" : "Monate"}</option>
+                    <option value="jahre">{p.intervall === 1 ? "Jahr" : "Jahre"}</option>
+                  </select>
                 </span>
               )}
             </div>
           );
         })}
-        <div style={{ fontSize: 11, color: "#8A8C86" }}>Elektroprüfung, externe Prüfung und Verfallsdatum trägt nur der Gerätewart ein („gültig bis“). Die Zahl bei „Vorschlag“ füllt das Datum vor.</div>
+        <div style={{ fontSize: 11, color: "#8A8C86" }}>Elektroprüfung, externe Prüfung und Verfallsdatum trägt nur der Gerätewart ein („gültig bis“). Die Zahl bei „Vorschlag“ füllt das Datum vor. Geprüft wird höchstens im Monats- oder Jahresabstand.</div>
+        <button style={{ ...styles.tinyBtn, marginTop: 10 }} onClick={alsVorlage}>Als Vorlage merken</button>
+        {vorlageHinweis && <div style={{ fontSize: 11.5, color: "#2E7D4F", marginTop: 4 }}>{vorlageHinweis}</div>}
 
         {vorhanden && <label style={{ ...styles.checkboxRow, marginTop: 14 }}><input type="checkbox" checked={!!f.ausgesondert} onChange={(e) => set({ ausgesondert: e.target.checked })} /> Gerät ist ausgesondert (wird nicht mehr geprüft)</label>}
         {fehler && <div style={styles.errorText}>{fehler}</div>}
@@ -402,6 +473,7 @@ function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
           <button style={styles.saveBtn} disabled={busy} onClick={speichern}>{busy ? "Speichert …" : "Speichern"}</button>
         </div>
       </div>
+      {waehlerOffen && <VorschlagsWaehler daten={daten} einzeln onWahl={(l) => vorlageAnwenden(l[0])} onClose={() => setWaehlerOffen(false)} onVorlagen={onVorlagen} />}
       {loeschenFrage && (
         <div style={{ ...styles.modalBackdrop, alignItems: "center", zIndex: 90 }} onClick={() => setLoeschenFrage(false)}>
           <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()}>
@@ -420,22 +492,29 @@ function GeraetFormular({ id, daten, vorgabeOrt, onBack, onSaved }) {
 }
 
 // ---------------- Mehrere Geräte auf einmal ----------------
-function MehrereAnlegen({ daten, vorgabeOrt, onBack, onSaved }) {
+function MehrereAnlegen({ daten, vorgabeOrt, onBack, onSaved, onVorlagen }) {
   const { callAuthed } = useApp();
   const [ort, setOrt] = useState(vorgabeOrt || (daten.orte[0] && daten.orte[0].id) || ""); const [fach, setFach] = useState("");
   const [text, setText] = useState(""); const [sicht, setSicht] = useState(true);
+  const [waehlerOffen, setWaehlerOffen] = useState(false); const vorlagenRef = useRef({}); // Name -> Vorlage (für Kurzname und Prüfarten)
   const [busy, setBusy] = useState(false); const [fehler, setFehler] = useState("");
   const zeilen = text.split("\n").map((z) => z.trim()).filter(Boolean).map((z) => {
     const teile = z.split(/[;\t]/).map((x) => x.trim());
-    if (teile.length > 1 && /^\d{1,3}$/.test(teile[teile.length - 1])) return { name: teile.slice(0, -1).join("; "), menge: parseInt(teile[teile.length - 1], 10) };
-    return { name: teile.join("; "), menge: 1 };
+    const z1 = teile.length > 1 && /^\d{1,3}$/.test(teile[teile.length - 1]) ? { name: teile.slice(0, -1).join("; "), menge: parseInt(teile[teile.length - 1], 10) } : { name: teile.join("; "), menge: 1 };
+    const vor = vorlagenRef.current[z1.name];
+    return vor ? { ...z1, kurzname: vor.kurzname || "", pruefarten: vorlagePruefarten(vor, PRUEFART) } : z1;
   }).filter((z) => z.name);
+  function uebernehmen(liste) {
+    liste.forEach((e) => { vorlagenRef.current[e.name] = e; });
+    setText((t) => `${t.trim() ? t.replace(/\s+$/, "") + "\n" : ""}${liste.map((e) => (e.menge > 1 ? `${e.name}; ${e.menge}` : e.name)).join("\n")}\n`);
+    setWaehlerOffen(false);
+  }
   async function speichern() {
     if (!zeilen.length) { setFehler("Bitte mindestens ein Gerät eintragen."); return; }
     setBusy(true); setFehler("");
     const o = daten.orte.find((x) => x.id === ort);
     if (o && fach.trim() && !(o.faecher || []).includes(fach.trim())) await callAuthed("geraete", { action: "saveOrt", id: o.id, name: o.name, faecher: [...(o.faecher || []), fach.trim()] });
-    const r = await callAuthed("geraete", { action: "anlegenMehrere", ort, fach: fach.trim(), zeilen, pruefarten: sicht ? [{ art: "sicht", intervall: 30 }] : [] });
+    const r = await callAuthed("geraete", { action: "anlegenMehrere", ort, fach: fach.trim(), zeilen, pruefarten: sicht ? [{ art: "sicht", intervall: PRUEFART.sicht.standard, einheit: PRUEFART.sicht.einheit }] : [] });
     setBusy(false);
     if (r.ok) onSaved(); else if (r.data.error !== "abgebrochen") setFehler(r.data.error || "Speichern nicht möglich.");
   }
@@ -443,7 +522,7 @@ function MehrereAnlegen({ daten, vorgabeOrt, onBack, onSaved }) {
     <div style={styles.fullscreenPage}>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onBack}><ArrowLeft size={18} /> Zurück</button></div>
       <div style={styles.modalTitle}>Mehrere Geräte anlegen</div>
-      <div style={{ fontSize: 12, color: "#8A8C86", margin: "2px 0 6px" }}>Ein Gerät pro Zeile. Die Menge kannst du mit Semikolon anhängen, z. B. „Kübelspritze; 2“. Alles Weitere (Seriennummer, Foto, Prüfarten) ergänzt du danach bei jedem Gerät.</div>
+      <div style={{ fontSize: 12, color: "#8A8C86", margin: "2px 0 6px" }}>Ein Gerät pro Zeile. Die Menge kannst du mit Semikolon anhängen, z. B. „Kübelspritze; 2“. Die Inventarnummer vergibt die App automatisch. Alles Weitere (Seriennummer, Foto, Prüfarten) ergänzt du danach bei jedem Gerät.</div>
       <div style={styles.formBody}>
         <label style={styles.label}>STANDORT</label>
         <select style={styles.input} value={ort} onChange={(e) => { setOrt(e.target.value); setFach(""); }}>
@@ -451,13 +530,15 @@ function MehrereAnlegen({ daten, vorgabeOrt, onBack, onSaved }) {
         </select>
         <label style={styles.label}>FACH / PLATZ (FÜR ALLE DIESE GERÄTE)</label>
         <input style={styles.input} value={fach} maxLength={40} placeholder="z. B. G3" onChange={(e) => setFach(e.target.value)} />
+        <button style={{ ...knopf, width: "100%", flex: "none", marginTop: 10 }} onClick={() => setWaehlerOffen(true)}><ClipboardCheck size={16} /> Aus Vorschlagsliste wählen</button>
         <label style={styles.label}>GERÄTE</label>
         <textarea style={{ ...styles.input, minHeight: 160, resize: "vertical" }} value={text} onChange={(e) => setText(e.target.value)} placeholder={"Tragkraftspritze\nStromerzeuger\nKübelspritze; 2"} />
-        <label style={{ ...styles.checkboxRow, marginTop: 8 }}><input type="checkbox" checked={sicht} onChange={(e) => setSicht(e.target.checked)} /> Sichtprüfung (alle 30 Tage) für alle festlegen</label>
+        <label style={{ ...styles.checkboxRow, marginTop: 8 }}><input type="checkbox" checked={sicht} onChange={(e) => setSicht(e.target.checked)} /> Sichtprüfung (alle 6 Monate) für Geräte festlegen, die keine eigene Vorlage haben</label>
         <div style={{ fontSize: 12, color: "#5C5F58", marginTop: 8 }}>{zeilen.length ? `${zeilen.length} Gerät${zeilen.length === 1 ? "" : "e"} werden angelegt.` : ""}</div>
         {fehler && <div style={styles.errorText}>{fehler}</div>}
         <div style={styles.formActions}><button style={styles.saveBtn} disabled={busy} onClick={speichern}>{busy ? "Speichert …" : "Geräte anlegen"}</button></div>
       </div>
+      {waehlerOffen && <VorschlagsWaehler daten={daten} onWahl={uebernehmen} onClose={() => setWaehlerOffen(false)} onVorlagen={onVorlagen} />}
     </div>
   );
 }
@@ -645,7 +726,7 @@ function Rundgang({ daten, ortId, onBack, onChanged }) {
 export default function GeraeteKachel() {
   const { callAuthed, flashError, closeKachelView, kachelReturnTo, geraeteStartId, setGeraeteStartId } = useApp();
   const [daten, setDaten] = useState(null); const [fehler, setFehler] = useState("");
-  const [view, setView] = useState({ name: "liste" });
+  const [view, setView] = useState({ name: "liste" }); const [hinweis, setHinweis] = useState("");
   const [tab, setTab] = useState("geraete"); const [suche, setSuche] = useState(""); const [scan, setScan] = useState(false);
   const ladeNr = useRef(0);
 
@@ -658,6 +739,11 @@ export default function GeraeteKachel() {
     else setFehler(r.data.error || "Geräte konnten nicht geladen werden.");
   }
   useEffect(() => { laden(); }, []);
+  async function nummernVergeben() {
+    const r = await callAuthed("geraete", { action: "nummernVergeben" });
+    if (r.ok) { await laden(true); setHinweis(`${r.data.anzahl} Inventarnummer${r.data.anzahl === 1 ? "" : "n"} vergeben.`); }
+    else if (r.data.error !== "abgebrochen") flashError(r.data.error || "Nummern konnten nicht vergeben werden.");
+  }
   const oeffneId = (id) => {
     if (daten && daten.geraete.some((g) => g.id === id)) { setView({ name: "geraet", id }); setScan(false); }
     else flashError("Dieses Gerät gibt es nicht (mehr) – ist der QR-Code veraltet?");
@@ -671,8 +757,8 @@ export default function GeraeteKachel() {
   const status = useMemo(() => Object.fromEntries(geraete.map((g) => [g.id, geraetStatus(g)])), [daten]);
 
   if (view.name === "geraet") return <GeraetDetail id={view.id} rechte={rechte} orte={orte} onBack={() => { setView({ name: "liste" }); laden(true); }} onChanged={() => laden(true)} onBearbeiten={(id) => setView({ name: "form", id })} onEtikett={(id) => setView({ name: "etiketten", ids: [id], zurueck: { name: "geraet", id } })} />;
-  if (view.name === "form") return <GeraetFormular id={view.id} vorgabeOrt={view.ort} daten={daten} onBack={() => setView(view.id ? { name: "geraet", id: view.id } : { name: "liste" })} onSaved={async (id) => { await laden(true); setView(id ? { name: "geraet", id } : { name: "liste" }); }} />;
-  if (view.name === "mehrere") return <MehrereAnlegen daten={daten} vorgabeOrt={view.ort} onBack={() => setView({ name: "liste" })} onSaved={async () => { await laden(true); setView({ name: "liste" }); }} />;
+  if (view.name === "form") return <GeraetFormular id={view.id} vorgabeOrt={view.ort} daten={daten} onVorlagen={(v) => setDaten((d) => ({ ...d, vorlagen: v }))} onBack={() => setView(view.id ? { name: "geraet", id: view.id } : { name: "liste" })} onSaved={async (id) => { await laden(true); setView(id ? { name: "geraet", id } : { name: "liste" }); }} />;
+  if (view.name === "mehrere") return <MehrereAnlegen daten={daten} vorgabeOrt={view.ort} onVorlagen={(v) => setDaten((d) => ({ ...d, vorlagen: v }))} onBack={() => setView({ name: "liste" })} onSaved={async () => { await laden(true); setView({ name: "liste" }); }} />;
   if (view.name === "orte") return <OrteVerwalten daten={daten} onBack={() => setView({ name: "liste" })} onChanged={() => laden(true)} />;
   if (view.name === "etiketten") return <EtikettenAnsicht daten={daten} ids={view.ids} onBack={() => setView(view.zurueck || { name: "liste" })} />;
   if (view.name === "rundgang") return <Rundgang daten={daten} ortId={view.ort} onBack={() => { setView({ name: "liste" }); laden(true); }} onChanged={() => laden(true)} />;
@@ -691,7 +777,7 @@ export default function GeraeteKachel() {
     <button key={g.id} style={{ ...styles.rosterItem, marginBottom: 6, alignItems: "center", gap: 10 }} onClick={() => setView({ name: "geraet", id: g.id })}>
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
         <span style={{ display: "block", fontWeight: 600, fontSize: 13.5 }}>{g.name}{g.menge > 1 ? ` (${g.menge}×)` : ""}</span>
-        <span style={{ display: "block", fontSize: 11.5, color: "#8A8C86", fontWeight: 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra || [g.fach, g.seriennummer ? `SN ${g.seriennummer}` : g.inventar ? `Inv. ${g.inventar}` : ""].filter(Boolean).join(" · ") || "—"}</span>
+        <span style={{ display: "block", fontSize: 11.5, color: "#8A8C86", fontWeight: 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra || [g.fach, g.inventar, g.seriennummer ? `SN ${g.seriennummer}` : ""].filter(Boolean).join(" · ") || "—"}</span>
       </span>
       <Pille status={status[g.id]} />
     </button>
@@ -703,6 +789,7 @@ export default function GeraeteKachel() {
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={closeKachelView}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button></div>
       <div style={styles.modalTitle}>Geräte</div>
       {fehler && <div style={styles.errorText}>{fehler}</div>}
+      {hinweis && <div style={{ fontSize: 12.5, color: "#2E7D4F", margin: "6px 0" }}>{hinweis}</div>}
       {!daten && !fehler && <div style={{ fontSize: 12.5, color: "#8A8C86", marginTop: 12 }}>Lädt …</div>}
       {daten && (
         <>
@@ -715,6 +802,7 @@ export default function GeraeteKachel() {
               <button style={styles.tinyBtn} onClick={() => setView({ name: "orte" })}>Standorte & Fächer</button>
               <button style={styles.tinyBtn} onClick={() => setView({ name: "mehrere" })}>Mehrere Geräte anlegen</button>
               <button style={styles.tinyBtn} onClick={() => setView({ name: "etiketten", ids: [] })}>QR-Etiketten drucken</button>
+              {geraete.some((g) => !g.inventar) && <button style={styles.tinyBtn} onClick={nummernVergeben}>Fehlende Nummern vergeben ({geraete.filter((g) => !g.inventar).length})</button>}
             </div>
           )}
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>{tabKnopf("geraete", "Geräte")}{tabKnopf("uebersicht", `Übersicht${nMaengel + nUeber + nGesperrt ? ` (${nMaengel + nUeber})` : ""}`)}</div>

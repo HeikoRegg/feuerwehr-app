@@ -147,7 +147,9 @@ export default function App() {
   const isMainAdmin = !!(me && config && me === config.mainAdminName);
   const myBereiche = isAdmin ? BEREICH_KEYS : (myEntry ? myEntry.bereiche : []);
   const inEinsatzabteilung = myEntry && myEntry.bereiche.includes("einsatzabteilung");
-  const darfGeraete = isAdmin || !!inEinsatzabteilung || isGeraetewart || isKommando;
+  // Kacheln, die der Hauptadmin für die ganze Feuerwehr gesperrt hat (Einstellungen → Kacheln verwalten).
+  const kachelAn = (k) => !((config && config.kachelnAus) || []).includes(k);
+  const darfGeraete = kachelAn("geraete") && (isAdmin || !!inEinsatzabteilung || isGeraetewart || isKommando);
   const isAtemschutz = isAdmin || (myEntry && myEntry.atemschutz);
   const canSeeAusschuss = isAdmin || (myEntry && myEntry.ausschuss);
   const canEditSitzung = isAdmin || (myEntry && myEntry.ausschuss && myEntry.ausschussRechte.calendar);
@@ -274,7 +276,7 @@ export default function App() {
   // Zahl ungelesener Chat-Nachrichten – still im Hintergrund, ohne PIN-Abfrage
   // (nur wenn das Gerät schon einen Anmelde-Schlüssel hat).
   async function ladeChatStatus() {
-    if (!me) return;
+    if (!me || !kachelAn("chat")) { setChatUngelesen(0); return; }
     const token = authTokenRef.current || loadToken(me);
     if (!token) return;
     const r = await callServer("chat", { action: "list", token });
@@ -295,7 +297,7 @@ export default function App() {
     startGeraetErledigt.current = true;
     try { window.history.replaceState(null, "", window.location.pathname); } catch (e) {}
     if (darfGeraete) { setGeraeteStartId(START_GERAET); setKachelReturnTo("calendar"); setShowGeraete(true); }
-    else flashError("Die Geräteprüfung ist für die Einsatzabteilung.");
+    else flashError(kachelAn("geraete") ? "Die Geräteprüfung ist für die Einsatzabteilung." : "Die Kachel „Geräte“ ist derzeit für die ganze Feuerwehr gesperrt.");
   }, [phase, me]);
   function closeKachelView() {
     setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowJugend(false); setShowChat(false);
@@ -1174,7 +1176,7 @@ export default function App() {
             <button style={styles.settingsBtn} onClick={() => subscribeToPush()} aria-label="Benachrichtigungen">
               <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
             </button>
-            {me && (
+            {me && kachelAn("chat") && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={openChatAusKopf} aria-label="Nachrichten">
                 <MessageCircle size={18} color={chatUngelesen > 0 ? "#E8A33D" : "#8FA0A6"} />
                 {chatUngelesen > 0 && <span style={styles.chatHeaderBadge}>{chatUngelesen > 9 ? "9+" : chatUngelesen}</span>}
@@ -1470,62 +1472,68 @@ export default function App() {
           </div>
           <div style={styles.modalTitle}>Funktionen</div>
           <div style={{ ...styles.tileGrid, marginTop: 14 }}>
-            {(inEinsatzabteilung || isAdmin) && (
+            {kachelAn("fuehrerschein") && (inEinsatzabteilung || isAdmin) && (
               <button style={styles.tile} onClick={openTileFuehrerschein}>
                 <Car size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Führerschein</span>
               </button>
             )}
-            {(isAtemschutz) && (
+            {kachelAn("atemschutz") && (isAtemschutz) && (
               <button style={styles.tile} onClick={openTileAtemschutz}>
                 <Stethoscope size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Atemschutz</span>
               </button>
             )}
-            {canSeeAusschuss && (
+            {kachelAn("ausschuss") && canSeeAusschuss && (
               <button style={{ ...styles.tile, position: "relative" }} onClick={openTileAusschuss}>
                 <Landmark size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Ausschuss</span>
                 {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
               </button>
             )}
-            <button style={styles.tile} onClick={openTileEinsatz}>
-              <ClipboardList size={26} color="#2C2F2A" />
-              <span style={styles.tileLabel}>Einsatzberichte</span>
-            </button>
+            {kachelAn("einsatz") && (
+              <button style={styles.tile} onClick={openTileEinsatz}>
+                <ClipboardList size={26} color="#2C2F2A" />
+                <span style={styles.tileLabel}>Einsatzberichte</span>
+              </button>
+            )}
             {darfGeraete && (
               <button style={styles.tile} onClick={openTileGeraete}>
                 <Boxes size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Geräte</span>
               </button>
             )}
-            {(isJugendwart || isAdmin) && (
+            {kachelAn("jugend") && (isJugendwart || isAdmin) && (
               <button style={styles.tile} onClick={openTileJugend}>
-                <span style={{ display: "flex", mixBlendMode: "multiply" }}><BereichIcon bereich="jugendfeuerwehr" size={26} /></span>
-                <span style={styles.tileLabel}>Jugendliche</span>
+                <span style={{ display: "flex", mixBlendMode: "multiply", filter: "grayscale(1) brightness(0.6) contrast(20)" }}><BereichIcon bereich="jugendfeuerwehr" size={26} /></span>
+                <span style={styles.tileLabel}>Jugendfeuerwehr</span>
               </button>
             )}
-            {canSeeBewegung && (
+            {kachelAn("bewegung") && canSeeBewegung && (
               <button style={styles.tile} onClick={openTileBewegung}>
                 <Truck size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Bewegungsfahrten</span>
               </button>
             )}
-            {isAdmin && (
+            {kachelAn("statistik") && isAdmin && (
               <button style={styles.tile} onClick={openTileStatistik}>
                 <BarChart3 size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Statistik</span>
               </button>
             )}
-            <button style={styles.tile} onClick={openTilePersonalakte}>
-              <FolderOpen size={26} color="#2C2F2A" />
-              <span style={styles.tileLabel}>Personalakte</span>
-            </button>
-            <button style={{ ...styles.tile, position: "relative" }} onClick={openTileChat}>
-              <MessageCircle size={26} color="#2C2F2A" />
-              <span style={styles.tileLabel}>Nachrichten</span>
-              {chatUngelesen > 0 && <span style={styles.tileBadge}>{chatUngelesen}</span>}
-            </button>
+            {kachelAn("personalakte") && (
+              <button style={styles.tile} onClick={openTilePersonalakte}>
+                <FolderOpen size={26} color="#2C2F2A" />
+                <span style={styles.tileLabel}>Personalakte</span>
+              </button>
+            )}
+            {kachelAn("chat") && (
+              <button style={{ ...styles.tile, position: "relative" }} onClick={openTileChat}>
+                <MessageCircle size={26} color="#2C2F2A" />
+                <span style={styles.tileLabel}>Nachrichten</span>
+                {chatUngelesen > 0 && <span style={styles.tileBadge}>{chatUngelesen}</span>}
+              </button>
+            )}
             {isAdmin && (
               <button style={styles.tile} onClick={openTileSettings}>
                 <Settings size={26} color="#2C2F2A" />

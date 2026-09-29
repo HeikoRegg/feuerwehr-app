@@ -2,7 +2,8 @@
 // Direktnachrichten zwischen einem Kameraden und
 //  - dem Ausschuss        (alle Mitglieder mit Ausschuss-Häkchen gemeinsam),
 //  - der Kommandantschaft (aktive Funktion „Kommandant“ oder „stellv. Kommandant“ in der Personalakte),
-//  - dem Entwickler       (Haupt-Admin).
+//  - dem Entwickler       (Haupt-Admin),
+//  - dem Jugendwart       (aktive Funktion „Jugendwart“; nur für Mitglieder der Jugendfeuerwehr).
 // Jeder Kamerad hat pro Gruppe seine EIGENE Unterhaltung; Kameraden können nicht untereinander schreiben.
 // Beide Seiten dürfen eine Unterhaltung beginnen. Jeder Beteiligte kann sie für alle löschen,
 // 6 Monate nach der letzten Nachricht wird sie automatisch gelöscht.
@@ -14,9 +15,9 @@ import { handler as sendPush } from "./send-push.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-const GRUPPEN = { ausschuss: "Ausschuss", kommando: "Kommandantschaft", entwickler: "Entwickler" };
-const AN = { ausschuss: "den Ausschuss", kommando: "die Kommandantschaft", entwickler: "den Entwickler" };
-const ZU = { ausschuss: "zum Ausschuss", kommando: "zur Kommandantschaft", entwickler: "zum Entwickler-Kontakt" };
+const GRUPPEN = { ausschuss: "Ausschuss", kommando: "Kommandantschaft", entwickler: "Entwickler", jugendwart: "Jugendwart" };
+const AN = { ausschuss: "den Ausschuss", kommando: "die Kommandantschaft", entwickler: "den Entwickler", jugendwart: "den Jugendwart" };
+const ZU = { ausschuss: "zum Ausschuss", kommando: "zur Kommandantschaft", entwickler: "zum Entwickler-Kontakt", jugendwart: "zum Jugendwart" };
 const KOMMANDO_FUNKTIONEN = ["Kommandant", "stellv. Kommandant"];
 const MAX_TEXT = 2000;
 const AUFBEWAHRUNG_TAGE = 183; // ca. 6 Monate nach der letzten Nachricht
@@ -54,10 +55,15 @@ async function ladeLage(token) {
     ausschuss: (roster || []).filter((r) => r && r.ausschuss && aktiv(r.name)).map((r) => r.name),
     kommando: ((aktenRes && aktenRes.data) || []).filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).some((f) => KOMMANDO_FUNKTIONEN.includes(f))).map((a) => a.name),
     entwickler: users.filter((u) => u.is_main_admin && aktiv(u.name)).map((u) => u.name),
+    jugendwart: ((aktenRes && aktenRes.data) || []).filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).includes("Jugendwart")).map((a) => a.name),
   };
-  return { me, gruppen, mitglieder };
+  // Jugendfeuerwehr = Mitglieder mit dem Bereich „Jugendfeuerwehr“ (nur sie schreiben mit dem Jugendwart).
+  const jugend = new Set((roster || []).filter((r) => r && aktiv(r.name) && (r.bereiche || []).includes("jugendfeuerwehr")).map((r) => r.name));
+  return { me, gruppen, mitglieder, jugend };
 }
 const istMitglied = (lage, gruppe, name) => (lage.gruppen[gruppe] || []).includes(name);
+// Beim Jugendwart-Chat ist die Kamerad-Seite immer ein Mitglied der Jugendfeuerwehr.
+const kameradOk = (lage, gruppe, kamerad) => gruppe !== "jugendwart" || lage.jugend.has(kamerad);
 const darfThread = (lage, t) => t && (t.kamerad === lage.me.name || istMitglied(lage, t.gruppe, lage.me.name));
 
 // Unterhaltungen, deren letzte Nachricht älter als 6 Monate ist, endgültig löschen.
@@ -83,6 +89,13 @@ export async function handler(event) {
   try {
     const lage = await ladeLage(body.token);
     if (!lage.me) return json(401, { error: "Bitte PIN bestätigen." });
+    {
+      // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
+      const cfgSperre = await getKv("config");
+      const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
+      if (aus.includes("chat")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
+    }
+
     const ich = lage.me.name;
     const { action } = body;
 
@@ -109,6 +122,8 @@ export async function handler(event) {
       })).sort((a, b) => zeit(b.letzte) - zeit(a.letzte));
       const gruppen = Object.fromEntries(Object.keys(GRUPPEN).map((g) => [g, {
         mitglied: istMitglied(lage, g, ich),
+        // Den Jugendwart sehen nur Jugendfeuerwehr und Jugendwarte selbst.
+        sichtbar: g !== "jugendwart" || lage.jugend.has(ich) || istMitglied(lage, g, ich),
         // „Verfügbar“ = es gibt jemanden außer mir, der die Nachricht lesen kann.
         verfuegbar: (lage.gruppen[g] || []).some((n) => n !== ich),
         // Wer selbst zur Gruppe gehört, sieht die Mitglieder (für „Kameraden anschreiben“).
@@ -123,7 +138,7 @@ export async function handler(event) {
       const { data: t } = await db.from("chat_threads").select("*").eq("id", id).maybeSingle();
       if (!t) {
         const [gruppe, kamerad] = [String(body.gruppe || ""), String(body.kamerad || "")];
-        if (body.id || !GRUPPEN[gruppe] || !darfThread(lage, { gruppe, kamerad })) return json(404, { error: "Diese Unterhaltung gibt es nicht mehr." });
+        if (body.id || !GRUPPEN[gruppe] || !kameradOk(lage, gruppe, kamerad) || !darfThread(lage, { gruppe, kamerad })) return json(404, { error: "Diese Unterhaltung gibt es nicht mehr." });
         return json(200, { thread: null, teilnehmer: lage.gruppen[gruppe] || [], nachrichten: [] });
       }
       if (!darfThread(lage, t)) return json(403, { error: "Kein Zugriff auf diese Unterhaltung." });
@@ -150,6 +165,7 @@ export async function handler(event) {
       if (!text) return json(400, { error: "Bitte eine Nachricht eingeben." });
       if (text.length > MAX_TEXT) return json(400, { error: `Die Nachricht ist zu lang (höchstens ${MAX_TEXT} Zeichen).` });
       if (!lage.mitglieder.has(kamerad)) return json(400, { error: "Dieses Mitglied gibt es nicht (mehr)." });
+      if (!kameradOk(lage, gruppe, kamerad)) return json(403, { error: "Mit dem Jugendwart schreiben nur Mitglieder der Jugendfeuerwehr." });
       const alsKamerad = kamerad === ich;
       if (!alsKamerad && !istMitglied(lage, gruppe, ich)) return json(403, { error: "Du kannst nur an Ausschuss, Kommandantschaft oder Entwickler schreiben." });
       if (!alsKamerad && istMitglied(lage, gruppe, kamerad)) return json(400, { error: `${kamerad} gehört selbst ${ZU[gruppe]}.` });

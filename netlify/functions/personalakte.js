@@ -55,6 +55,13 @@ export async function handler(event) {
   try {
     const me = await userByToken(body.token);
     if (!me) return json(401, { error: "Bitte PIN bestätigen." });
+    {
+      // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
+      const cfgSperre = await getKv("config");
+      const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
+      if (aus.includes("personalakte") && aus.includes("jugend")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
+    }
+
     const isAdmin = !!me.is_admin;
     const { action, target } = body;
 

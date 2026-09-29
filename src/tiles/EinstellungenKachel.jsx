@@ -9,6 +9,7 @@ import { LION_ICON } from "../lib/icons";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
+const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
@@ -144,6 +145,23 @@ export default function EinstellungenKachel() {
                 <input style={{ ...styles.input, flex: 1 }} placeholder={`aktuell: ${config.accessCode}`} value={newCode} onChange={(e) => setNewCode(e.target.value)} />
                 <button style={{ ...styles.saveBtn, flex: "none", padding: "0 16px" }} onClick={() => { if (newCode.trim().length >= 4) { persistConfig({ ...config, accessCode: newCode.trim() }); setNewCode(""); } }}><Check size={16} /></button>
               </div>
+
+              {isMainAdmin && (
+                <div style={{ marginTop: 22 }}>
+                  <label style={styles.label}>Kacheln verwalten</label>
+                  <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 8 }}>Hier gibst du Kacheln für die gesamte Feuerwehr frei oder sperrst sie. Eine gesperrte Kachel verschwindet bei allen aus dem Funktionen-Menü und lässt sich auch nicht mehr über einen Link öffnen. Nur du kannst das ändern.</div>
+                  {KACHELN.map(([key, name]) => {
+                    const aus = (config.kachelnAus || []).includes(key);
+                    return (
+                      <label key={key} style={{ ...styles.checkboxRow, alignItems: "center", padding: "5px 0" }}>
+                        <input type="checkbox" aria-label={`Kachel ${name} freigegeben`} checked={!aus} onChange={() => persistConfig({ ...config, kachelnAus: aus ? (config.kachelnAus || []).filter((k) => k !== key) : [...(config.kachelnAus || []), key] })} />
+                        <span style={{ flex: 1 }}>{name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: aus ? "#C1272D" : "#2E7D4F" }}>{aus ? "gesperrt" : "freigegeben"}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
 
               {isMainAdmin && (
                 <div style={{ marginTop: 22 }}>

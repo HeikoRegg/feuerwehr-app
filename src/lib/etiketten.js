@@ -12,7 +12,7 @@ const B_MM = 105, H_MM = 37.125, MM = 72 / 25.4;
 const esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function inhalt(g) {
-  const nummern = [g.seriennummer ? `SN ${g.seriennummer}` : "", g.inventar ? `Inv. ${g.inventar}` : ""].filter(Boolean).join("  ·  ");
+  const nummern = [g.inventar ? `Inv. ${g.inventar}` : "", g.seriennummer ? `SN ${g.seriennummer}` : ""].filter(Boolean).join("  ·  ");
   const ort = [g.ortName, g.fach].filter(Boolean).join(" · ");
   return { titel: geraeteName(g), nummern, ort, link: geraeteLink(g.id) };
 }

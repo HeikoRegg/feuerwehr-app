@@ -3,14 +3,14 @@
 // typ "intervall": wird alle X Tage fällig – eingetragen wird nur „in Ordnung“ / „Mangel“.
 // typ "datum": gilt bis zu einem Datum (Elektroprüfung, externe Prüfung, Verfallsdatum) – das trägt der Gerätewart ein.
 export const PRUEFARTEN = [
-  { key: "sicht", name: "Sichtprüfung", typ: "intervall", standard: 30, frage: "Sauber, vollständig, keine sichtbaren Schäden?" },
-  { key: "funktion", name: "Funktionsprüfung", typ: "intervall", standard: 30, frage: "Gerät läuft / funktioniert einwandfrei?" },
-  { key: "tank", name: "Tank / Kraftstoff", typ: "intervall", standard: 30, frage: "Tank bzw. Kanister ist gefüllt?" },
-  { key: "akku", name: "Akku", typ: "intervall", standard: 30, frage: "Akku ist geladen?" },
-  { key: "vollzaehlig", name: "Vollzähligkeit", typ: "intervall", standard: 30, frage: "Alles vollständig vorhanden (Menge stimmt)?" },
-  { key: "elektro", name: "Elektroprüfung (DGUV V3)", typ: "datum", standard: 12, frage: "Elektroprüfung durchgeführt – gültig bis:" },
-  { key: "extern", name: "Externe Prüfung (Hersteller, TÜV …)", typ: "datum", standard: 12, frage: "Prüfung durchgeführt – gültig bis:" },
-  { key: "verfall", name: "Verfallsdatum", typ: "datum", standard: 0, frage: "Verfällt am:" },
+  { key: "sicht", name: "Sichtprüfung", typ: "intervall", standard: 6, einheit: "monate", frage: "Sauber, vollständig, keine sichtbaren Schäden?" },
+  { key: "funktion", name: "Funktionsprüfung", typ: "intervall", standard: 6, einheit: "monate", frage: "Gerät läuft / funktioniert einwandfrei?" },
+  { key: "tank", name: "Tank / Kraftstoff", typ: "intervall", standard: 3, einheit: "monate", frage: "Tank bzw. Kanister ist gefüllt?" },
+  { key: "akku", name: "Akku", typ: "intervall", standard: 3, einheit: "monate", frage: "Akku ist geladen?" },
+  { key: "vollzaehlig", name: "Vollzähligkeit", typ: "intervall", standard: 6, einheit: "monate", frage: "Alles vollständig vorhanden (Menge stimmt)?" },
+  { key: "elektro", name: "Elektroprüfung (DGUV V3)", typ: "datum", standard: 1, einheit: "jahre", frage: "Elektroprüfung durchgeführt – gültig bis:" },
+  { key: "extern", name: "Externe Prüfung (Hersteller, TÜV …)", typ: "datum", standard: 1, einheit: "jahre", frage: "Prüfung durchgeführt – gültig bis:" },
+  { key: "verfall", name: "Verfallsdatum", typ: "datum", standard: 0, einheit: "jahre", frage: "Verfällt am:" },
 ];
 export const PRUEFART = Object.fromEntries(PRUEFARTEN.map((p) => [p.key, p]));
 export const MANGEL_STATUS = { offen: "Offen", bearbeitung: "In Bearbeitung", behoben: "Behoben" };
@@ -20,6 +20,27 @@ export const lokalISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pa
 export const heuteISO = () => lokalISO(new Date());
 export function plusTage(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return lokalISO(d); }
 export function plusMonate(iso, n) { const d = new Date(iso + "T12:00:00"); const tag = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); const ende = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(tag, ende)); return lokalISO(d); }
+// Intervall als Zahl + Einheit ("monate" | "jahre"; ältere Geräte haben "tage").
+export function plusIntervall(iso, p) {
+  const n = Math.max(0, parseInt(p && p.intervall, 10) || 0);
+  const e = (p && p.einheit) || "tage";
+  return e === "jahre" ? plusMonate(iso, n * 12) : e === "monate" ? plusMonate(iso, n) : plusTage(iso, n);
+}
+export function intervallText(p) {
+  const n = Math.max(0, parseInt(p && p.intervall, 10) || 0);
+  const e = (p && p.einheit) || "tage";
+  if (e === "jahre") return `${n} ${n === 1 ? "Jahr" : "Jahre"}`;
+  if (e === "monate") return `${n} ${n === 1 ? "Monat" : "Monate"}`;
+  return `${n} ${n === 1 ? "Tag" : "Tage"}`;
+}
+// Ältere Tage-Werte werden beim Bearbeiten auf Monate umgestellt (30 Tage = 1 Monat).
+export function intervallNormal(p, def) {
+  const e = p && p.einheit;
+  if (e === "monate" || e === "jahre") return { intervall: Math.max(0, parseInt(p.intervall, 10) || 0), einheit: e };
+  const tage = parseInt(p && p.intervall, 10);
+  if (!tage) return { intervall: def.standard, einheit: def.einheit };
+  return { intervall: Math.max(1, Math.round(tage / 30)), einheit: "monate" };
+}
 export function tageBis(iso) { return Math.round((new Date(iso + "T12:00:00") - new Date(heuteISO() + "T12:00:00")) / 86400000); }
 export function datumDe(iso) { if (!iso) return "—"; const [y, m, d] = String(iso).slice(0, 10).split("-"); return `${d}.${m}.${y}`; }
 export function zeitDe(ts) {
@@ -39,10 +60,14 @@ export function artStatus(g, art) {
     return { status: tage < 0 ? "ueberfaellig" : tage <= 30 ? "bald" : "ok", stand, faelligAm: stand.bis, tage };
   }
   if (!stand) return { status: "nie", stand, faelligAm: "" };
-  const intervall = einst.intervall || def.standard;
-  const faelligAm = plusTage(lokalISO(new Date(stand.ts)), intervall);
+  const eff = einst.intervall ? einst : { intervall: def.standard, einheit: def.einheit };
+  const start = lokalISO(new Date(stand.ts));
+  const faelligAm = plusIntervall(start, eff);
   const tage = tageBis(faelligAm);
-  return { status: tage < 0 ? "ueberfaellig" : tage <= 2 ? "bald" : "ok", stand, faelligAm, tage };
+  // „Bald fällig“: bis 30 Tage vorher, bei kurzen Intervallen höchstens ein Viertel des Intervalls.
+  const gesamt = Math.round((new Date(faelligAm + "T12:00:00") - new Date(start + "T12:00:00")) / 86400000);
+  const bald = Math.min(30, Math.floor(gesamt / 4));
+  return { status: tage < 0 ? "ueberfaellig" : tage <= bald ? "bald" : "ok", stand, faelligAm, tage };
 }
 
 export const STATUS_INFO = {

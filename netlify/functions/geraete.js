@@ -19,9 +19,10 @@ import { handler as sendPush } from "./send-push.js";
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BUCKET = "geraete";
 
-// Prüfarten: "intervall" = alle X Tage wieder fällig, "datum" = gültig bis zu einem eingetragenen Datum.
+// Prüfarten: "intervall" = alle X Monate/Jahre wieder fällig, "datum" = gültig bis zu einem eingetragenen Datum.
 const ARTEN = { sicht: "intervall", funktion: "intervall", tank: "intervall", akku: "intervall", vollzaehlig: "intervall", elektro: "datum", extern: "datum", verfall: "datum" };
 const ART_NAME = { sicht: "Sichtprüfung", funktion: "Funktionsprüfung", tank: "Tank / Kraftstoff", akku: "Akku", vollzaehlig: "Vollzähligkeit", elektro: "Elektroprüfung", extern: "Externe Prüfung", verfall: "Verfallsdatum" };
+const STANDARD = { sicht: { n: 6, einheit: "monate" }, funktion: { n: 6, einheit: "monate" }, tank: { n: 3, einheit: "monate" }, akku: { n: 3, einheit: "monate" }, vollzaehlig: { n: 6, einheit: "monate" }, elektro: { n: 1, einheit: "jahre" }, extern: { n: 1, einheit: "jahre" }, verfall: { n: 0, einheit: "jahre" } };
 const STATUS = { offen: "Offen", bearbeitung: "In Bearbeitung", behoben: "Behoben" };
 const OFFENE_STATUS = ["offen", "bearbeitung"];
 
@@ -81,9 +82,17 @@ function saubereGeraet(d, orteIds) {
   const pruefarten = [];
   (Array.isArray(d.pruefarten) ? d.pruefarten : []).forEach((p) => {
     if (!p || !ARTEN[p.art] || pruefarten.some((x) => x.art === p.art)) return;
-    const standard = ARTEN[p.art] === "intervall" ? 30 : 12; // Tage bzw. Monate
-    const intervall = Math.max(0, Math.min(3650, parseInt(p.intervall, 10) || (ARTEN[p.art] === "datum" && p.art === "verfall" ? 0 : standard)));
-    pruefarten.push({ art: p.art, intervall });
+    const std = STANDARD[p.art];
+    let n = parseInt(p.intervall, 10), einheit = p.einheit;
+    if (einheit !== "monate" && einheit !== "jahre") {
+      // ältere Angaben in Tagen (nur bei Intervall-Prüfungen) -> Monate (30 Tage = 1 Monat)
+      if (ARTEN[p.art] === "intervall" && n > 0) { n = Math.max(1, Math.round(n / 30)); einheit = "monate"; }
+      else { n = std.n; einheit = std.einheit; }
+    }
+    if (!(n >= 0)) n = std.n;
+    if (p.art === "verfall") n = Math.max(0, Math.min(99, n || 0));
+    else n = Math.max(1, Math.min(einheit === "jahre" ? 30 : 360, n || std.n));
+    pruefarten.push({ art: p.art, intervall: n, einheit });
   });
   return {
     name, kurzname: kurz(d.kurzname, 40), ort, fach: kurz(d.fach, 40), menge,
@@ -92,6 +101,17 @@ function saubereGeraet(d, orteIds) {
     pruefarten, ausgesondert: !!d.ausgesondert,
   };
 }
+
+// Inventarnummern G-0001, G-0002 … : höchste vorhandene Zahl + 1.
+const nummerText = (n) => `G-${String(n).padStart(4, "0")}`;
+const nummerZahl = (inv) => { const m = /^G-(\d+)$/i.exec(String(inv || "").trim()); return m ? parseInt(m[1], 10) : 0; };
+async function alleInventare() {
+  const { data, error } = await db.from("geraete").select("id,data");
+  if (error) throw error;
+  return (data || []).map((r) => ({ id: r.id, inventar: String((r.data || {}).inventar || "").trim() }));
+}
+const hoechsteNummer = (liste) => liste.reduce((m, x) => Math.max(m, nummerZahl(x.inventar)), 0);
+const doppelt = (liste, inv, ausserId) => !!inv && liste.some((x) => x.id !== ausserId && x.inventar.toLowerCase() === inv.toLowerCase());
 
 async function geraetLaden(id) {
   const { data } = await db.from("geraete").select("*").eq("id", String(id || "")).maybeSingle();
@@ -108,6 +128,13 @@ export async function handler(event) {
   try {
     const lage = await ladeLage(body.token);
     if (!lage.me) return json(401, { error: "Bitte PIN bestätigen." });
+    {
+      // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
+      const cfgSperre = await getKv("config");
+      const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
+      if (aus.includes("geraete")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
+    }
+
     if (!lage.rechte.zugriff) return json(403, { error: "Die Geräteprüfung ist für die Einsatzabteilung." });
     const ich = lage.me.name;
     const { verwalter, bearbeiter } = lage.rechte;
@@ -116,10 +143,11 @@ export async function handler(event) {
     const nurBearbeiter = () => { if (!bearbeiter) throw fehler(403, "Das dürfen nur Gerätewart, Kommandant, stellv. Kommandant und Admins."); };
 
     if (action === "list") {
-      const [o, g, m] = await Promise.all([
+      const [o, g, m, vorlagen] = await Promise.all([
         db.from("geraete_orte").select("*"),
         db.from("geraete").select("*"),
         db.from("geraete_maengel").select("*").in("status", OFFENE_STATUS),
+        getKv("geraete_vorlagen"),
       ]);
       if (o.error) throw o.error; if (g.error) throw g.error; if (m.error) throw m.error;
       const maengel = (m.data || []).map(alsMangel);
@@ -130,7 +158,7 @@ export async function handler(event) {
       });
       const orte = (o.data || []).map((x) => ({ id: x.id, name: x.name, faecher: x.faecher || [], sort: x.sort || 0 })).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "de"));
       return json(200, {
-        ich, rechte: lage.rechte, orte, geraete,
+        ich, rechte: lage.rechte, orte, geraete, vorlagen: Array.isArray(vorlagen) ? vorlagen : [],
         maengel: maengel.map((x) => ({ id: x.id, geraet: x.geraet, von: x.von, ts: x.ts, text: x.text, status: x.status, nichtEinsatzbereit: !!x.nichtEinsatzbereit, notizen: (x.verlauf || []).length, art: x.art || "" })).sort((a, b) => String(b.ts).localeCompare(String(a.ts))),
       });
     }
@@ -184,9 +212,14 @@ export async function handler(event) {
         const zeilen = (Array.isArray(body.zeilen) ? body.zeilen : []).filter((z) => z && kurz(z.name, 80)).slice(0, 200);
         if (!zeilen.length) return json(400, { error: "Bitte mindestens ein Gerät eintragen." });
         const ids = [];
+        const inv = await alleInventare();
+        let zaehler = hoechsteNummer(inv);
         for (const z of zeilen) {
-          const d = saubereGeraet({ ...z, ort: body.ort, fach: body.fach, pruefarten: body.pruefarten }, orteIds);
+          const d = saubereGeraet({ ...z, ort: body.ort, fach: body.fach, pruefarten: z.pruefarten || body.pruefarten }, orteIds);
           const id = neueId(); ids.push(id);
+          if (!d.inventar) d.inventar = nummerText(++zaehler);
+          else if (doppelt(inv, d.inventar, id)) throw fehler(400, `Die Inventarnummer ${d.inventar} gibt es schon.`);
+          inv.push({ id, inventar: d.inventar });
           const { error } = await db.from("geraete").upsert({ id, data: { ...d, pruefstand: {}, angelegtVon: ich, angelegtAm: jetzt }, created_at: jetzt, updated_at: jetzt });
           if (error) throw error;
         }
@@ -198,6 +231,11 @@ export async function handler(event) {
       if (body.geraet && body.geraet.id && !alt) return json(404, { error: "Dieses Gerät gibt es nicht (mehr)." });
       const id = alt ? alt.id : neueId();
       const altD = (alt && alt.data) || {};
+      {
+        const inv = await alleInventare();
+        if (!d.inventar) d.inventar = altD.inventar || nummerText(hoechsteNummer(inv) + 1);
+        if (doppelt(inv, d.inventar, id)) throw fehler(400, `Die Inventarnummer ${d.inventar} gibt es schon.`);
+      }
       // Foto: nur Pfade aus dem eigenen Ordner "geraet/" übernehmen; ein ersetztes Foto wird gelöscht.
       let foto = altD.foto || "";
       if (body.geraet && "foto" in body.geraet) {
@@ -211,6 +249,45 @@ export async function handler(event) {
       const { error } = await db.from("geraete").upsert(row);
       if (error) throw error;
       return json(200, { ok: true, id });
+    }
+
+    if (action === "nummernVergeben") {
+      nurVerwalter();
+      const { data, error } = await db.from("geraete").select("*");
+      if (error) throw error;
+      const zeilen = data || [];
+      let zaehler = hoechsteNummer(zeilen.map((r) => ({ inventar: String((r.data || {}).inventar || "") })));
+      const ohne = zeilen.filter((r) => !String((r.data || {}).inventar || "").trim()).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      const jetzt = new Date().toISOString();
+      for (const r of ohne) {
+        const { error: e2 } = await db.from("geraete").update({ data: { ...(r.data || {}), inventar: nummerText(++zaehler) }, updated_at: jetzt }).eq("id", r.id);
+        if (e2) throw e2;
+      }
+      return json(200, { ok: true, anzahl: ohne.length });
+    }
+
+    if (action === "saveVorlage") {
+      nurVerwalter();
+      const v = body.vorlage || {};
+      const name = kurz(v.name, 80);
+      if (!name) throw fehler(400, "Bitte einen Namen eingeben.");
+      const pruefarten = saubereGeraet({ name, pruefarten: v.pruefarten }, new Set()).pruefarten;
+      const liste = ((await getKv("geraete_vorlagen")) || []).filter((x) => x && x.id);
+      const id = v.id && liste.some((x) => x.id === v.id) ? v.id : neueId();
+      const neu = { id, name, kurzname: kurz(v.kurzname, 40), pruefarten };
+      const auch = liste.some((x) => x.id === id) ? liste.map((x) => (x.id === id ? neu : x)) : [...liste, neu];
+      if (auch.length > 300) throw fehler(400, "Es gibt schon sehr viele eigene Vorlagen.");
+      const { error } = await db.from("kv_store").upsert({ key: "geraete_vorlagen", value: auch, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return json(200, { ok: true, vorlagen: auch });
+    }
+
+    if (action === "deleteVorlage") {
+      nurVerwalter();
+      const liste = ((await getKv("geraete_vorlagen")) || []).filter((x) => x && x.id !== String(body.id || ""));
+      const { error } = await db.from("kv_store").upsert({ key: "geraete_vorlagen", value: liste, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return json(200, { ok: true, vorlagen: liste });
     }
 
     if (action === "deleteGeraet") {

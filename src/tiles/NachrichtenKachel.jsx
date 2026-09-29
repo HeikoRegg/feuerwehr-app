@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, CheckCheck, ChevronRight, Landmark, MessageCircle, Plus, Send, Shield, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, ChevronRight, GraduationCap, Landmark, MessageCircle, Plus, Send, Shield, Trash2, Wrench } from "lucide-react";
 import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { SearchBox } from "../components/Shared";
@@ -7,18 +7,20 @@ import { useApp } from "../AppContext";
 
 // Kachel Nachrichten: Direktnachrichten Kamerad ↔ Ausschuss / Kommandantschaft / Entwickler.
 // Jeder Kamerad hat pro Gruppe seine eigene Unterhaltung; untereinander schreiben ist nicht möglich.
-const GRUPPEN = ["ausschuss", "kommando", "entwickler"];
-const NAME = { ausschuss: "Ausschuss", kommando: "Kommandantschaft", entwickler: "Entwickler" };
-const AN = { ausschuss: "An den Ausschuss", kommando: "An die Kommandantschaft", entwickler: "An den Entwickler" };
+const GRUPPEN = ["ausschuss", "kommando", "entwickler", "jugendwart"];
+const NAME = { ausschuss: "Ausschuss", kommando: "Kommandantschaft", entwickler: "Entwickler", jugendwart: "Jugendwart" };
+const AN = { ausschuss: "An den Ausschuss", kommando: "An die Kommandantschaft", entwickler: "An den Entwickler", jugendwart: "An den Jugendwart" };
 const BESCHREIBUNG = {
   ausschuss: "Alle Ausschussmitglieder lesen mit und können antworten.",
   kommando: "Kommandant und Stellvertreter lesen mit und können antworten.",
   entwickler: "Fragen, Fehler oder Wünsche zur App.",
+  jugendwart: "Direkt an den Jugendwart der Jugendfeuerwehr.",
 };
 function GruppenIcon({ gruppe, size = 17 }) {
   const c = "#2C2F2A";
   if (gruppe === "ausschuss") return <Landmark size={size} color={c} />;
   if (gruppe === "kommando") return <Shield size={size} color={c} />;
+  if (gruppe === "jugendwart") return <GraduationCap size={size} color={c} />;
   return <Wrench size={size} color={c} />;
 }
 function zeitText(ts) {
@@ -60,6 +62,7 @@ export default function NachrichtenKachel() {
 
   const threads = (liste && liste.threads) || [];
   const gruppen = (liste && liste.gruppen) || {};
+  const sichtbar = (g) => !gruppen[g] || gruppen[g].sichtbar !== false;
   const eigene = (g) => threads.find((t) => t.gruppe === g && t.seite === "kamerad");
 
   return (
@@ -68,7 +71,7 @@ export default function NachrichtenKachel() {
         <button style={styles.fullscreenBackBtn} onClick={schliessen}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button>
       </div>
       <div style={styles.modalTitle}>Nachrichten</div>
-      <div style={{ fontSize: 11.5, color: "#8A8C86", margin: "2px 0 4px" }}>Schreib direkt an den Ausschuss, die Kommandantschaft oder den Entwickler der App. Es lesen nur die jeweiligen Empfänger mit.</div>
+      <div style={{ fontSize: 11.5, color: "#8A8C86", margin: "2px 0 4px" }}>Schreib direkt an den Ausschuss, die Kommandantschaft, den Entwickler der App oder (als Jugendfeuerwehr) an den Jugendwart. Es lesen nur die jeweiligen Empfänger mit.</div>
       {fehler && <div style={styles.errorText}>{fehler}</div>}
       {!liste && !fehler && <div style={{ fontSize: 12.5, color: "#8A8C86", marginTop: 12 }}>Lädt …</div>}
 
@@ -80,7 +83,7 @@ export default function NachrichtenKachel() {
           </div>
           <SearchBox value={suche} onChange={setSuche} placeholder="Name suchen …" />
           <div style={{ maxHeight: 280, overflowY: "auto" }}>
-            {roster.filter((r) => r.name !== me && !((gruppen[waehle] && gruppen[waehle].mitglieder) || []).includes(r.name) && matchesSearch(r.name, suche)).map((r) => (
+            {roster.filter((r) => r.name !== me && !((gruppen[waehle] && gruppen[waehle].mitglieder) || []).includes(r.name) && (waehle !== "jugendwart" || (r.bereiche || []).includes("jugendfeuerwehr")) && matchesSearch(r.name, suche)).map((r) => (
               <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => { setOffen({ gruppe: waehle, kamerad: r.name }); setWaehle(null); setSuche(""); }}>
                 <span>{r.name}</span><ChevronRight size={15} color="#A5A79F" />
               </button>
@@ -91,8 +94,8 @@ export default function NachrichtenKachel() {
 
       {liste && (
         <>
-          {GRUPPEN.some((g) => !gruppen[g] || !gruppen[g].mitglied) && <div style={abschnitt}>MEINE NACHRICHTEN</div>}
-          {GRUPPEN.filter((g) => !gruppen[g] || !gruppen[g].mitglied).map((g) => {
+          {GRUPPEN.some((g) => sichtbar(g) && (!gruppen[g] || !gruppen[g].mitglied)) && <div style={abschnitt}>MEINE NACHRICHTEN</div>}
+          {GRUPPEN.filter((g) => sichtbar(g) && (!gruppen[g] || !gruppen[g].mitglied)).map((g) => {
             const t = eigene(g);
             const moeglich = gruppen[g] && gruppen[g].verfuegbar;
             return (
@@ -152,6 +155,15 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
   const anzahlRef = useRef(0);
   const ladeNrRef = useRef(0); // verwirft Antworten, die von neueren Abfragen/Sendungen überholt wurden
   const alsKamerad = kamerad === ich;
+  // Sichtbarer Bereich (ohne Tastatur/Adressleiste): die Seite passt sich an, damit das Schreibfeld nie verdeckt wird.
+  const [vv, setVv] = useState(null);
+  useEffect(() => {
+    const v = window.visualViewport; if (!v) return;
+    const f = () => setVv({ h: Math.round(v.height), t: Math.round(v.offsetTop) });
+    f(); v.addEventListener("resize", f); v.addEventListener("scroll", f);
+    return () => { v.removeEventListener("resize", f); v.removeEventListener("scroll", f); };
+  }, []);
+  useEffect(() => { if (endeRef.current) endeRef.current.scrollIntoView({ block: "end" }); }, [vv && vv.h]);
 
   async function laden() {
     const nr = ++ladeNrRef.current;
@@ -200,10 +212,10 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
   const titel = alsKamerad ? NAME[gruppe] : kamerad;
   const untertitel = alsKamerad
     ? (mitleser.length ? `Es lesen mit: ${mitleser.join(", ")}` : "")
-    : `Unterhaltung ${gruppe === "entwickler" ? "mit dem Entwickler" : gruppe === "ausschuss" ? "mit dem Ausschuss" : "mit der Kommandantschaft"}${mitleser.length ? ` · es lesen mit: ${mitleser.join(", ")}` : ""}`;
+    : `Unterhaltung ${gruppe === "entwickler" ? "mit dem Entwickler" : gruppe === "ausschuss" ? "mit dem Ausschuss" : gruppe === "jugendwart" ? "mit dem Jugendwart" : "mit der Kommandantschaft"}${mitleser.length ? ` · es lesen mit: ${mitleser.join(", ")}` : ""}`;
 
   return (
-    <div style={{ ...styles.fullscreenPage, display: "flex", flexDirection: "column", padding: 0 }}>
+    <div style={{ ...styles.fullscreenPage, display: "flex", flexDirection: "column", padding: 0, overflowY: "hidden", inset: "auto", top: vv ? vv.t : 0, left: 0, right: 0, bottom: "auto", height: vv ? vv.h : "100dvh" }}>
       <div style={{ padding: "20px 18px 10px", borderBottom: "1px solid #E2DFD6", background: "#F3F1EC" }}>
         <div style={{ ...styles.fullscreenHeader, justifyContent: "space-between" }}>
           <button style={styles.fullscreenBackBtn} onClick={onBack}><ArrowLeft size={18} /> Alle Nachrichten</button>
@@ -244,11 +256,11 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
         <div ref={endeRef} />
       </div>
 
-      <div style={{ borderTop: "1px solid #E2DFD6", background: "#F3F1EC", padding: "10px 12px calc(10px + env(safe-area-inset-bottom))" }}>
+      <div style={{ borderTop: "2px solid #D5D2C8", background: "#E9E6DD", padding: "12px 12px calc(18px + env(safe-area-inset-bottom))", flexShrink: 0 }}>
         {fehler && <div style={{ ...styles.errorText, marginTop: 0, marginBottom: 6 }}>{fehler}</div>}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <textarea style={{ ...styles.input, flex: 1, minHeight: 42, maxHeight: 140, resize: "none", marginTop: 0 }} rows={Math.min(5, Math.max(1, text.split("\n").length))} placeholder="Nachricht schreiben …" value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} />
-          <button style={{ ...styles.saveBtn, flex: "0 0 46px", width: 46, height: 42, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }} aria-label="Senden" disabled={sendet || !text.trim()} onClick={senden}><Send size={18} color="white" /></button>
+          <textarea style={{ ...styles.input, flex: 1, minHeight: 46, maxHeight: 140, resize: "none", marginTop: 0, background: "white", border: "2px solid #5C5F58", fontSize: 16 }} rows={Math.min(5, Math.max(1, text.split("\n").length))} placeholder="Nachricht schreiben …" value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} />
+          <button style={{ ...styles.saveBtn, flex: "0 0 52px", width: 52, height: 46, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }} aria-label="Senden" disabled={sendet || !text.trim()} onClick={senden}><Send size={20} color="white" /></button>
         </div>
       </div>
 
