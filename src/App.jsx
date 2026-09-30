@@ -3,7 +3,8 @@ import { AlertTriangle, ArrowLeft, Boxes, MessageCircle, BarChart3, Bell, Car, C
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
-import { BereichIcon } from "./components/BereichIcon";
+import { allesVergessen, merke } from "./lib/zwischenspeicher";
+import { BereichIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
@@ -235,7 +236,7 @@ export default function App() {
   }, []);
   function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
   function clearAuth() { try { localStorage.removeItem("ffw_auth"); localStorage.removeItem("ffw_token"); } catch (e) {} authTokenRef.current = null; }
-  function logout() { clearAuth(); setMe(null); setCodeInput(""); setPhase("gate"); }
+  function logout() { clearAuth(); allesVergessen(); setMe(null); setCodeInput(""); setPhase("gate"); }
 
   // --- Sitzungs-Schlüssel (Token) für geschützte Serverfunktionen ---
   // Wird bei der PIN-Anmeldung vom Server ausgegeben. Wer schon vor dem Update angemeldet
@@ -247,8 +248,16 @@ export default function App() {
   function saveToken(name, token) { authTokenRef.current = token; try { localStorage.setItem("ffw_token", JSON.stringify({ name, token })); } catch (e) {} }
   const [pinPrompt, setPinPrompt] = useState(null); // { input, error, busy }
   const pinPromptResolveRef = useRef(null);
+  // Mehrere gleichzeitige Anfragen teilen sich EINE PIN-Abfrage (z. B. Statistik lädt zwei Dinge parallel).
+  const pinWartetRef = useRef(null);
   function requestPinConfirm() {
-    return new Promise((resolve) => { pinPromptResolveRef.current = resolve; setPinPrompt({ input: "", error: "", busy: false }); });
+    if (pinWartetRef.current) return pinWartetRef.current;
+    const p = new Promise((resolve) => {
+      pinPromptResolveRef.current = (tok) => { pinWartetRef.current = null; resolve(tok); };
+      setPinPrompt({ input: "", error: "", busy: false });
+    });
+    pinWartetRef.current = p;
+    return p;
   }
   async function submitPinPrompt() {
     if (!pinPrompt || !/^\d{4}$/.test(pinPrompt.input)) { setPinPrompt((p) => ({ ...p, error: "Bitte deine 4-stellige PIN eingeben." })); return; }
@@ -280,6 +289,7 @@ export default function App() {
     const token = authTokenRef.current || loadToken(me);
     if (!token) return;
     const r = await callServer("chat", { action: "list", token });
+    if (r.ok && r.data && Array.isArray(r.data.threads)) merke(`chat:${me}`, r.data); // die Kachel zeigt diese Liste gleich beim Öffnen
     if (r.ok && r.data && Array.isArray(r.data.threads)) setChatUngelesen(r.data.threads.reduce((summe, t) => summe + (t.ungelesen || 0), 0));
   }
   useEffect(() => {
@@ -1038,7 +1048,7 @@ export default function App() {
   // Wird das eigene Konto gesperrt, meldet sich die App auf diesem Gerät sofort ab.
   useEffect(() => {
     if (phase === "app" && myEntry && myEntry.gesperrt) {
-      clearAuth(); setMe(null); setCodeInput(""); setPhase("gate");
+      clearAuth(); allesVergessen(); setMe(null); setCodeInput(""); setPhase("gate");
       setGateError("Dein Zugang zur App wurde gesperrt. Bei Fragen bitte beim Kommandanten melden.");
     }
   }, [phase, myEntry]);
@@ -1505,7 +1515,7 @@ export default function App() {
             )}
             {kachelAn("jugend") && (isJugendwart || isAdmin) && (
               <button style={styles.tile} onClick={openTileJugend}>
-                <span style={{ display: "flex", mixBlendMode: "multiply", filter: "grayscale(1) brightness(0.6) contrast(20)" }}><BereichIcon bereich="jugendfeuerwehr" size={26} /></span>
+                <JFFlammeIcon size={28} />
                 <span style={styles.tileLabel}>Jugendfeuerwehr</span>
               </button>
             )}
@@ -1678,13 +1688,16 @@ export default function App() {
 
       {showWhatsNew && (
         <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={dismissWhatsNew}>
-          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
-            <Sparkles size={22} color="#C1272D" style={{ marginBottom: 8 }} />
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Was ist neu</div>
-            <ul style={{ textAlign: "left", fontSize: 12.5, color: "#5C5F58", lineHeight: 1.6, paddingLeft: 18, marginBottom: 14 }}>
-              {CHANGELOG.map((item, idx) => (<li key={idx}>{item}</li>))}
-            </ul>
-            <button style={{ ...styles.saveBtn, width: "100%" }} onClick={dismissWhatsNew}>Verstanden</button>
+          <div style={{ ...styles.confirmDialog, maxHeight: "82dvh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()} className="card-enter" role="dialog" aria-label="Was ist neu">
+            <Sparkles size={22} color="#C1272D" style={{ marginBottom: 8, flexShrink: 0 }} />
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, flexShrink: 0 }}>Was ist neu</div>
+            {/* Nur die Liste scrollt – der Knopf „Verstanden“ bleibt immer sichtbar. */}
+            <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", width: "100%", marginBottom: 14 }} data-testid="whatsnew-liste">
+              <ul style={{ textAlign: "left", fontSize: 12.5, color: "#5C5F58", lineHeight: 1.6, paddingLeft: 18, margin: 0 }}>
+                {CHANGELOG.map((item, idx) => (<li key={idx}>{item}</li>))}
+              </ul>
+            </div>
+            <button style={{ ...styles.saveBtn, width: "100%", flexShrink: 0 }} onClick={dismissWhatsNew}>Verstanden</button>
           </div>
         </div>
       )}

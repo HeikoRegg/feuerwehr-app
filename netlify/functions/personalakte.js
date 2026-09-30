@@ -53,11 +53,12 @@ export async function handler(event) {
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Ungültige Anfrage." }); }
 
   try {
-    const me = await userByToken(body.token);
+    // Für die Statistik die Akten gleich mitladen (gleichzeitig mit der Anmeldung).
+    const aktenVorab = body.action === "statistik" ? db.from("personalakten").select("name,data").then((r) => r, (e) => ({ error: e })) : null;
+    const [me, cfgSperre] = await Promise.all([userByToken(body.token), getKv("config")]);
     if (!me) return json(401, { error: "Bitte PIN bestätigen." });
     {
       // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
-      const cfgSperre = await getKv("config");
       const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
       if (aus.includes("personalakte") && aus.includes("jugend")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     }
@@ -93,7 +94,8 @@ export async function handler(event) {
       // keine Adressen, Telefonnummern, Arbeitgeber oder Fotos.
       if (!isAdmin) return json(403, { error: "Nur für Admins." });
       const jahrVon = (d) => (d && /^\d{4}/.test(d) ? Number(d.slice(0, 4)) : null);
-      const { data } = await db.from("personalakten").select("name,data");
+      const { data, error } = await aktenVorab;
+      if (error) throw error;
       const items = (data || []).map((row) => {
         const a = row.data || {};
         const geb = a.geburtsdatum || "";

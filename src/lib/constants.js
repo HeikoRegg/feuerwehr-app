@@ -3,17 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.12";
+export const APP_VERSION = "2.13";
 export const CHANGELOG = [
-  "Geräte: Prüfintervall frei wählbar in Monaten oder Jahren (z. B. alle 6 Monate). Inventarnummer vergibt die App automatisch (G-0001 …), die Seriennummer ist optional",
-  "Geräte: Vorschlagsliste mit typischen LF-8/6-Geräten zum Auswählen – eigene Geräte lassen sich als Vorlage merken",
-  "Nachrichten: das Schreibfeld sitzt höher und ist besser sichtbar. Die Jugendfeuerwehr kann jetzt direkt den Jugendwart anschreiben",
-  "Neue Kachelfarbe (Orange). Die Kachel „Jugendliche“ heißt jetzt „Jugendfeuerwehr“. Der Hauptadmin kann Kacheln für die ganze Feuerwehr sperren oder freigeben (Einstellungen)",
-  "Neu: Geräte – alle Geräte je Fahrzeug und Fach mit Sichtprüfung, Funktionsprüfung, Elektroprüfung, Tank u. a. Jedes Gerät bekommt einen QR-Code zum Aufkleben; mit der Kamera scannen öffnet direkt das Gerät",
-  "Mangel melden mit Foto: Gerätewart, Kommandant und Stellvertreter werden sofort benachrichtigt und können Notizen und den Status (offen / in Bearbeitung / behoben) eintragen – der Melder wird informiert",
-  "Fahrzeug-Rundgang: alle Geräte eines Fahrzeugs nacheinander abhaken. Für den Gerätewart gibt es eine Übersicht mit fälligen Prüfungen und Mängeln",
-  "Nachrichten: Häkchen zeigen, ob deine Nachricht gesendet (✓) und von jemandem gelesen wurde (✓✓)",
-  "Neu: Nachrichten – schreib direkt an den Ausschuss, die Kommandantschaft oder den Entwickler der App. Die Sprechblase oben zeigt ungelesene Nachrichten",
+  "Schneller: Nachrichten, Einsatzberichte, Geräte und Statistik öffnen deutlich flotter und zeigen gleich die zuletzt geladene Liste",
+  "Geräte: neue Seite „Vorlagen verwalten“ – Vorschläge anpassen, ausblenden oder eigene anlegen. Die Tastatur verdeckt die Vorschlagsliste nicht mehr",
+  "Nachrichten: die Schreibzeile sitzt auf dem iPhone höher",
+  "Hellere Kachelfarbe und neues Symbol für die Jugendfeuerwehr",
 ];
 
 export const CATEGORIES = {

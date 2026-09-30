@@ -1,7 +1,7 @@
 // Kachel Einsatzberichte – digitale Version des Papier-Einsatzzettels.
 // Schreiben: Gruppenführer und Admins. Lesen: alle – ohne Namen der Einsatzkräfte, nur die Anzahl.
 // Fotos: nur Einsatzabteilung und Admins. Die Rechte prüft der Server (netlify/functions/einsatzbericht.js).
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Camera, ChevronDown, ChevronRight, Clock, MapPin, Pencil, Plus, Printer, Trash2, Truck, Users, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { EINSATZ_STICHWORTE } from "../lib/constants";
@@ -10,6 +10,7 @@ import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 import { useApp } from "../AppContext";
+import { hole, merke } from "../lib/zwischenspeicher";
 
 // ---------------- Hilfen ----------------
 const zahl = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -139,9 +140,14 @@ function BerichtKarte({ b, onClick }) {
 // ---------------- Kachel ----------------
 export default function EinsatzberichtKachel() {
   const { roster, vehicles, config, persistConfig, isAdmin, me, callAuthed, flashError, closeKachelView, kachelReturnTo, setLightboxSrc } = useApp();
-  const [liste, setListe] = useState(null);
-  const [einsatzjahr, setEinsatzjahr] = useState(null);
-  const [rechte, setRechte] = useState({ schreiben: false, namen: false, fotos: false });
+  // Zuletzt geladene Liste sofort zeigen (auch nach einem Neustart der App), dann im Hintergrund auffrischen.
+  const cacheKey = `einsatz:${me}`;
+  const [gemerkt] = useState(() => hole(cacheKey));
+  const [liste, setListe] = useState(gemerkt ? gemerkt.items : null);
+  const [einsatzjahr, setEinsatzjahr] = useState(gemerkt ? gemerkt.einsatzjahr : null);
+  const [rechte, setRechte] = useState((gemerkt && gemerkt.rechte) || { schreiben: false, namen: false, fotos: false });
+  const [archivAnzahl, setArchivAnzahl] = useState((gemerkt && gemerkt.archiv) || {}); // Einsatzjahr -> Anzahl
+  const [archivListen, setArchivListen] = useState({}); // Einsatzjahr -> Berichte (erst beim Aufklappen geladen)
   const [fehler, setFehler] = useState("");
   const [ansicht, setAnsicht] = useState({ typ: "liste" }); // liste | detail | form
   const [detail, setDetail] = useState(null);
@@ -159,11 +165,28 @@ export default function EinsatzberichtKachel() {
   async function laden() {
     setFehler("");
     const r = await callAuthed("einsatzbericht", { action: "list" });
-    if (r.ok) { setListe(r.data.items || []); setEinsatzjahr(r.data.einsatzjahr); setRechte(r.data.rechte || {}); }
+    if (r.ok) {
+      setListe(r.data.items || []); setEinsatzjahr(r.data.einsatzjahr); setRechte(r.data.rechte || {}); setArchivAnzahl(r.data.archiv || {});
+      setArchivListen({}); // aufgeklappte Archivjahre neu laden
+      Object.keys(archivOffenRef.current).filter((j) => archivOffenRef.current[j]).forEach((j) => archivLaden(j));
+      merke(cacheKey, { items: r.data.items || [], einsatzjahr: r.data.einsatzjahr, rechte: r.data.rechte || {}, archiv: r.data.archiv || {} }, { dauerhaft: true });
+    }
     else if (r.data && r.data.error === "abgebrochen") closeKachelView();
     else { setListe([]); setFehler((r.data && r.data.error) || "Einsatzberichte konnten nicht geladen werden."); }
   }
   useEffect(() => { laden(); }, []);
+  const archivOffenRef = useRef({});
+  useEffect(() => { archivOffenRef.current = archivOffen; }, [archivOffen]);
+  async function archivLaden(jahr) {
+    const r = await callAuthed("einsatzbericht", { action: "archiv", jahr });
+    if (r.ok) setArchivListen((a) => ({ ...a, [jahr]: r.data.items || [] }));
+    else if (r.data && r.data.error !== "abgebrochen") flashError(r.data.error || "Archiv konnte nicht geladen werden.");
+  }
+  function archivUmschalten(j) {
+    const auf = !archivOffen[j];
+    setArchivOffen({ ...archivOffen, [j]: auf });
+    if (auf && !archivListen[j]) archivLaden(j);
+  }
 
   async function oeffnen(id) {
     setAnsicht({ typ: "detail", id }); setDetail(null);
@@ -261,7 +284,7 @@ export default function EinsatzberichtKachel() {
     const summeEin = draft.mannschaft.reduce((s, m) => s + zahl(m.ein), 0);
     const paAnzahl = draft.mannschaft.filter((m) => zahl(m.pa) > 0).length;
     const paStd = draft.mannschaft.reduce((s, m) => s + zahl(m.pa), 0);
-    const fruehereStichworte = [...new Set((liste || []).map((b) => b.einsatz).filter(Boolean))];
+    const fruehereStichworte = [...new Set([...(liste || []), ...Object.values(archivListen).flat()].map((b) => b.einsatz).filter(Boolean))];
     return (
       <div style={styles.fullscreenPage}>
         <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={abbrechen}><X size={18} /> Abbrechen</button></div>
@@ -459,10 +482,8 @@ export default function EinsatzberichtKachel() {
   }
 
   // ======================= LISTE =======================
-  const aktuell = (liste || []).filter((b) => b.einsatzjahr === einsatzjahr);
-  const archiv = {};
-  (liste || []).filter((b) => b.einsatzjahr !== einsatzjahr).forEach((b) => { (archiv[b.einsatzjahr] ||= []).push(b); });
-  const archivJahre = Object.keys(archiv).sort((a, b) => b.localeCompare(a, "de", { numeric: true }));
+  const aktuell = (liste || []).filter((b) => String(b.einsatzjahr) === String(einsatzjahr));
+  const archivJahre = Object.keys(archivAnzahl).sort((a, b) => b.localeCompare(a, "de", { numeric: true }));
   const summeStd = aktuell.reduce((s, b) => s + (b.stunden || 0), 0);
   const oKraefte = aktuell.length ? Math.round((aktuell.reduce((s, b) => s + (b.kraefte || 0), 0) / aktuell.length) * 10) / 10 : 0;
   const monat = new Date().getMonth() + 1;
@@ -491,10 +512,10 @@ export default function EinsatzberichtKachel() {
               <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", marginBottom: 6, letterSpacing: "0.04em" }}>ARCHIV</div>
               {archivJahre.map((j) => (
                 <div key={j} style={{ marginBottom: 8 }}>
-                  <button style={styles.advancedToggle} onClick={() => setArchivOffen({ ...archivOffen, [j]: !archivOffen[j] })}>
-                    <ChevronDown size={13} style={{ transform: archivOffen[j] ? "rotate(180deg)" : "none" }} /> Einsatzjahr {j} ({archiv[j].length})
+                  <button style={styles.advancedToggle} onClick={() => archivUmschalten(j)}>
+                    <ChevronDown size={13} style={{ transform: archivOffen[j] ? "rotate(180deg)" : "none" }} /> Einsatzjahr {j} ({archivAnzahl[j]})
                   </button>
-                  {archivOffen[j] && <div style={{ marginTop: 8 }}>{archiv[j].map((b) => <BerichtKarte key={b.id} b={b} onClick={() => oeffnen(b.id)} />)}</div>}
+                  {archivOffen[j] && <div style={{ marginTop: 8 }}>{archivListen[j] ? archivListen[j].map((b) => <BerichtKarte key={b.id} b={b} onClick={() => oeffnen(b.id)} />) : <div style={{ fontSize: 12, color: "#8A8C86", padding: "6px 0" }}>Lädt …</div>}</div>}
                 </div>
               ))}
             </div>

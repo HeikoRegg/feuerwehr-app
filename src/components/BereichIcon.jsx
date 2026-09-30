@@ -38,3 +38,16 @@ export function BereichIcon({ bereich, size = 18 }) {
   }
   return null;
 }
+
+// Kachel-Symbol der Jugendfeuerwehr: „JF“ mit kleiner Flamme, schwarz.
+export function JFFlammeIcon({ size = 28, color = "#2C2F2A" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="Jugendfeuerwehr">
+      <g fill="none" stroke={color}>
+        <path fill={color} stroke="none" fillRule="evenodd" d="M24 2.5C27.2 7.3 32.3 10.3 32.3 15.8C32.3 20.4 28.7 23.4 24 23.4C19.3 23.4 15.7 20.4 15.7 15.8C15.7 12.8 17.2 10.8 18.9 9.1C19.3 11.8 20.7 13 22 13.2C21 9.6 21.6 6 24 2.5ZM24 13.6C25.6 15.6 27 16.6 27 18.4C27 20 25.7 21.2 24 21.2C22.3 21.2 21 20 21 18.4C21 16.9 22.5 15.9 24 13.6Z" />
+        <path strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" d="M17.8 28V37.2Q17.8 42.6 12.6 42.6Q8.6 42.6 7.4 39.2" />
+        <path strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" d="M27.5 42.6V28.2H40M27.5 35.4H37.2" />
+      </g>
+    </svg>
+  );
+}

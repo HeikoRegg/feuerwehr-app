@@ -87,3 +87,33 @@ export function vorlagePruefarten(vor, PRUEFART) {
   if (Array.isArray(vor.pruefarten)) return vor.pruefarten; // eigene Vorlage: enthält die Fristen schon
   return (vor.arten || []).map((art) => ({ art, intervall: PRUEFART[art].standard, einheit: PRUEFART[art].einheit }));
 }
+
+export const EIGENE_GRUPPE = "Eigene Vorlagen";
+
+// Mitgelieferte Vorschläge + gespeicherte Vorlagen (kv „geraete_vorlagen“) zu einer Gruppenliste zusammenführen.
+// Gespeicherte Einträge mit „basis“ passen einen mitgelieferten Vorschlag an (Name, Kurzname, Fristen, ausgeblendet),
+// Einträge ohne „basis“ sind eigene Vorlagen (Gruppe frei wählbar, Standard „Eigene Vorlagen“).
+// Jeder Eintrag bekommt einen eindeutigen „schluessel“.
+export function vorlagenGruppen(gespeichert, { mitAusgeblendeten = false } = {}) {
+  const liste = Array.isArray(gespeichert) ? gespeichert.filter((x) => x && x.id) : [];
+  const anpassung = new Map(liste.filter((x) => x.basis).map((x) => [x.basis, x]));
+  const gruppen = VORLAGEN_GRUPPEN.map((g) => ({
+    gruppe: g.gruppe,
+    eintraege: g.eintraege.map((e) => {
+      const a = anpassung.get(e.name);
+      return a
+        ? { ...e, name: a.name || e.name, kurzname: a.kurzname ?? e.kurzname, pruefarten: a.pruefarten, ausgeblendet: !!a.ausgeblendet, id: a.id, basis: e.name, angepasst: true, original: e, schluessel: `std:${e.name}` }
+        : { ...e, basis: e.name, schluessel: `std:${e.name}` };
+    }).filter((e) => mitAusgeblendeten || !e.ausgeblendet),
+  }));
+  const eigeneGruppen = [];
+  liste.filter((x) => !x.basis).forEach((x) => {
+    const e = { ...x, eigene: true, schluessel: x.id };
+    const name = x.gruppe || EIGENE_GRUPPE;
+    let g = gruppen.find((y) => y.gruppe === name) || eigeneGruppen.find((y) => y.gruppe === name);
+    if (!g) { g = { gruppe: name, eintraege: [] }; eigeneGruppen.push(g); }
+    g.eintraege.push(e);
+  });
+  eigeneGruppen.sort((a, b) => (a.gruppe === EIGENE_GRUPPE ? -1 : b.gruppe === EIGENE_GRUPPE ? 1 : a.gruppe.localeCompare(b.gruppe, "de")));
+  return [...eigeneGruppen, ...gruppen].filter((g) => g.eintraege.length);
+}

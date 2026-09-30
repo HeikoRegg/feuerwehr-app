@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, Printer } from "lucide-react";
 import { styles } from "../lib/styles";
 import { oeffneBericht } from "../lib/bericht";
 import { STATISTIK_REITER, berechneStatistik, jahreAuswahl, pct, statistikBericht } from "../lib/statistik";
+import { hole, merke } from "../lib/zwischenspeicher";
 import { useApp } from "../AppContext";
 
 function Balken({ value, max, color }) {
@@ -63,20 +64,25 @@ export default function StatistikKachel() {
   }, [events, config]);
   const [jahr, setJahr] = useState(new Date().getFullYear());
   const [reiter, setReiter] = useState("personal");
-  const [akten, setAkten] = useState(null);
-  const [einsaetze, setEinsaetze] = useState(undefined); // undefined = lädt, null = Fehler
+  // Beim erneuten Öffnen (gleiche Sitzung) gleich die letzten Zahlen zeigen, dann auffrischen.
+  const gemerkt = hole("statistik");
+  const [akten, setAkten] = useState(gemerkt ? gemerkt.akten : null);
+  const [einsaetze, setEinsaetze] = useState(gemerkt ? gemerkt.einsaetze : undefined); // undefined = lädt, null = Fehler
   const [fehler, setFehler] = useState("");
   const [druckAuswahl, setDruckAuswahl] = useState(false);
   const [mitNamen, setMitNamen] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const r = await callAuthed("personalakte", { action: "statistik" });
+      // Personalakten und Einsatzberichte gleichzeitig holen (eine gemeinsame PIN-Abfrage, falls nötig).
+      const pa = callAuthed("personalakte", { action: "statistik" });
+      const eb = callAuthed("einsatzbericht", { action: "statistik" });
+      const [r, e] = await Promise.all([pa, eb]);
       if (r.ok) setAkten(r.data.items || []);
-      else if (r.data && r.data.error === "abgebrochen") closeKachelView();
+      else if (r.data && r.data.error === "abgebrochen") { closeKachelView(); return; }
       else { setAkten([]); setFehler((r.data && r.data.error) || "Daten aus den Personalakten konnten nicht geladen werden."); }
-      const e = await callAuthed("einsatzbericht", { action: "statistik" });
       setEinsaetze(e.ok ? e.data.items || [] : null);
+      if (r.ok && e.ok) merke("statistik", { akten: r.data.items || [], einsaetze: e.data.items || [] });
     })();
   }, []);
 

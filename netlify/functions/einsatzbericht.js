@@ -49,6 +49,13 @@ function kennzahlen(d) {
     fotoAnzahl: (d.fotos || []).length,
   };
 }
+// Nur die Felder, die die Liste in der Kachel zeigt (schnell, ohne Namen, Texte und Fotos).
+function fuerListe(row) {
+  const d = row.data || {};
+  const k = kennzahlen(d);
+  return { id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), datum: d.datum || "", alarm: d.alarm || "", ende: d.ende || "", einsatz: d.einsatz || "", ort: d.ort || "", kraefte: k.kraefte, stunden: k.stunden, fotoAnzahl: k.fotoAnzahl };
+}
+const sortiereBerichte = (a, b) => (b.datum || "").localeCompare(a.datum || "") || (b.alarm || "").localeCompare(a.alarm || "") || b.nr - a.nr;
 function fuerLeser(row, rechte, { mitFotos = false } = {}) {
   const d = row.data || {};
   const out = { ...d, id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), ...kennzahlen(d) };
@@ -63,29 +70,43 @@ export async function handler(event) {
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Ungültige Anfrage." }); }
 
   try {
-    const me = await userByToken(body.token);
+    const { action } = body;
+    // Alles, was voneinander unabhängig ist, gleichzeitig laden (jede Datenbank-Abfrage kostet Wartezeit).
+    const berichteVorab = action === "list" || action === "archiv" || action === "statistik"
+      ? db.from("einsatzberichte").select("id,einsatzjahr,nr,data").then((r) => r, (e) => ({ error: e }))
+      : null;
+    const [me, roster0, config0] = await Promise.all([userByToken(body.token), getKv("roster"), getKv("config")]);
     if (!me) return json(401, { error: "Bitte PIN bestätigen." });
     {
       // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
-      const cfgSperre = await getKv("config");
-      const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
+      const aus = (config0 && Array.isArray(config0.kachelnAus)) ? config0.kachelnAus : [];
       if (aus.includes("einsatz")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     }
 
     const isAdmin = !!me.is_admin;
-    const roster = (await getKv("roster")) || [];
-    const config = (await getKv("config")) || {};
+    const roster = roster0 || [];
+    const config = config0 || {};
     const ich = roster.find((r) => r && r.name === me.name) || {};
-    const gf = isAdmin || (await istGruppenfuehrer(me.name));
+    const [gf, vorab] = await Promise.all([isAdmin ? true : istGruppenfuehrer(me.name), berichteVorab]);
     const rechte = { schreiben: gf, namen: gf, fotos: isAdmin || (ich.bereiche || []).includes("einsatzabteilung") };
-    const { action } = body;
 
     if (action === "list") {
-      const { data, error } = await db.from("einsatzberichte").select("id,einsatzjahr,nr,data");
+      // Liste nur mit den angezeigten Feldern; laufendes Einsatzjahr komplett, vom Archiv nur die Anzahl je Jahr.
+      const { data, error } = vorab;
       if (error) throw error;
-      const items = (data || []).map((row) => fuerLeser(row, rechte))
-        .sort((a, b) => (b.datum || "").localeCompare(a.datum || "") || (b.alarm || "").localeCompare(a.alarm || "") || b.nr - a.nr);
-      return json(200, { items, einsatzjahr: aktuellesEinsatzjahr(config), rechte });
+      const jahr = aktuellesEinsatzjahr(config);
+      const archiv = {};
+      const items = [];
+      (data || []).forEach((row) => { if (String(row.einsatzjahr) === jahr || body.alle) items.push(fuerListe(row)); else archiv[row.einsatzjahr] = (archiv[row.einsatzjahr] || 0) + 1; });
+      items.sort(sortiereBerichte);
+      return json(200, { items, archiv, einsatzjahr: jahr, rechte });
+    }
+
+    if (action === "archiv") {
+      const { data, error } = vorab;
+      if (error) throw error;
+      const jahr = String(body.jahr || "");
+      return json(200, { items: (data || []).filter((row) => String(row.einsatzjahr) === jahr).map(fuerListe).sort(sortiereBerichte) });
     }
 
     if (action === "get") {
@@ -102,11 +123,16 @@ export async function handler(event) {
     }
 
     if (action === "statistik") {
-      // Für die Statistik-Kachel (nur Admin): alle Berichte mit Namen.
+      // Für die Statistik-Kachel (nur Admin): nur die Felder, die die Statistik braucht (mit Namen und Stunden).
       if (!isAdmin) return json(403, { error: "Nur für Admins." });
-      const { data, error } = await db.from("einsatzberichte").select("id,einsatzjahr,nr,data");
+      const { data, error } = vorab;
       if (error) throw error;
-      return json(200, { items: (data || []).map((row) => fuerLeser(row, { namen: true, fotos: false })) });
+      return json(200, { items: (data || []).map((row) => {
+        const d = row.data || {}; const k = kennzahlen(d);
+        return { id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), datum: d.datum || "", einsatz: d.einsatz || "",
+          kraefte: k.kraefte, stunden: k.stunden, fahrzeuge: d.fahrzeuge || [], fahrzeugNamen: d.fahrzeugNamen || {},
+          mannschaft: (d.mannschaft || []).map((m) => ({ name: m.name, ein: m.ein })) };
+      }) });
     }
 
     if (action === "save") {

@@ -37,10 +37,12 @@ function aktiveFunktionen(akte) {
 
 // Wer gehört zu welcher Gruppe? Wird bei jedem Aufruf frisch ermittelt.
 async function ladeLage(token) {
-  const [usersRes, roster, aktenRes] = await Promise.all([
+  const [usersRes, roster, aktenRes, config] = await Promise.all([
     db.from("app_users").select("name,tokens,blocked,is_main_admin"),
     getKv("roster"),
-    db.from("personalakten").select("name,data"),
+    // aus den Personalakten nur die Funktionen (Kommandant, Jugendwart …) – nicht die ganzen Akten
+    db.from("personalakten").select("name,funktionen:data->funktionen"),
+    getKv("config"),
   ]);
   if (usersRes.error) throw usersRes.error;
   const users = usersRes.data || [];
@@ -51,26 +53,28 @@ async function ladeLage(token) {
   ]);
   const aktiv = (n) => n && !gesperrt.has(n);
   const mitglieder = new Set((roster || []).filter((r) => r && aktiv(r.name)).map((r) => r.name));
+  const akten = ((aktenRes && aktenRes.data) || []).map((a) => ({ name: a.name, data: { funktionen: a.funktionen || (a.data && a.data.funktionen) || [] } }));
   const gruppen = {
     ausschuss: (roster || []).filter((r) => r && r.ausschuss && aktiv(r.name)).map((r) => r.name),
-    kommando: ((aktenRes && aktenRes.data) || []).filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).some((f) => KOMMANDO_FUNKTIONEN.includes(f))).map((a) => a.name),
+    kommando: akten.filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).some((f) => KOMMANDO_FUNKTIONEN.includes(f))).map((a) => a.name),
     entwickler: users.filter((u) => u.is_main_admin && aktiv(u.name)).map((u) => u.name),
-    jugendwart: ((aktenRes && aktenRes.data) || []).filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).includes("Jugendwart")).map((a) => a.name),
+    jugendwart: akten.filter((a) => aktiv(a.name) && mitglieder.has(a.name) && aktiveFunktionen(a.data).includes("Jugendwart")).map((a) => a.name),
   };
   // Jugendfeuerwehr = Mitglieder mit dem Bereich „Jugendfeuerwehr“ (nur sie schreiben mit dem Jugendwart).
   const jugend = new Set((roster || []).filter((r) => r && aktiv(r.name) && (r.bereiche || []).includes("jugendfeuerwehr")).map((r) => r.name));
-  return { me, gruppen, mitglieder, jugend };
+  return { me, gruppen, mitglieder, jugend, config: config || {} };
 }
 const istMitglied = (lage, gruppe, name) => (lage.gruppen[gruppe] || []).includes(name);
 // Beim Jugendwart-Chat ist die Kamerad-Seite immer ein Mitglied der Jugendfeuerwehr.
 const kameradOk = (lage, gruppe, kamerad) => gruppe !== "jugendwart" || lage.jugend.has(kamerad);
 const darfThread = (lage, t) => t && (t.kamerad === lage.me.name || istMitglied(lage, t.gruppe, lage.me.name));
 
-// Unterhaltungen, deren letzte Nachricht älter als 6 Monate ist, endgültig löschen.
-async function alteLoeschen() {
-  const { data } = await db.from("chat_threads").select("id,letzte");
+// Unterhaltungen, deren letzte Nachricht älter als 6 Monate ist, endgültig löschen (aus der ohnehin geladenen Liste).
+async function alteLoeschen(threads) {
   const grenze = Date.now() - AUFBEWAHRUNG_TAGE * 86400000;
-  for (const t of (data || []).filter((x) => zeit(x.letzte) < grenze)) await threadLoeschen(t.id);
+  const alt = (threads || []).filter((x) => zeit(x.letzte) < grenze);
+  if (alt.length) await Promise.all(alt.map((t) => threadLoeschen(t.id)));
+  return (threads || []).filter((x) => zeit(x.letzte) >= grenze);
 }
 async function threadLoeschen(id) {
   await db.from("chat_nachrichten").delete().eq("thread", id);
@@ -87,11 +91,13 @@ export async function handler(event) {
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Ungültige Anfrage." }); }
 
   try {
+    // Für die Liste die Unterhaltungen gleich mitladen (gleichzeitig mit Benutzern, Mitgliedern, Akten).
+    const threadsVorab = body.action === "list" ? db.from("chat_threads").select("*").then((r) => r, (e) => ({ error: e })) : null;
     const lage = await ladeLage(body.token);
     if (!lage.me) return json(401, { error: "Bitte PIN bestätigen." });
     {
       // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
-      const cfgSperre = await getKv("config");
+      const cfgSperre = lage.config;
       const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
       if (aus.includes("chat")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     }
@@ -100,9 +106,9 @@ export async function handler(event) {
     const { action } = body;
 
     if (action === "list") {
-      await alteLoeschen();
-      const { data: threads, error } = await db.from("chat_threads").select("*");
+      const { data: alleThreads, error } = await threadsVorab;
       if (error) throw error;
+      const threads = await alteLoeschen(alleThreads);
       const sichtbar = (threads || []).filter((t) => GRUPPEN[t.gruppe] && darfThread(lage, t));
       const ids = sichtbar.map((t) => t.id);
       let nachrichten = [], gelesen = [];

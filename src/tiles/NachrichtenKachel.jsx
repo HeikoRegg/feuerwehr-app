@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useSichtbereich } from "../lib/sichtbereich";
+import { hole, merke } from "../lib/zwischenspeicher";
 import { ArrowLeft, Check, CheckCheck, ChevronRight, GraduationCap, Landmark, MessageCircle, Plus, Send, Shield, Trash2, Wrench } from "lucide-react";
 import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
@@ -35,7 +37,8 @@ const abschnitt = { fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "18
 
 export default function NachrichtenKachel() {
   const { me, roster, callAuthed, flashError, closeKachelView, kachelReturnTo, ladeChatStatus } = useApp();
-  const [liste, setListe] = useState(null); // { ich, gruppen, threads }
+  // Zuletzt geladene Liste (auch von der Sprechblase oben) sofort zeigen, dann auffrischen.
+  const [liste, setListe] = useState(() => hole(`chat:${me}`)); // { ich, gruppen, threads }
   const [fehler, setFehler] = useState("");
   const [offen, setOffen] = useState(null); // { gruppe, kamerad }
   const [waehle, setWaehle] = useState(null); // Gruppe, für die ein Kamerad ausgewählt wird
@@ -43,7 +46,7 @@ export default function NachrichtenKachel() {
 
   async function ladeListe() {
     const r = await callAuthed("chat", { action: "list" });
-    if (r.ok) { setListe(r.data); setFehler(""); }
+    if (r.ok) { setListe(r.data); setFehler(""); merke(`chat:${me}`, r.data); }
     else if (r.data.error === "abgebrochen") closeKachelView();
     else setFehler(r.data.error || "Nachrichten konnten nicht geladen werden.");
   }
@@ -156,13 +159,7 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
   const ladeNrRef = useRef(0); // verwirft Antworten, die von neueren Abfragen/Sendungen überholt wurden
   const alsKamerad = kamerad === ich;
   // Sichtbarer Bereich (ohne Tastatur/Adressleiste): die Seite passt sich an, damit das Schreibfeld nie verdeckt wird.
-  const [vv, setVv] = useState(null);
-  useEffect(() => {
-    const v = window.visualViewport; if (!v) return;
-    const f = () => setVv({ h: Math.round(v.height), t: Math.round(v.offsetTop) });
-    f(); v.addEventListener("resize", f); v.addEventListener("scroll", f);
-    return () => { v.removeEventListener("resize", f); v.removeEventListener("scroll", f); };
-  }, []);
+  const vv = useSichtbereich();
   useEffect(() => { if (endeRef.current) endeRef.current.scrollIntoView({ block: "end" }); }, [vv && vv.h]);
 
   async function laden() {
@@ -256,11 +253,11 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
         <div ref={endeRef} />
       </div>
 
-      <div style={{ borderTop: "2px solid #D5D2C8", background: "#E9E6DD", padding: "12px 12px calc(18px + env(safe-area-inset-bottom))", flexShrink: 0 }}>
+      <div style={{ borderTop: "2px solid #D5D2C8", background: "#E9E6DD", padding: vv && vv.tastatur ? "12px 12px 12px" : "14px 12px calc(34px + env(safe-area-inset-bottom))", flexShrink: 0 }} data-testid="schreibzeile">
         {fehler && <div style={{ ...styles.errorText, marginTop: 0, marginBottom: 6 }}>{fehler}</div>}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <textarea style={{ ...styles.input, flex: 1, minHeight: 46, maxHeight: 140, resize: "none", marginTop: 0, background: "white", border: "2px solid #5C5F58", fontSize: 16 }} rows={Math.min(5, Math.max(1, text.split("\n").length))} placeholder="Nachricht schreiben …" value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} />
-          <button style={{ ...styles.saveBtn, flex: "0 0 52px", width: 52, height: 46, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }} aria-label="Senden" disabled={sendet || !text.trim()} onClick={senden}><Send size={20} color="white" /></button>
+          <textarea style={{ ...styles.input, flex: 1, minHeight: 50, maxHeight: 140, resize: "none", marginTop: 0, background: "white", border: "2px solid #5C5F58", fontSize: 16 }} rows={Math.min(5, Math.max(1, text.split("\n").length))} placeholder="Nachricht schreiben …" value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} />
+          <button style={{ ...styles.saveBtn, flex: "0 0 52px", width: 52, height: 50, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }} aria-label="Senden" disabled={sendet || !text.trim()} onClick={senden}><Send size={20} color="white" /></button>
         </div>
       </div>
 

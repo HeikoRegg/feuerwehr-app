@@ -38,7 +38,7 @@ async function getKv(key) {
 }
 
 async function ladeLage(token) {
-  const [usersRes, roster] = await Promise.all([db.from("app_users").select("name,is_admin,tokens,blocked"), getKv("roster")]);
+  const [usersRes, roster, config] = await Promise.all([db.from("app_users").select("name,is_admin,tokens,blocked"), getKv("roster"), getKv("config")]);
   if (usersRes.error) throw usersRes.error;
   const users = usersRes.data || [];
   const me = token ? users.find((u) => !u.blocked && Array.isArray(u.tokens) && u.tokens.includes(token)) : null;
@@ -48,7 +48,7 @@ async function ladeLage(token) {
   const verwalter = admin || !!e.geraetewart;
   const bearbeiter = verwalter || !!e.kommandant || !!e.stellvKommandant;
   const einsatz = (e.bereiche || []).includes("einsatzabteilung");
-  return { me, users, roster: liste, rechte: { verwalter, bearbeiter, zugriff: admin || einsatz || bearbeiter } };
+  return { me, users, roster: liste, config: config || {}, rechte: { verwalter, bearbeiter, zugriff: admin || einsatz || bearbeiter } };
 }
 // Gerätewart, Kommandant, stellv. Kommandant und Admins (ohne den Absender, ohne gesperrte Mitglieder).
 function fuehrungsNamen(lage, ausser) {
@@ -126,11 +126,18 @@ export async function handler(event) {
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Ungültige Anfrage." }); }
 
   try {
+    // Für die Liste die Daten gleich mitladen (gleichzeitig mit der Anmeldung) – spart Wartezeit.
+    const listeVorab = body.action === "list" ? Promise.all([
+      db.from("geraete_orte").select("*"),
+      db.from("geraete").select("*"),
+      db.from("geraete_maengel").select("*").in("status", OFFENE_STATUS),
+      getKv("geraete_vorlagen"),
+    ]).then((r) => r, (e) => ({ fehler: e })) : null;
     const lage = await ladeLage(body.token);
     if (!lage.me) return json(401, { error: "Bitte PIN bestätigen." });
     {
       // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
-      const cfgSperre = await getKv("config");
+      const cfgSperre = lage.config;
       const aus = (cfgSperre && Array.isArray(cfgSperre.kachelnAus)) ? cfgSperre.kachelnAus : [];
       if (aus.includes("geraete")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     }
@@ -143,12 +150,9 @@ export async function handler(event) {
     const nurBearbeiter = () => { if (!bearbeiter) throw fehler(403, "Das dürfen nur Gerätewart, Kommandant, stellv. Kommandant und Admins."); };
 
     if (action === "list") {
-      const [o, g, m, vorlagen] = await Promise.all([
-        db.from("geraete_orte").select("*"),
-        db.from("geraete").select("*"),
-        db.from("geraete_maengel").select("*").in("status", OFFENE_STATUS),
-        getKv("geraete_vorlagen"),
-      ]);
+      const vorab = await listeVorab;
+      if (vorab.fehler) throw vorab.fehler;
+      const [o, g, m, vorlagen] = vorab;
       if (o.error) throw o.error; if (g.error) throw g.error; if (m.error) throw m.error;
       const maengel = (m.data || []).map(alsMangel);
       const geraete = (g.data || []).map((row) => {
@@ -273,13 +277,27 @@ export async function handler(event) {
       if (!name) throw fehler(400, "Bitte einen Namen eingeben.");
       const pruefarten = saubereGeraet({ name, pruefarten: v.pruefarten }, new Set()).pruefarten;
       const liste = ((await getKv("geraete_vorlagen")) || []).filter((x) => x && x.id);
-      const id = v.id && liste.some((x) => x.id === v.id) ? v.id : neueId();
+      // basis = Name eines mitgelieferten Vorschlags, der angepasst/ausgeblendet wird (höchstens ein Eintrag je Vorschlag).
+      const basis = kurz(v.basis, 80);
+      const vorhanden = basis ? liste.find((x) => x.basis === basis) : liste.find((x) => x.id === v.id && !x.basis);
+      const id = vorhanden ? vorhanden.id : neueId();
       const neu = { id, name, kurzname: kurz(v.kurzname, 40), pruefarten };
+      if (basis) { neu.basis = basis; if (v.ausgeblendet) neu.ausgeblendet = true; }
+      else if (kurz(v.gruppe, 40)) neu.gruppe = kurz(v.gruppe, 40);
       const auch = liste.some((x) => x.id === id) ? liste.map((x) => (x.id === id ? neu : x)) : [...liste, neu];
       if (auch.length > 300) throw fehler(400, "Es gibt schon sehr viele eigene Vorlagen.");
       const { error } = await db.from("kv_store").upsert({ key: "geraete_vorlagen", value: auch, updated_at: new Date().toISOString() });
       if (error) throw error;
       return json(200, { ok: true, vorlagen: auch });
+    }
+
+    if (action === "resetVorlagen") {
+      // Alle Anpassungen an mitgelieferten Vorschlägen verwerfen (eigene Vorlagen bleiben).
+      nurVerwalter();
+      const liste = ((await getKv("geraete_vorlagen")) || []).filter((x) => x && x.id && !x.basis);
+      const { error } = await db.from("kv_store").upsert({ key: "geraete_vorlagen", value: liste, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return json(200, { ok: true, vorlagen: liste });
     }
 
     if (action === "deleteVorlage") {
