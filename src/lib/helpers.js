@@ -33,6 +33,7 @@ export const emptyRosterEntry = (name, hasPin) => ({
   gruppenfuehrer: false,
   maschinist: false,
   geraetewart: false,
+  hydrantenwart: false,
   jugendwart: false,
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },

@@ -9,11 +9,11 @@ import { LION_ICON } from "../lib/icons";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
-const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
+const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
-  const { flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht } = useApp();
+  const { flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
   // Ein Listen-Paar (Einträge + weibliche Formen) gemeinsam speichern.
   const listeSpeichern = (key) => (items, weiblich) => persistConfig({ ...config, [key]: items, weiblich });
   // Einträge ohne weibliche Form, für die es einen Vorschlag gibt (z. B. ältere Listen von vor Version 2.8).
@@ -60,6 +60,7 @@ export default function EinstellungenKachel() {
                     onToggleBereich={(b) => toggleBereichAssignment(r.name, b)}
                     onTogglePerm={(b, f) => togglePermission(r.name, b, f)}
                     onToggleAtemschutz={() => toggleAtemschutz(r.name)}
+                    onToggleHydrantenwart={() => updateRosterEntry(r.name, (x) => ({ ...x, hydrantenwart: !x.hydrantenwart }))}
                     onToggleAusschuss={() => toggleAusschuss(r.name)}
                     onToggleAusschussRecht={(f) => toggleAusschussRecht(r.name, f)}
                   />

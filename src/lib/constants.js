@@ -3,12 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.13";
+export const APP_VERSION = "2.14";
 export const CHANGELOG = [
-  "Schneller: Nachrichten, Einsatzberichte, Geräte und Statistik öffnen deutlich flotter und zeigen gleich die zuletzt geladene Liste",
-  "Geräte: neue Seite „Vorlagen verwalten“ – Vorschläge anpassen, ausblenden oder eigene anlegen. Die Tastatur verdeckt die Vorschlagsliste nicht mehr",
-  "Nachrichten: die Schreibzeile sitzt auf dem iPhone höher",
-  "Hellere Kachelfarbe und neues Symbol für die Jugendfeuerwehr",
+  "Neue Kachel „Hydranten“: alle Hydranten mit Kontrollgruppe, Kontrolle eintragen (wie die Papierliste, mit Foto) und Verlauf",
+  "Standort per GPS erfassen oder auf der Karte setzen, Karte und „Nächster Hydrant“ mit Navigation",
+  "Die App fragt vorher, ob sie den Standort benutzen darf – die Freigabe lässt sich jederzeit zurücknehmen",
 ];
 
 export const CATEGORIES = {

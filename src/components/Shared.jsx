@@ -92,12 +92,12 @@ export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onTogg
   );
 }
 
-export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
+export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}</span>
+        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}{r.hydrantenwart && <span style={styles.funktionTag}>HY</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}
@@ -132,6 +132,9 @@ export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, on
             </div>
           )}
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" checked={r.atemschutz} onChange={onToggleAtemschutz} /> Atemschutzträger (G26.3-Pflicht)</label>
+          {onToggleHydrantenwart && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 6, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" aria-label={`${r.name} Hydranten-Verantwortlicher`} checked={!!r.hydrantenwart} onChange={onToggleHydrantenwart} /> <span>Hydranten-Verantwortlicher<span style={{ display: "block", fontSize: 10.5, color: "#A5A79F" }}>darf Hydranten anlegen, ändern, löschen und bekommt Mängel-Benachrichtigungen</span></span></label>
+          )}
           <div style={{ marginTop: 8, fontSize: 11.5, color: "#5C5F58" }}>
             Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.geraetewart && "Gerätewart", r.jugendwart && "Jugendwart", r.maschinist && "Maschinist (Lehrgang)"].filter(Boolean).join(", ") || "—"}
             <div style={{ fontSize: 10.5, color: "#A5A79F", marginTop: 2 }}>Wird in der Personalakte gepflegt.</div>

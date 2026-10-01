@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { allesVergessen, merke } from "./lib/zwischenspeicher";
-import { BereichIcon, JFFlammeIcon } from "./components/BereichIcon";
+import { BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
@@ -24,6 +24,7 @@ const kachelImporte = {
   nachrichten: () => import("./tiles/NachrichtenKachel"),
   einsatz: () => import("./tiles/EinsatzberichtKachel"),
   geraete: () => import("./tiles/GeraeteKachel"),
+  hydranten: () => import("./tiles/HydrantenKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
@@ -35,6 +36,7 @@ const StatistikKachel = lazy(kachelImporte.statistik);
 const NachrichtenKachel = lazy(kachelImporte.nachrichten);
 const EinsatzberichtKachel = lazy(kachelImporte.einsatz);
 const GeraeteKachel = lazy(kachelImporte.geraete);
+const HydrantenKachel = lazy(kachelImporte.hydranten);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
@@ -99,6 +101,7 @@ export default function App() {
   const [chatUngelesen, setChatUngelesen] = useState(0);
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showGeraete, setShowGeraete] = useState(false);
+  const [showHydranten, setShowHydranten] = useState(false);
   const [geraeteStartId, setGeraeteStartId] = useState(null);
   const [showJugend, setShowJugend] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
@@ -140,6 +143,7 @@ export default function App() {
   const aktiveMitglieder = useMemo(() => roster.filter((r) => !r.gesperrt), [roster]);
   const isMaschinist = !!(myEntry && myEntry.maschinist);
   const isGeraetewart = !!(myEntry && myEntry.geraetewart);
+  const isHydrantenwart = !!(myEntry && myEntry.hydrantenwart);
   const isKommando = !!(myEntry && (myEntry.kommandant || myEntry.stellvKommandant));
   const isJugendwart = !!(myEntry && myEntry.jugendwart);
   const lkwFahrzeuge = useMemo(() => vehicles.filter((v) => v.type === "lkw"), [vehicles]);
@@ -151,6 +155,7 @@ export default function App() {
   // Kacheln, die der Hauptadmin für die ganze Feuerwehr gesperrt hat (Einstellungen → Kacheln verwalten).
   const kachelAn = (k) => !((config && config.kachelnAus) || []).includes(k);
   const darfGeraete = kachelAn("geraete") && (isAdmin || !!inEinsatzabteilung || isGeraetewart || isKommando);
+  const darfHydranten = kachelAn("hydranten") && (isAdmin || !!inEinsatzabteilung || isKommando || isHydrantenwart);
   const isAtemschutz = isAdmin || (myEntry && myEntry.atemschutz);
   const canSeeAusschuss = isAdmin || (myEntry && myEntry.ausschuss);
   const canEditSitzung = isAdmin || (myEntry && myEntry.ausschuss && myEntry.ausschussRechte.calendar);
@@ -310,7 +315,7 @@ export default function App() {
     else flashError(kachelAn("geraete") ? "Die Geräteprüfung ist für die Einsatzabteilung." : "Die Kachel „Geräte“ ist derzeit für die ganze Feuerwehr gesperrt.");
   }, [phase, me]);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowJugend(false); setShowChat(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
@@ -321,6 +326,7 @@ export default function App() {
   function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTileGeraete() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowGeraete(true); }
+  function openTileHydranten() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowHydranten(true); }
   function openTileEinsatz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowEinsatz(true); }
   function openTileJugend() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowJugend(true); }
   function openTilePersonalakte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowPersonalakte(true); }
@@ -1076,7 +1082,7 @@ export default function App() {
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
-  Object.assign(appCtx, { geraeteStartId, setGeraeteStartId, ladeChatStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
+  Object.assign(appCtx, { geraeteStartId, setGeraeteStartId, ladeChatStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
@@ -1513,6 +1519,12 @@ export default function App() {
                 <span style={styles.tileLabel}>Geräte</span>
               </button>
             )}
+            {darfHydranten && (
+              <button style={styles.tile} onClick={openTileHydranten}>
+                <HydrantIcon size={27} />
+                <span style={styles.tileLabel}>Hydranten</span>
+              </button>
+            )}
             {kachelAn("jugend") && (isJugendwart || isAdmin) && (
               <button style={styles.tile} onClick={openTileJugend}>
                 <JFFlammeIcon size={28} />
@@ -1579,6 +1591,7 @@ export default function App() {
       {showChat && <Suspense fallback={<KachelLaden />}><NachrichtenKachel /></Suspense>}
       {showEinsatz && <Suspense fallback={<KachelLaden />}><EinsatzberichtKachel /></Suspense>}
       {showGeraete && darfGeraete && <Suspense fallback={<KachelLaden />}><GeraeteKachel /></Suspense>}
+      {showHydranten && darfHydranten && <Suspense fallback={<KachelLaden />}><HydrantenKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>

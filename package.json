@@ -15,7 +15,8 @@
     "@supabase/supabase-js": "^2.45.4",
     "web-push": "^3.6.7",
     "pdf-lib": "^1.17.1",
-    "jsqr": "^1.4.0"
+    "jsqr": "^1.4.0",
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

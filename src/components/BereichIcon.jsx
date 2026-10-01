@@ -51,3 +51,18 @@ export function JFFlammeIcon({ size = 28, color = "#2C2F2A" }) {
     </svg>
   );
 }
+
+// Hydrant (Überflur-Form, gut erkennbar) für die Kachel „Hydranten“.
+export function HydrantIcon({ size = 26, color = "#2C2F2A" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2.6v1.6" />
+      <path d="M7.6 8.2a4.4 4.4 0 0 1 8.8 0" />
+      <path d="M6.4 8.2h11.2" />
+      <path d="M8 8.2v11.6M16 8.2v11.6" />
+      <path d="M5.6 20.4h12.8" />
+      <path d="M8 11.6H5.2v3.4H8M16 11.6h2.8v3.4H16" />
+      <circle cx="12" cy="14.2" r="1.7" />
+    </svg>
+  );
+}
