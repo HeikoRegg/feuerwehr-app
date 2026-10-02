@@ -11,7 +11,7 @@
 //  { t: "kpis", items: [{ value, label }] }
 //  { t: "balken", zeilen: [{ label, value, max, color, rechts, unter? }] }
 //  { t: "felder", items: [{ label, value }] }          – Angaben paarweise nebeneinander (z. B. Kopf eines Einsatzberichts)
-//  { t: "bild", src: dataUrl, text? }                    – Foto (JPEG/PNG als data-URL)
+//  { t: "bild", src: dataUrl, text?, gross? }            – Foto (JPEG/PNG als data-URL); gross = so groß wie die Seite erlaubt (z. B. Karte)
 import { LION_ICON } from "./icons";
 import { DRUCK_NAME } from "./constants";
 
@@ -73,7 +73,7 @@ function blockHtml(b) {
       const zellen = b.items.map((f) => `<div style="flex:1 1 45%;min-width:200px;border-bottom:1px solid #EEEEEC;padding:5px 0;"><div style="font-size:10.5px;color:#8A8C86;text-transform:uppercase;letter-spacing:0.04em;">${esc(f.label)}</div><div style="font-size:13.5px;font-weight:700;">${esc(f.value || "—")}</div></div>`).join("");
       return `<div style="display:flex;flex-wrap:wrap;column-gap:24px;margin:8px 0;">${zellen}</div>`;
     }
-    case "bild": return `<div style="margin:10px 0;page-break-inside:avoid;"><img src="${b.src}" alt="" style="max-width:100%;max-height:420px;border:1px solid #E2DFD6;border-radius:4px;"/>${b.text ? `<div style="font-size:11px;color:#8A8C86;">${esc(b.text)}</div>` : ""}</div>`;
+    case "bild": return `<div style="margin:10px 0;page-break-inside:avoid;"><img src="${b.src}" alt="" style="max-width:100%;max-height:${b.gross ? "160mm" : "420px"};border:1px solid #E2DFD6;border-radius:4px;"/>${b.text ? `<div style="font-size:11px;color:#8A8C86;">${esc(b.text)}</div>` : ""}</div>`;
     default: return "";
   }
 }
@@ -222,7 +222,7 @@ export async function berichtPdf(modell) {
       try {
         const l = await logoBytes(b.src);
         const img = l.png ? await doc.embedPng(l.bytes) : await doc.embedJpg(l.bytes);
-        const maxH = 300; const s = Math.min(BREITE / img.width, maxH / img.height, 1);
+        const maxH = b.gross ? Math.max(220, y - UNTEN - 28) : 300; const s = Math.min(BREITE / img.width, maxH / img.height, b.gross ? 10 : 1);
         const w = img.width * s, h = img.height * s;
         platz(h + (b.text ? 20 : 10));
         y -= 6;

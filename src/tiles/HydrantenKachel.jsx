@@ -3,7 +3,7 @@
 // Die GPS-Freigabe fragt die App beim ersten Öffnen selbst ab und sie kann jederzeit zurückgenommen werden.
 // Die Rechte prüft der Server (netlify/functions/hydranten.js).
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Camera, Check, Crosshair, LocateFixed, Map as KarteIcon, MapPin, Navigation, Pencil, Plus, Trash2, Wrench, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, Crosshair, Printer, LocateFixed, Map as KarteIcon, MapPin, Navigation, Pencil, Plus, Trash2, Wrench, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { compressImage, matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
@@ -11,9 +11,11 @@ import { SearchBox } from "../components/Shared";
 import { sichtbereichStil, useSichtbereich } from "../lib/sichtbereich";
 import { hole, merke } from "../lib/zwischenspeicher";
 import {
-  ART_NAME, TYP_NAME, ZUSTAND, datumDe, entfernung, entfernungText, gpsErlauben, gpsFreigabe, gpsNichtJetzt, hatStandort, heuteISO,
+  ART_NAME, DN_WERTE, TYP_NAME, ZUSTAND, dnText, datumDe, entfernung, entfernungText, gpsErlauben, gpsFreigabe, gpsNichtJetzt, hatStandort, heuteISO,
   istIOS, naechste, naechsteFreieNummer, navigationsLinks, richtung, useStandort, zeitDe, zustandVon,
 } from "../lib/hydranten";
+import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
+import { kartenModell, maengelModell } from "../lib/hydrantenDruck";
 import { useApp } from "../AppContext";
 
 const HydrantenKarte = lazy(() => import("../components/HydrantenKarte"));
@@ -65,6 +67,23 @@ function Wahl({ label, wert, optionen, onChange, hinweis }) {
           return <button key={String(v)} type="button" aria-pressed={an} onClick={() => onChange(an ? null : v)} style={{ flex: 1, padding: "10px 6px", borderRadius: 8, fontSize: 13.5, fontWeight: 700, border: `1.5px solid ${an ? "#2C2F2A" : "#E2DFD6"}`, background: an ? "#2C2F2A" : "white", color: an ? "white" : "#2C2F2A" }}>{t}</button>;
         })}
       </div>
+    </div>
+  );
+}
+// Nennweite der Leitung: gängige Größen als Knöpfe, „andere“ mit Zahl, „weiß nicht“ = leer.
+function DnWahl({ wert, onChange, hinweis }) {
+  const istStandard = wert == null || DN_WERTE.includes(wert);
+  const [andere, setAndere] = useState(!istStandard);
+  const knopfStil = (an) => ({ padding: "9px 4px", borderRadius: 8, fontSize: 13, fontWeight: 700, border: `1.5px solid ${an ? "#2C2F2A" : "#E2DFD6"}`, background: an ? "#2C2F2A" : "white", color: an ? "white" : "#2C2F2A" });
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ ...styles.label, marginTop: 0 }}>LEITUNG (NENNWEITE DN){hinweis && <span style={{ fontWeight: 500, color: "#8A8C86", letterSpacing: 0 }}> {hinweis}</span>}</div>
+      <div role="group" aria-label="Leitung DN" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
+        {DN_WERTE.map((n) => { const an = !andere && wert === n; return <button key={n} type="button" aria-pressed={an} style={knopfStil(an)} onClick={() => { setAndere(false); onChange(an ? null : n); }}>{n}</button>; })}
+        <button type="button" aria-pressed={andere} style={knopfStil(andere)} onClick={() => { setAndere(true); if (DN_WERTE.includes(wert)) onChange(null); }}>andere</button>
+        <button type="button" aria-pressed={!andere && wert == null} style={{ ...knopfStil(!andere && wert == null), gridColumn: "span 2" }} onClick={() => { setAndere(false); onChange(null); }}>weiß nicht</button>
+      </div>
+      {andere && <input style={{ ...styles.input, marginTop: 6 }} aria-label="Nennweite in mm" inputMode="numeric" placeholder="Nennweite in mm, z. B. 65" value={wert == null ? "" : String(wert)} onChange={(e) => { const n = parseInt(e.target.value.replace(/[^\d]/g, ""), 10); onChange(isFinite(n) ? n : null); }} />}
     </div>
   );
 }
@@ -161,40 +180,73 @@ function NaviKnoepfe({ h }) {
   );
 }
 
+function InfoZeile({ label, children }) {
+  return <div style={{ display: "flex", gap: 8, padding: "3px 0", borderBottom: "1px solid #ECEAE4", fontSize: 12.5 }}><span style={{ width: 108, flexShrink: 0, color: "#8A8C86" }}>{label}</span><span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{children}</span></div>;
+}
+// Infofenster auf der Karte: alle Angaben zum angetippten Hydranten.
+function KartenInfo({ h, gps, onOeffnen, onClose }) {
+  const z = zustandVon(h);
+  return (
+    <div data-testid="karte-auswahl" role="region" aria-label={`Info ${h.nr}`}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 15 }}>{h.nr} · {h.lage}</span>
+        <Pille h={h} />
+        <button style={styles.iconBtn} aria-label="Info schließen" onClick={onClose}><X size={18} color="#5C5F58" /></button>
+      </div>
+      {(z === "mangel" || z === "defekt") && (
+        <div style={{ marginTop: 6, padding: "6px 9px", borderRadius: 6, background: z === "defekt" ? "#FBEAEA" : "#FBEBD3", color: z === "defekt" ? "#8E1B20" : "#7A4800", fontSize: 12.5, fontWeight: 700 }}>
+          {z === "defekt" ? `Nicht funktionsfähig${String(h.zustandText || "").replace(/^nicht funktionsfähig( · )?/, "") ? `: ${String(h.zustandText).replace(/^nicht funktionsfähig( · )?/, "")}` : ""}` : `Mängel: ${h.zustandText || "–"}`}
+        </div>
+      )}
+      <div style={{ marginTop: 6 }}>
+        <InfoZeile label="Leitung">{dnText(h) || "unbekannt"}</InfoZeile>
+        <InfoZeile label="Typ">{TYP_NAME[h.typ] || "–"}{h.gruppe ? ` · Gruppe ${h.gruppe}` : ""}</InfoZeile>
+        <InfoZeile label="Ausführung">{h.art || "–"} · öffnen {h.oeffnen || "–"} · Standrohr {h.standrohr || "–"}{h.vorbelegt ? <span style={{ color: "#B8791A", fontWeight: 500 }}> (Liste 2018)</span> : null}</InfoZeile>
+        <InfoZeile label="Letzte Kontrolle">{h.letzteKontrolle ? `${datumDe(h.letzteKontrolle.datum)} (${h.letzteKontrolle.von})` : "noch nie"}</InfoZeile>
+        {gps.pos && <InfoZeile label="Entfernung">{entfernungText(entfernung(gps.pos, h))} (Luftlinie, Richtung {richtung(gps.pos, h)})</InfoZeile>}
+        {h.bemerkung && <InfoZeile label="Bemerkung">{h.bemerkung}</InfoZeile>}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button style={knopfRot} onClick={() => onOeffnen(h.id)}>Öffnen / Kontrolle</button>
+      </div>
+      <NaviKnoepfe h={h} />
+    </div>
+  );
+}
+
 // ---------------- Karte (Vollbild) ----------------
 function KartenAnsicht({ hydranten, gps, startId, onOeffnen, onClose }) {
+  const { flashError } = useApp();
   const [auswahl, setAuswahl] = useState(startId || null);
   const [folgen, setFolgen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const apiRef = useRef(null);
   const h = hydranten.find((x) => x.id === auswahl);
   const ohne = hydranten.filter((x) => !hatStandort(x)).length;
+  async function alsPdf() {
+    if (!apiRef.current || pdfBusy) return;
+    const fenster = bereiteFensterVor();
+    setPdfBusy(true);
+    try {
+      const bild = await apiRef.current.bild();
+      if (!oeffneBericht(kartenModell(bild, hydranten), fenster)) flashError("Bitte Pop-ups für diese Seite erlauben.");
+    } catch (e) { if (fenster) fenster.close(); flashError("Der Kartenausschnitt konnte nicht erstellt werden."); }
+    setPdfBusy(false);
+  }
   return (
     <Vollbild titel="Hydranten-Karte" onClose={onClose} ohnePolster>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ flex: "1 1 auto", minHeight: 0, position: "relative" }}>
           <KartenFehler><Suspense fallback={<KarteLaden />}>
-            <HydrantenKarte hydranten={hydranten} pos={gps.pos} auswahl={auswahl} onAuswahl={setAuswahl} folgen={folgen} start={h} />
+            <HydrantenKarte hydranten={hydranten} pos={gps.pos} auswahl={auswahl} onAuswahl={setAuswahl} folgen={folgen} start={h} onApi={(a) => { apiRef.current = a; }} />
           </Suspense></KartenFehler>
         </div>
-        <div style={{ flexShrink: 0, background: "#F3F1EC", borderTop: "1px solid #E2DFD6", padding: "8px 14px calc(12px + env(safe-area-inset-bottom))" }}>
-          {h ? (
-            <div data-testid="karte-auswahl">
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontWeight: 700, fontSize: 14 }}>{h.nr} · {h.lage}</span>
-                  <span style={{ display: "block", ...klein }}>{h.letzteKontrolle ? `zuletzt kontrolliert ${datumDe(h.letzteKontrolle.datum)}` : "noch nie kontrolliert"}{gps.pos ? ` · ${entfernungText(entfernung(gps.pos, h))}` : ""}</span>
-                </span>
-                <Pille h={h} />
-              </div>
-              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                <button style={knopfRot} onClick={() => onOeffnen(h.id)}>Öffnen</button>
-                <button style={knopf} onClick={() => setAuswahl(null)}>Schließen</button>
-              </div>
-              <NaviKnoepfe h={h} />
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ flex: 1, ...klein }}>Hydrant antippen für Details.{ohne ? ` ${ohne} ohne Standort sind nicht auf der Karte.` : ""}</span>
+        <div style={{ flexShrink: 0, maxHeight: "58%", overflowY: "auto", WebkitOverflowScrolling: "touch", background: "#F3F1EC", borderTop: "1px solid #E2DFD6", padding: "8px 14px calc(12px + env(safe-area-inset-bottom))" }}>
+          {h ? <KartenInfo h={h} gps={gps} onOeffnen={onOeffnen} onClose={() => setAuswahl(null)} /> : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ flex: "1 1 160px", ...klein }}>Hydrant antippen für alle Angaben.{ohne ? ` ${ohne} ohne Standort sind nicht auf der Karte.` : ""}</span>
               {gps.pos && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "6px 9px" }} onClick={() => setFolgen((f) => !f)}>{folgen ? "Mitführen aus" : "Mich zeigen"}</button>}
+              <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "6px 9px" }} disabled={pdfBusy} onClick={alsPdf}><Printer size={12} /> {pdfBusy ? "Wird erstellt …" : "Ausschnitt als PDF"}</button>
             </div>
           )}
         </div>
@@ -221,7 +273,7 @@ function NaechsterHydrant({ hydranten, gps, onOeffnen, onKarte, onBack }) {
             <span style={{ fontSize: 22, fontWeight: 700, minWidth: 74 }}>{entfernungText(m)}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontWeight: 700, fontSize: 14 }}>{h.nr} · {h.lage}</span>
-              <span style={{ display: "block", ...klein }}>Richtung {richtung(gps.pos, h)}{h.letzteKontrolle ? ` · kontrolliert ${datumDe(h.letzteKontrolle.datum)}` : " · nie kontrolliert"}</span>
+              <span style={{ display: "block", ...klein }}>{h.dn ? <b style={{ color: "#2C2F2A" }}>DN {h.dn} · </b> : null}Richtung {richtung(gps.pos, h)}{h.letzteKontrolle ? ` · kontrolliert ${datumDe(h.letzteKontrolle.datum)}` : " · nie kontrolliert"}</span>
             </span>
             {i === 0 && <Pille h={h} />}{i > 0 && h.zustand && h.zustand !== "ok" && <Pille h={h} />}
           </div>
@@ -309,7 +361,7 @@ function KarteSetzen({ h, hydranten, gps, onClose, onSaved }) {
 // ---------------- Kontrolle eintragen ----------------
 function KontrolleFormular({ h, gps, onClose, onSaved }) {
   const { callAuthed, flashError } = useApp();
-  const [k, setK] = useState({ datum: heuteISO(), funktionsfaehig: null, art: h.art || null, oeffnen: h.oeffnen || null, standrohr: h.standrohr || null, schildVorhanden: null, lesbar: null, bemassung: null, laengs: "", quer: "", text: "", mangel: false });
+  const [k, setK] = useState({ datum: heuteISO(), funktionsfaehig: null, art: h.art || null, oeffnen: h.oeffnen || null, standrohr: h.standrohr || null, dn: h.dn || null, schildVorhanden: null, lesbar: null, bemassung: null, laengs: "", quer: "", text: "", mangel: false });
   const [foto, setFoto] = useState(null);
   const ohneStandort = !hatStandort(h);
   const [standortMit, setStandortMit] = useState(ohneStandort);
@@ -319,10 +371,10 @@ function KontrolleFormular({ h, gps, onClose, onSaved }) {
   const p = gps.pos;
   async function speichern() {
     if (k.funktionsfaehig === null) { setFehler("Bitte angeben, ob der Hydrant funktionsfähig ist."); return; }
-    if ((k.funktionsfaehig === false || k.mangel) && k.text.trim().length < 3) { setFehler("Bitte kurz beschreiben, was nicht in Ordnung ist."); return; }
+    if (k.funktionsfaehig === false && k.text.trim().length < 3) { setFehler("Bitte kurz beschreiben, warum der Hydrant nicht funktionsfähig ist."); return; }
     setBusy(true); setFehler("");
     const kontrolle = {
-      datum: k.datum, funktionsfaehig: k.funktionsfaehig, art: k.art || "", oeffnen: k.oeffnen || "", standrohr: k.standrohr || "",
+      datum: k.datum, funktionsfaehig: k.funktionsfaehig, art: k.art || "", oeffnen: k.oeffnen || "", standrohr: k.standrohr || "", dn: k.dn || null,
       schild: { vorhanden: k.schildVorhanden, lesbar: k.lesbar, bemassung: k.bemassung }, abweichung: { laengs: k.laengs, quer: k.quer },
       text: k.text.trim(), mangel: k.mangel, foto: foto ? foto.path : "",
       standort: ohneStandort && standortMit && gps.freigabe === "ja" && p ? { lat: p.lat, lng: p.lng, genauigkeit: p.genauigkeit } : null,
@@ -345,6 +397,7 @@ function KontrolleFormular({ h, gps, onClose, onSaved }) {
       <Wahl label="AUSFÜHRUNG" hinweis={pruefen} wert={k.art} optionen={[["BW", "BW"], ["BY", "BY"]]} onChange={(v) => set({ art: v })} />
       <Wahl label="ÖFFNEN" hinweis={pruefen} wert={k.oeffnen} optionen={[["links", "links"], ["rechts", "rechts"]]} onChange={(v) => set({ oeffnen: v })} />
       <Wahl label="LÄNGE STANDROHR" hinweis={pruefen} wert={k.standrohr} optionen={[["kurz", "kurz"], ["lang", "lang"]]} onChange={(v) => set({ standrohr: v })} />
+      <DnWahl wert={k.dn} onChange={(v) => set({ dn: v })} hinweis="(obere Zahl auf dem Hydrantenschild)" />
       <Wahl label="SCHILD VORHANDEN?" wert={k.schildVorhanden} optionen={jn} onChange={(v) => set({ schildVorhanden: v })} />
       {k.schildVorhanden !== false && (<>
         <Wahl label="SCHILD LESBAR?" wert={k.lesbar} optionen={jn} onChange={(v) => set({ lesbar: v })} />
@@ -358,7 +411,7 @@ function KontrolleFormular({ h, gps, onClose, onSaved }) {
       </>)}
       <label style={styles.label}>DEFEKTE / BEMERKUNG</label>
       <textarea style={{ ...styles.input, minHeight: 70, resize: "vertical" }} aria-label="Defekte / Bemerkung" maxLength={1000} value={k.text} onChange={(e) => set({ text: e.target.value })} placeholder="z. B. Schacht voll Wasser, Deckel klemmt …" />
-      <label style={{ ...styles.checkboxRow, marginTop: 10 }}><input type="checkbox" checked={k.mangel} onChange={(e) => set({ mangel: e.target.checked })} /> Mangel – muss behoben werden</label>
+      <label style={{ ...styles.checkboxRow, marginTop: 10 }}><input type="checkbox" checked={k.mangel} onChange={(e) => set({ mangel: e.target.checked })} /> Mangel – muss behoben werden <span style={{ color: "#8A8C86" }}>(Text freiwillig)</span></label>
       <div style={{ ...klein, marginTop: 4 }}>Bei „nicht funktionsfähig“, Mangel oder Schild-Problem bekommen Kommandant, Stellvertreter, Hydranten-Verantwortliche und Admins eine Benachrichtigung.</div>
       <FotoFeld wert={foto} onChange={setFoto} callAuthed={callAuthed} flashError={flashError} />
       {ohneStandort && (
@@ -383,7 +436,7 @@ function KontrolleFormular({ h, gps, onClose, onSaved }) {
 // ---------------- Hydrant anlegen / bearbeiten ----------------
 function HydrantFormular({ h, hydranten, onClose, onSaved }) {
   const { callAuthed } = useApp();
-  const [d, setD] = useState(() => ({ nr: h ? h.nr || "" : "", lage: h ? h.lage || "" : "", gruppe: h && h.gruppe ? String(h.gruppe) : "", typ: (h && h.typ) || "unterflur", art: (h && h.art) || null, oeffnen: (h && h.oeffnen) || null, standrohr: (h && h.standrohr) || null, bemerkung: (h && h.bemerkung) || "" }));
+  const [d, setD] = useState(() => ({ nr: h ? h.nr || "" : "", lage: h ? h.lage || "" : "", gruppe: h && h.gruppe ? String(h.gruppe) : "", typ: (h && h.typ) || "unterflur", art: (h && h.art) || null, oeffnen: (h && h.oeffnen) || null, standrohr: (h && h.standrohr) || null, dn: (h && h.dn) || null, bemerkung: (h && h.bemerkung) || "" }));
   const [busy, setBusy] = useState(false); const [fehler, setFehler] = useState("");
   const set = (t) => setD((x) => ({ ...x, ...t }));
   const vorschlag = useMemo(() => naechsteFreieNummer(hydranten), [hydranten]);
@@ -417,6 +470,7 @@ function HydrantFormular({ h, hydranten, onClose, onSaved }) {
       <Wahl label="AUSFÜHRUNG" wert={d.art} optionen={[["BW", "BW"], ["BY", "BY"]]} onChange={(v) => set({ art: v })} />
       <Wahl label="ÖFFNEN" wert={d.oeffnen} optionen={[["links", "links"], ["rechts", "rechts"]]} onChange={(v) => set({ oeffnen: v })} />
       <Wahl label="LÄNGE STANDROHR" wert={d.standrohr} optionen={[["kurz", "kurz"], ["lang", "lang"]]} onChange={(v) => set({ standrohr: v })} />
+      <DnWahl wert={d.dn} onChange={(v) => set({ dn: v })} />
       <label style={styles.label}>BEMERKUNG</label>
       <textarea style={{ ...styles.input, minHeight: 60, resize: "vertical" }} aria-label="Bemerkung" maxLength={500} value={d.bemerkung} onChange={(e) => set({ bemerkung: e.target.value })} placeholder="z. B. hinter der Hecke, Zufahrt über Hof" />
       <div style={{ ...klein, marginTop: 8 }}>Den Standort erfasst du danach im Hydranten mit „Standort erfassen“ (GPS) oder „Auf Karte setzen“.</div>
@@ -434,7 +488,7 @@ function VerlaufEintrag({ e, verwalter, onLoeschen, setLightboxSrc }) {
     const s = e.schild || {};
     const abw = e.abweichung && (e.abweichung.laengs != null || e.abweichung.quer != null) ? ` (${[e.abweichung.laengs, e.abweichung.quer].map((x) => (x == null ? "–" : String(x).replace(".", ","))).join(" / ")} m)` : "";
     const schild = s.vorhanden === false ? "Schild fehlt" : [s.vorhanden === true ? "Schild vorhanden" : "", s.lesbar === false ? "nicht lesbar" : s.lesbar === true ? "lesbar" : "", s.bemassung === false ? `Bemaßung falsch${abw}` : s.bemassung === true ? "Bemaßung korrekt" : ""].filter(Boolean).join(", ");
-    const angaben = [e.funktionsfaehig ? "funktionsfähig" : "nicht funktionsfähig", e.ausfuehrung, e.oeffnen ? `öffnen ${e.oeffnen}` : "", e.standrohr ? `Standrohr ${e.standrohr}` : "", schild].filter(Boolean).join(" · ");
+    const angaben = [e.funktionsfaehig ? "funktionsfähig" : "nicht funktionsfähig", e.ausfuehrung, e.oeffnen ? `öffnen ${e.oeffnen}` : "", e.standrohr ? `Standrohr ${e.standrohr}` : "", e.dn ? `DN ${e.dn}` : "", schild].filter(Boolean).join(" · ");
     inhalt = (
       <>
         {e.text && <div style={{ fontSize: 12.5, color: "#2C2F2A", marginTop: 3 }}>{e.mangel ? <b>Mangel: </b> : null}{e.text}</div>}
@@ -546,6 +600,7 @@ function HydrantDetail({ id, liste, rechte, gps, onBack, onAktualisiert, onGeloe
         <div>Typ: <b>{TYP_NAME[h.typ] || "–"}</b></div>
         <div>Kontrollgruppe: <b>{h.gruppe ? `Gruppe ${h.gruppe}` : "keine"}</b></div>
         <div>Ausführung: <b>{ART_NAME[h.art] || "–"}</b></div>
+        <div>Leitung: <b>{dnText(h) || "unbekannt"}</b></div>
         <div>Öffnen: <b>{h.oeffnen || "–"}</b> · Standrohr: <b>{h.standrohr || "–"}</b></div>
         {h.bemerkung && <div>Bemerkung: {h.bemerkung}</div>}
       </div>
@@ -602,14 +657,14 @@ function HydrantDetail({ id, liste, rechte, gps, onBack, onAktualisiert, onGeloe
 
 // ---------------- Kachel ----------------
 export default function HydrantenKachel() {
-  const { me, callAuthed, closeKachelView, kachelReturnTo } = useApp();
+  const { me, callAuthed, closeKachelView, kachelReturnTo, flashError } = useApp();
   // Zuletzt geladene Liste sofort zeigen (auch ohne Netz), dann im Hintergrund auffrischen.
   const cacheKey = `hydranten:${me}`;
   const [daten, setDatenRoh] = useState(() => hole(cacheKey));
   const setDaten = (x) => setDatenRoh((alt) => { const neu = typeof x === "function" ? x(alt) : x; if (neu) merke(cacheKey, neu, { dauerhaft: true }); return neu; });
   const [fehler, setFehler] = useState("");
   const [view, setView] = useState({ name: "liste" });
-  const [suche, setSuche] = useState(""); const [filter, setFilter] = useState("alle"); const [gruppe, setGruppe] = useState(""); const [sortierung, setSortierung] = useState("nr");
+  const [suche, setSuche] = useState(""); const [filter, setFilter] = useState("alle"); const [gruppe, setGruppe] = useState(""); const [leitung, setLeitung] = useState(""); const [sortierung, setSortierung] = useState("nr");
   const [hinweis, setHinweis] = useState("");
 
   // GPS-Freigabe: beim ersten Öffnen fragen, jederzeit zurücknehmbar.
@@ -637,6 +692,8 @@ export default function HydrantenKachel() {
 
   const hydranten = (daten && daten.hydranten) || [];
   const rechte = (daten && daten.rechte) || {};
+  // Nennweiten für den Filter: die gängigen plus alle tatsächlich eingetragenen
+  const dnListe = useMemo(() => [...new Set([...DN_WERTE, ...hydranten.map((h) => h.dn).filter(Boolean)])].sort((a, b) => a - b), [daten]);
   const zaehler = useMemo(() => ({
     nie: hydranten.filter((h) => !h.letzteKontrolle && h.typ !== "schieber").length,
     mangel: hydranten.filter((h) => h.zustand === "mangel" || h.zustand === "defekt").length,
@@ -668,10 +725,12 @@ export default function HydrantenKachel() {
   if (view.name === "neu") return <HydrantFormular h={null} hydranten={hydranten} onClose={zurListe} onSaved={async (id) => { await laden(true); setView({ name: "detail", id }); }} />;
 
   // Liste filtern und sortieren
-  let liste = hydranten.filter((h) => matchesSearch(`${h.nr} ${h.lage} ${h.bemerkung || ""}`, suche));
+  let liste = hydranten.filter((h) => matchesSearch(`${h.nr} ${h.lage} ${h.bemerkung || ""} ${dnText(h)}`, suche));
   if (filter === "nie") liste = liste.filter((h) => !h.letzteKontrolle && h.typ !== "schieber");
   if (filter === "mangel") liste = liste.filter((h) => h.zustand === "mangel" || h.zustand === "defekt");
   if (filter === "ohne") liste = liste.filter((h) => !hatStandort(h));
+  if (leitung === "unbekannt") liste = liste.filter((h) => !h.dn);
+  else if (leitung) liste = liste.filter((h) => String(h.dn) === leitung);
   if (gruppe === "keine") liste = liste.filter((h) => !h.gruppe);
   else if (gruppe) liste = liste.filter((h) => String(h.gruppe) === gruppe);
   const abstand = (h) => (pos && hatStandort(h) ? entfernung(pos, h) : Infinity);
@@ -679,6 +738,14 @@ export default function HydrantenKachel() {
   else if (sortierung === "entfernung" && pos) liste = liste.slice().sort((a, b) => abstand(a) - abstand(b) || nrSort(a, b));
   else liste = liste.slice().sort(nrSort);
 
+  // Mängelliste: berücksichtigt Gruppe, Leitung und Suche aus der Liste
+  function maengelDrucken() {
+    let basis = hydranten.filter((h) => matchesSearch(`${h.nr} ${h.lage} ${h.bemerkung || ""} ${dnText(h)}`, suche));
+    if (leitung === "unbekannt") basis = basis.filter((h) => !h.dn); else if (leitung) basis = basis.filter((h) => String(h.dn) === leitung);
+    if (gruppe === "keine") basis = basis.filter((h) => !h.gruppe); else if (gruppe) basis = basis.filter((h) => String(h.gruppe) === gruppe);
+    const filterText = [gruppe === "keine" ? "ohne Gruppe" : gruppe ? `Gruppe ${gruppe}` : "", leitung === "unbekannt" ? "Leitung unbekannt" : leitung ? `DN ${leitung}` : "", suche ? `Suche „${suche}“` : ""].filter(Boolean).join(" · ");
+    if (!oeffneBericht(maengelModell(basis, filterText))) flashError("Bitte Pop-ups für diese Seite erlauben.");
+  }
   const chip = (k, t) => <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} style={{ ...styles.kontrollTab, ...(filter === k ? { background: "#2C2F2A", color: "white", border: "1.5px solid #2C2F2A" } : {}), fontSize: 12, padding: "5px 10px" }}>{t}</button>;
 
   return (
@@ -695,18 +762,26 @@ export default function HydrantenKachel() {
             <button style={knopfRot} onClick={() => { setView({ name: "naechste" }); if (freigabe !== "ja") setFrage(true); }}><Navigation size={16} /> Nächster Hydrant</button>
             <button style={knopf} onClick={() => setView({ name: "karte" })}><KarteIcon size={16} /> Karte</button>
           </div>
-          {rechte.verwalter && <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><button style={styles.tinyBtn} onClick={() => setView({ name: "neu" })}><Plus size={11} /> Hydrant anlegen</button></div>}
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            {rechte.verwalter && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 9px" }} onClick={() => setView({ name: "neu" })}><Plus size={11} /> Hydrant anlegen</button>}
+            <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 9px" }} onClick={maengelDrucken}><Printer size={11} /> Mängelliste drucken / PDF</button>
+          </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
             {chip("alle", `Alle (${hydranten.length})`)}
             {chip("nie", `Nie kontrolliert (${zaehler.nie})`)}
             {chip("mangel", `Mängel (${zaehler.mangel})`)}
             {chip("ohne", `Ohne Standort (${zaehler.ohne})`)}
           </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <select style={{ ...styles.input, flex: 1, padding: "7px 8px", fontSize: 13 }} aria-label="Kontrollgruppe" value={gruppe} onChange={(e) => setGruppe(e.target.value)}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            <select style={{ ...styles.input, flex: "1 1 40%", padding: "7px 8px", fontSize: 13 }} aria-label="Kontrollgruppe" value={gruppe} onChange={(e) => setGruppe(e.target.value)}>
               <option value="">Alle Gruppen</option>{[1, 2, 3, 4].map((g) => <option key={g} value={String(g)}>Gruppe {g}</option>)}<option value="keine">Ohne Gruppe</option>
             </select>
-            <select style={{ ...styles.input, flex: 1, padding: "7px 8px", fontSize: 13 }} aria-label="Sortierung" value={sortierung} onChange={(e) => setSortierung(e.target.value)}>
+            <select style={{ ...styles.input, flex: "1 1 40%", padding: "7px 8px", fontSize: 13 }} aria-label="Leitung" value={leitung} onChange={(e) => setLeitung(e.target.value)}>
+              <option value="">Alle Leitungen</option>
+              {dnListe.map((n) => <option key={n} value={String(n)}>DN {n}</option>)}
+              <option value="unbekannt">Leitung unbekannt</option>
+            </select>
+            <select style={{ ...styles.input, flex: "1 1 100%", padding: "7px 8px", fontSize: 13 }} aria-label="Sortierung" value={sortierung} onChange={(e) => setSortierung(e.target.value)}>
               <option value="nr">Nach Nummer</option>
               <option value="kontrolle">Am längsten nicht kontrolliert</option>
               <option value="entfernung" disabled={!pos}>Nach Entfernung{pos ? "" : " (Standort aus)"}</option>
@@ -724,7 +799,7 @@ export default function HydrantenKachel() {
               <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
                 <span style={{ display: "block", fontWeight: 600, fontSize: 13.5 }}>{h.nr} · {h.lage}</span>
                 <span style={{ display: "block", fontSize: 11.5, color: "#8A8C86", fontWeight: 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {[h.gruppe ? `Gruppe ${h.gruppe}` : "", h.letzteKontrolle ? `kontrolliert ${datumDe(h.letzteKontrolle.datum)}` : "", !hatStandort(h) ? "ohne Standort" : pos ? entfernungText(abstand(h)) : "", h.zustand && h.zustand !== "ok" ? h.zustandText : ""].filter(Boolean).join(" · ") || "—"}
+                  {[h.gruppe ? `Gruppe ${h.gruppe}` : "", dnText(h), h.letzteKontrolle ? `kontrolliert ${datumDe(h.letzteKontrolle.datum)}` : "", !hatStandort(h) ? "ohne Standort" : pos ? entfernungText(abstand(h)) : "", h.zustand && h.zustand !== "ok" ? h.zustandText : ""].filter(Boolean).join(" · ") || "—"}
                 </span>
               </span>
               <Pille h={h} />

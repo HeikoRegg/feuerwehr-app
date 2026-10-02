@@ -27,6 +27,8 @@ const wahl = (v, erlaubt) => (erlaubt.includes(v) ? v : "");
 const janein = (v) => (v === true || v === false ? v : null);
 // Heutiges Datum in deutscher Zeit (der Server läuft in UTC).
 const heute = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
+// Nennweite der Wasserleitung in mm (DN 80, 100 …); leer/ungültig = unbekannt.
+const saubereDn = (v) => { const n = parseInt(String(v ?? "").replace(/[^\d]/g, ""), 10); return n >= 25 && n <= 1200 ? n : null; };
 const istDatum = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) && !isNaN(Date.parse(s));
 
 async function getKv(key) {
@@ -95,6 +97,7 @@ function saubereStammdaten(d) {
     gruppe: g >= 1 && g <= 4 ? g : null,
     typ: wahl(d.typ, TYPEN) || "unterflur",
     art: wahl(d.art, ["BW", "BY"]), oeffnen: wahl(d.oeffnen, ["links", "rechts"]), standrohr: wahl(d.standrohr, ["kurz", "lang"]),
+    dn: saubereDn(d.dn),
     bemerkung: kurz(d.bemerkung, 500),
   };
 }
@@ -241,10 +244,12 @@ export async function handler(event) {
       const daten = {
         funktionsfaehig: k.funktionsfaehig,
         art: wahl(k.art, ["BW", "BY"]), oeffnen: wahl(k.oeffnen, ["links", "rechts"]), standrohr: wahl(k.standrohr, ["kurz", "lang"]),
+        dn: saubereDn(k.dn),
         schild, abweichung, text, mangel: !!k.mangel,
         foto: String(k.foto || "").startsWith("kontrolle/") ? String(k.foto) : "",
       };
-      if ((daten.funktionsfaehig === false || daten.mangel) && text.length < 3) return json(400, { error: "Bitte kurz beschreiben, was nicht in Ordnung ist." });
+      // Begründung nur bei „nicht funktionsfähig“ Pflicht – ein Mangel (z. B. Schild fehlt) geht auch ohne Text.
+      if (daten.funktionsfaehig === false && text.length < 3) return json(400, { error: "Bitte kurz beschreiben, warum der Hydrant nicht funktionsfähig ist." });
       const pos = k.standort ? sauberePosition(k.standort) : null;
       const jetzt = new Date().toISOString();
       const { error } = await db.from("hydranten_kontrollen").upsert({ id: neueId(), hydrant: row.id, art: "kontrolle", datum, ts: jetzt, von: ich, data: daten });
@@ -258,6 +263,7 @@ export async function handler(event) {
         if (daten.oeffnen) d.oeffnen = daten.oeffnen;
         if (daten.standrohr) d.standrohr = daten.standrohr;
         if (daten.art || daten.oeffnen || daten.standrohr) d.vorbelegt = false;
+        if (daten.dn) d.dn = daten.dn;
       }
       // Standort gleich mit erfassen (z. B. bei der ersten Kontrollrunde).
       if (pos) {

@@ -5,8 +5,9 @@ import React, { useEffect, useRef } from "react";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ORT_MITTE, ZUSTAND, hatStandort, zustandVon } from "../lib/hydranten";
+import { kartenBild } from "../lib/hydrantenDruck";
 
-export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, modus = "ansehen", start, onMitte, folgen }) {
+export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, modus = "ansehen", start, onMitte, folgen, onApi }) {
   const divRef = useRef(null);
   const mapRef = useRef(null);
   const ebeneRef = useRef(null);
@@ -14,12 +15,14 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
   const onAuswahlRef = useRef(onAuswahl); onAuswahlRef.current = onAuswahl;
   const onMitteRef = useRef(onMitte); onMitteRef.current = onMitte;
   const ersteAnsicht = useRef(false);
+  const hydrantenRef = useRef(hydranten); hydrantenRef.current = hydranten;
 
   // Karte einmalig anlegen
   useEffect(() => {
     const map = L.map(divRef.current, { zoomControl: true, attributionControl: true, maxZoom: 19 });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
+      crossOrigin: true, // nötig, damit der Ausschnitt als PDF gezeichnet werden kann
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende',
     }).addTo(map);
     ebeneRef.current = L.layerGroup().addTo(map);
@@ -36,6 +39,7 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
     else map.setView([ORT_MITTE.lat, ORT_MITTE.lng], 15);
     ersteAnsicht.current = !!(start || mitStandort.length || pos);
     mitte();
+    if (onApi) onApi({ bild: () => kartenBild(map, hydrantenRef.current) });
     // Die Kachel baut sich gerade erst auf – danach die Größe neu messen.
     const t = setTimeout(() => map.invalidateSize(), 150);
     return () => { clearTimeout(t); map.remove(); mapRef.current = null; };

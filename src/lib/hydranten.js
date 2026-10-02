@@ -9,6 +9,9 @@ export const ZUSTAND = {
   mangel: { text: "Mangel", farbe: "#9A5B00", grund: "#FBEBD3", karte: "#E08A00" },
   defekt: { text: "Nicht funktionsfähig", farbe: "#FFFFFF", grund: "#C1272D", karte: "#C1272D" },
 };
+// Gängige Nennweiten der Wasserleitung (mm); andere Werte sind erlaubt.
+export const DN_WERTE = [80, 100, 125, 150, 200, 250, 300];
+export const dnText = (h) => (h && h.dn ? `DN ${h.dn}` : "");
 export const zustandVon = (h) => (h && ZUSTAND[h.zustand] ? h.zustand : "");
 export const hatStandort = (h) => !!h && typeof h.lat === "number" && typeof h.lng === "number";
 // Ungefähre Mitte von Regglisweiler – nur Startausschnitt der Karte, solange kein Hydrant einen Standort hat.
