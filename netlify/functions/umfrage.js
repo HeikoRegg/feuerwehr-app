@@ -76,7 +76,7 @@ function stimmenJeTermin(umfrage, stimmen) {
   });
   umfrage.termine.forEach((t) => {
     const reihe = jaRoh[t.id].sort((x, y) => String(x.ts || "").localeCompare(String(y.ts || "")) || x.name.localeCompare(y.name, "de")).map((s) => s.name);
-    const max = Number(t.max) > 0 ? Number(t.max) : 0;
+    const max = umfrage.modus !== "einteilung" && Number(t.max) > 0 ? Number(t.max) : 0; // bei „Einteilung“ keine Warteliste
     ja[t.id] = max ? reihe.slice(0, max) : reihe;
     warte[t.id] = max ? reihe.slice(max) : [];
     ja[t.id].sort((x, y) => x.localeCompare(y, "de"));
@@ -94,15 +94,132 @@ function kalenderTermine(u) {
     const ts = Date.parse(u.abgeschlossenAm || "") || Date.now();
     // Termin mit Limit („Max. Personen“): im Kalender „Ich bin dabei“ mit so vielen Plätzen, die Eingeteilten sind schon angemeldet.
     // Termin ohne Limit: Zusage/Absage, die Eingeteilten sind zugesagt. Die Namen sind in beiden Fällen für alle sichtbar.
-    const mitLimit = Number(t.max) > 0;
+    const einteilung = u.modus === "einteilung";
+    const mitLimit = einteilung || Number(t.max) > 0;
     const responses = {}, signups = {};
     (b.namen || []).forEach((n) => { if (mitLimit) signups[n] = true; else responses[n] = "zu"; });
     return {
       id: b.eventId, title: u.titel, date: t.datum, time: t.zeit || "", location: u.ort || "", category: u.kategorie || "uebung", notes: u.hinweis || "", bereich: u.bereich,
-      capacityMode: mitLimit, capacityNeeded: mitLimit ? Number(t.max) : 3, namesVisible: true, gruppenfuehrer: "", anmeldeschluss: "", anmeldeschlussReminderDays: 3,
+      capacityMode: mitLimit, capacityNeeded: mitLimit ? (Number(t.max) > 0 ? Number(t.max) : Math.max(1, (b.namen || []).length)) : 3, namesVisible: true, gruppenfuehrer: "", anmeldeschluss: "", anmeldeschlussReminderDays: 3,
       responses, signups, createdAt: ts, updatedAt: ts, ausUmfrage: u.id,
     };
   }).filter(Boolean);
+}
+
+// ---------------- Einteilung „jeder nur einmal“ ----------------
+// termine: [{ id, max, vergeben }], verfuegbar: { name: [terminIds mit „Ja“] }, reihenfolge: Namen nach Vorrang (fällig zuerst).
+// 1. Größtmögliche Zahl Eingeteilter (Erweiterungspfade); bei Platzmangel gewinnt der Vorrang.
+// 2. Danach Personen verschieben: möglichst kein Termin mit nur einer Person, Termine möglichst voll (bis Max).
+export function einteilen({ termine, verfuegbar, reihenfolge }) {
+  const frei = (termine || []).filter((t) => !t.vergeben);
+  const cap = {}; const belegt = {};
+  frei.forEach((t) => { cap[t.id] = Number(t.max) > 0 ? Number(t.max) : Infinity; belegt[t.id] = []; });
+  const opt = {}; Object.entries(verfuegbar || {}).forEach(([n, ids]) => { opt[n] = (ids || []).filter((id) => id in cap); });
+  const zu = {};
+  const setze = (name, t) => { if (zu[name]) belegt[zu[name]] = belegt[zu[name]].filter((x) => x !== name); zu[name] = t; belegt[t].push(name); };
+  const versuche = (name, gesehen) => {
+    for (const t of opt[name] || []) {
+      if (gesehen.has(t)) continue; gesehen.add(t);
+      if (belegt[t].length < cap[t]) { setze(name, t); return true; }
+      for (const o of [...belegt[t]]) { if (versuche(o, gesehen)) { setze(name, t); return true; } }
+    }
+    return false;
+  };
+  const namen = [...new Set([...(reihenfolge || []).filter((n) => n in opt), ...Object.keys(opt)])];
+  namen.forEach((n) => { if ((opt[n] || []).length) versuche(n, new Set()); });
+  // Verbessern: Einzelbelegung stark bestrafen, volle Termine bevorzugen (weniger, dafür vollere Termine).
+  // Schritte: (1) eine Person verschieben, (2) einen ganzen Termin auflösen und seine Leute auf andere Termine verteilen.
+  const wert = (k) => (k === 1 ? -1000 : k * k);
+  const verbessern = () => { for (let runde = 0; runde < 500; runde++) {
+    let besser = false;
+    for (const n of Object.keys(zu)) {
+      const von = zu[n];
+      for (const t of opt[n]) {
+        if (t === von || belegt[t].length >= cap[t]) continue;
+        const a = belegt[von].length, b = belegt[t].length;
+        if (wert(a - 1) + wert(b + 1) - wert(a) - wert(b) > 0) { setze(n, t); besser = true; break; }
+      }
+    }
+    if (besser) continue;
+    for (const x of Object.keys(belegt)) {
+      const leute = belegt[x];
+      if (!leute.length) continue;
+      // Ziel je Person: der vollste andere Termin mit Platz (Wunsch: bis Max auffüllen)
+      const neu = {}; Object.keys(belegt).forEach((t) => { neu[t] = belegt[t].length; });
+      neu[x] = 0;
+      const ziele = {};
+      let geht = true;
+      for (const n of [...leute].sort((p, q) => opt[p].length - opt[q].length)) {
+        const kand = opt[n].filter((t) => t !== x && neu[t] < cap[t]).sort((p, q) => neu[q] - neu[p]);
+        if (!kand.length) { geht = false; break; }
+        ziele[n] = kand[0]; neu[kand[0]]++;
+      }
+      if (!geht) continue;
+      const vorher = Object.keys(belegt).reduce((s2, t) => s2 + wert(belegt[t].length), 0);
+      const nachher = Object.keys(neu).reduce((s2, t) => s2 + wert(neu[t]), 0);
+      if (nachher > vorher) { Object.entries(ziele).forEach(([n, t]) => setze(n, t)); besser = true; break; }
+    }
+    if (besser) continue;
+    // (3) Termine mit nur einer Person: (a) jemanden dazuholen (Kette), (b) die Person woanders hinsetzen und dort jemanden dazuholen
+    const gesamt = () => Object.keys(belegt).reduce((s2, t) => s2 + wert(belegt[t].length), 0);
+    const versuch = (zuege) => {
+      const vorher = gesamt(); const sicher = { ...zu };
+      zuege();
+      if (gesamt() > vorher) return true;
+      Object.entries(sicher).forEach(([n, t]) => { if (zu[n] !== t) setze(n, t); }); // zurück
+      return false;
+    };
+    for (const x of Object.keys(belegt)) {
+      if (belegt[x].length !== 1) continue;
+      const p0 = belegt[x][0];
+      if (cap[x] >= 2 && versuch(() => { const k = sucheKette(x); if (k) k.forEach(([n, t]) => setze(n, t)); })) { besser = true; break; }
+      for (const z of opt[p0]) {
+        if (z === x || belegt[z].length >= cap[z]) continue;
+        if (versuch(() => { setze(p0, z); if (belegt[z].length === 1 && cap[z] >= 2) { const k = sucheKette(z); if (k) k.forEach(([n, t]) => setze(n, t)); } })) { besser = true; break; }
+      }
+      if (besser) break;
+    }
+    if (!besser) break;
+  } };
+  const gesamtWert = () => Object.keys(belegt).reduce((s2, t) => s2 + wert(belegt[t].length), 0);
+  verbessern();
+  // Zufällige Störungen (fester Startwert = immer dasselbe Ergebnis): eine Person umsetzen, neu verbessern, nur Besseres behalten
+  let zufall = 12345;
+  const rnd = (n) => { zufall = (zufall * 1103515245 + 12345) % 2147483648; return zufall % n; };
+  const personen = Object.keys(zu);
+  for (let i = 0; i < 300 && personen.length; i++) {
+    const n = personen[rnd(personen.length)];
+    const ziele = opt[n].filter((t) => t !== zu[n] && belegt[t].length < cap[t]);
+    if (!ziele.length) continue;
+    const vorher = gesamtWert(); const sicher = { ...zu };
+    setze(n, ziele[rnd(ziele.length)]);
+    verbessern();
+    if (gesamtWert() <= vorher) Object.entries(sicher).forEach(([m, t]) => { if (zu[m] !== t) setze(m, t); });
+  }
+  // Breitensuche: Personen-Verschiebungen [Name, Ziel], die Termin x um eine Person füllen, ohne einen anderen Termin auf 1 zu bringen
+  function sucheKette(x) {
+    const vor = { [x]: null }; const schlange = [x];
+    while (schlange.length) {
+      const ziel = schlange.shift();
+      for (const y of Object.keys(belegt)) {
+        if (y in vor) continue;
+        const p = belegt[y].find((n) => opt[n].includes(ziel));
+        if (!p) continue;
+        vor[y] = [p, ziel];
+        const rest = belegt[y].length - 1;
+        if (rest !== 1) { // fertig: y bleibt bei ≥ 2 oder wird leer
+          const zuege = []; let t = y;
+          while (vor[t]) { zuege.push(vor[t]); t = vor[t][1]; }
+          return zuege;
+        }
+        schlange.push(y); // y bräuchte selbst Nachschub
+      }
+    }
+    return null;
+  }
+  const plan = {}; frei.forEach((t) => { plan[t.id] = [...belegt[t.id]].sort((x, y) => x.localeCompare(y, "de")); });
+  const ohne = Object.keys(opt).filter((n) => !zu[n]).map((n) => ({ name: n, grund: (opt[n] || []).length ? "Alle Termine, die passen, sind voll." : "Hat nur Termine angegeben, die nicht mehr frei sind." }));
+  return { plan, ohne };
 }
 
 async function alleUmfragen() {
@@ -214,13 +331,13 @@ export async function handler(event) {
       const id = neueId();
       const data = {
         titel, bereich, ort: kurz(d.ort, 80), hinweis: lang(d.hinweis, 500), kategorie: KATEGORIEN.includes(d.kategorie) ? d.kategorie : "uebung",
-        termine, abstimmenBis, status: "offen", erstelltVon: ich, erstelltAm: jetzt, bestaetigt: [],
+        termine, abstimmenBis, modus: d.modus === "einteilung" ? "einteilung" : "normal", status: "offen", erstelltVon: ich, erstelltAm: jetzt, bestaetigt: [],
       };
       const { error } = await db.from("terminumfragen").upsert({ id, data, created_at: jetzt, updated_at: jetzt });
       if (error) throw error;
       const empfaenger = lage.roster.filter((r) => r && lage.istMitglied(r.name, bereich) && r.name !== ich).map((r) => r.name);
       lage.users.filter((u) => u.is_admin && !u.blocked && u.name !== ich).forEach((u) => empfaenger.push(u.name));
-      await push(empfaenger, `Neue Terminumfrage: ${titel}`, `${BEREICH_NAME[bereich]} – bitte abstimmen${abstimmenBis ? ` bis ${datumKurz(abstimmenBis)}` : ""}.`, ich);
+      await push(empfaenger, `Neue Terminumfrage: ${titel}`, `${BEREICH_NAME[bereich]} – ${d.modus === "einteilung" ? "bitte alle Tage angeben, an denen du kannst" : "bitte abstimmen"}${abstimmenBis ? ` bis ${datumKurz(abstimmenBis)}` : ""}.`, ich);
       return json(200, { ok: true, id });
     }
 
@@ -237,7 +354,7 @@ export async function handler(event) {
       const davor = stimmenJeTermin(u, vorher);
       const bisher = {}; vorher.filter((s) => s.name === ich).forEach((s) => { bisher[s.termin] = s.antwort; });
       for (const t of u.termine) {
-        if (!(t.id in antworten)) continue;
+        if (!(t.id in antworten) || t.vergeben) continue;
         const a = antworten[t.id];
         const sid = `${u.id}|${ich}|${t.id}`;
         if (a === "ja" || a === "nein") {
@@ -260,6 +377,49 @@ export async function handler(event) {
       return json(200, { ok: true });
     }
 
+    // ---------------- Termine anpassen: Max. Personen ändern, Termin „nicht mehr frei / vergeben“ ----------------
+    if (action === "termineAnpassen") {
+      const row = await umfrageLaden(body.id);
+      if (!row) return json(404, { error: "Diese Umfrage gibt es nicht (mehr)." });
+      const u = alsUmfrage(row);
+      if (!lage.darfVerwalten(ich, u.bereich)) throw fehler(403, "Das dürfen nur Admins und Mitglieder mit Kalender-Schreibrecht im Bereich.");
+      if (u.status !== "offen") throw fehler(400, "Die Umfrage ist schon abgeschlossen.");
+      const neu = Array.isArray(body.termine) ? body.termine : [];
+      const termine = u.termine.map((t) => {
+        const x = neu.find((y) => y && y.id === t.id);
+        if (!x) return t;
+        const m = x.max === "" || x.max == null ? 0 : Number(x.max);
+        if (!Number.isInteger(m) || m < 0 || m > 200) throw fehler(400, "Die maximale Personenzahl muss eine ganze Zahl zwischen 1 und 200 sein (leer = unbegrenzt).");
+        const { max: _m, vergeben: _v, ...rest } = t;
+        return { ...rest, ...(m > 0 ? { max: m } : {}), ...(x.vergeben ? { vergeben: true } : {}) };
+      });
+      if (termine.every((t) => t.vergeben)) throw fehler(400, "Mindestens ein Termin muss frei bleiben.");
+      const jetzt = new Date().toISOString();
+      const { error } = await db.from("terminumfragen").upsert({ ...row, data: { ...(row.data || {}), termine }, updated_at: jetzt });
+      if (error) throw error;
+      return json(200, { ok: true });
+    }
+
+    // ---------------- Einteilungsvorschlag (jeder nur einmal) ----------------
+    if (action === "einteilungVorschlag") {
+      const row = await umfrageLaden(body.id);
+      if (!row) return json(404, { error: "Diese Umfrage gibt es nicht (mehr)." });
+      const u = alsUmfrage(row);
+      if (!lage.darfVerwalten(ich, u.bereich)) throw fehler(403, "Das dürfen nur Admins und Mitglieder mit Kalender-Schreibrecht im Bereich.");
+      const stimmen = await stimmenLaden([u.id]);
+      const verfuegbar = {};
+      stimmen.filter((s) => s.antwort === "ja" && lage.istMitglied(s.name, u.bereich)).forEach((s) => { (verfuegbar[s.name] = verfuegbar[s.name] || []).push(s.termin); });
+      // Vorrang: wessen Streckendurchgang am längsten her ist (noch nie = zuerst), dann Name
+      const zuletzt = (n) => ((lage.eintrag(n).streckendurchgang || {}).date) || "";
+      const reihenfolge = Object.keys(verfuegbar).sort((a, b) => zuletzt(a).localeCompare(zuletzt(b)) || a.localeCompare(b, "de"));
+      const { plan, ohne } = einteilen({ termine: u.termine, verfuegbar, reihenfolge });
+      const freiIds = new Set(u.termine.filter((t) => !t.vergeben).map((t) => t.id));
+      const mehrfach = Object.entries(verfuegbar).map(([n, ids]) => [n, ids.filter((id) => freiIds.has(id)).length]).filter(([, k]) => k > 1).map(([name, tage]) => ({ name, tage })).sort((a, b) => b.tage - a.tage || a.name.localeCompare(b.name, "de"));
+      const nurEiner = Object.entries(verfuegbar).filter(([, ids]) => ids.filter((id) => freiIds.has(id)).length === 1).map(([n]) => n).sort((a, b) => a.localeCompare(b, "de"));
+      const strecke = {}; Object.keys(verfuegbar).forEach((n) => { strecke[n] = zuletzt(n) || null; });
+      return json(200, { ok: true, plan, ohne, mehrfach, nurEiner, verfuegbar, strecke });
+    }
+
     // ---------------- Abschließen (mit Übernahme in den Kalender) ----------------
     if (action === "abschliessen") {
       const row = await umfrageLaden(body.id);
@@ -267,15 +427,30 @@ export async function handler(event) {
       const u = alsUmfrage(row);
       if (!lage.darfVerwalten(ich, u.bereich)) throw fehler(403, "Das dürfen nur Admins und Mitglieder mit Kalender-Schreibrecht im Bereich.");
       if (u.status !== "offen") throw fehler(400, "Die Umfrage ist schon abgeschlossen.");
-      const gewaehlt = (Array.isArray(body.termine) ? body.termine.map(String) : []).filter((id, i, a) => a.indexOf(id) === i);
-      if (gewaehlt.some((id) => !u.termine.some((t) => t.id === id))) throw fehler(400, "Ein gewählter Termin gehört nicht zur Umfrage.");
-      const stimmen = await stimmenLaden([u.id]);
-      const { ja } = stimmenJeTermin(u, stimmen); // nur Personen mit Platz (ohne Warteliste)
       const jetzt = new Date().toISOString();
-      const bestaetigt = u.termine.filter((t) => gewaehlt.includes(t.id)).map((t) => ({
-        terminId: t.id, eventId: `u${Date.now().toString(36)}${neueId()}`,
-        namen: ja[t.id].filter((n) => lage.istMitglied(n, u.bereich)),
-      }));
+      let bestaetigt;
+      if (body.einteilung && typeof body.einteilung === "object") {
+        // Einteilung „jeder nur einmal“: der (ggf. von Hand angepasste) Plan kommt aus der App
+        const gesehen = new Set();
+        bestaetigt = [];
+        for (const t of u.termine) {
+          const namen = (Array.isArray(body.einteilung[t.id]) ? body.einteilung[t.id] : []).map(String).filter((n) => lage.istMitglied(n, u.bereich));
+          if (!namen.length) continue;
+          if (t.vergeben) throw fehler(400, `${datumKurz(t.datum)} ist als „nicht mehr frei“ markiert.`);
+          for (const n of namen) { if (gesehen.has(n)) throw fehler(400, `${n} ist mehrfach eingeteilt – jeder darf nur einmal vorkommen.`); gesehen.add(n); }
+          bestaetigt.push({ terminId: t.id, eventId: `u${Date.now().toString(36)}${neueId()}`, namen });
+        }
+        if (Object.keys(body.einteilung).some((id) => !u.termine.some((t) => t.id === id))) throw fehler(400, "Ein Termin gehört nicht zur Umfrage.");
+      } else {
+        const gewaehlt = (Array.isArray(body.termine) ? body.termine.map(String) : []).filter((id, i, a) => a.indexOf(id) === i);
+        if (gewaehlt.some((id) => !u.termine.some((t) => t.id === id))) throw fehler(400, "Ein gewählter Termin gehört nicht zur Umfrage.");
+        const stimmen = await stimmenLaden([u.id]);
+        const { ja } = stimmenJeTermin(u, stimmen); // nur Personen mit Platz (ohne Warteliste)
+        bestaetigt = u.termine.filter((t) => gewaehlt.includes(t.id)).map((t) => ({
+          terminId: t.id, eventId: `u${Date.now().toString(36)}${neueId()}`,
+          namen: ja[t.id].filter((n) => lage.istMitglied(n, u.bereich)),
+        }));
+      }
       const data = { ...(row.data || {}), status: "abgeschlossen", bestaetigt, abgeschlossenVon: ich, abgeschlossenAm: jetzt };
       const { error } = await db.from("terminumfragen").upsert({ ...row, data, updated_at: jetzt });
       if (error) throw error;
