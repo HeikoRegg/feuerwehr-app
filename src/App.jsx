@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, ArrowLeft, Boxes, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -26,6 +26,7 @@ const kachelImporte = {
   einsatz: () => import("./tiles/EinsatzberichtKachel"),
   geraete: () => import("./tiles/GeraeteKachel"),
   hydranten: () => import("./tiles/HydrantenKachel"),
+  umfragen: () => import("./tiles/UmfrageKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
@@ -38,6 +39,7 @@ const NachrichtenKachel = lazy(kachelImporte.nachrichten);
 const EinsatzberichtKachel = lazy(kachelImporte.einsatz);
 const GeraeteKachel = lazy(kachelImporte.geraete);
 const HydrantenKachel = lazy(kachelImporte.hydranten);
+const UmfrageKachel = lazy(kachelImporte.umfragen);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
@@ -104,6 +106,7 @@ export default function App() {
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showGeraete, setShowGeraete] = useState(false);
   const [showHydranten, setShowHydranten] = useState(false);
+  const [showUmfragen, setShowUmfragen] = useState(false);
   const [geraeteStartId, setGeraeteStartId] = useState(null);
   const [showJugend, setShowJugend] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
@@ -317,7 +320,7 @@ export default function App() {
     else flashError(kachelAn("geraete") ? "Die Geräteprüfung ist für die Einsatzabteilung." : "Die Kachel „Geräte“ ist derzeit für die ganze Feuerwehr gesperrt.");
   }, [phase, me]);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowJugend(false); setShowChat(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
@@ -328,6 +331,7 @@ export default function App() {
   function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTileGeraete() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowGeraete(true); }
+  function openTileUmfragen() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowUmfragen(true); }
   function openTileHydranten() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowHydranten(true); }
   function openTileEinsatz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowEinsatz(true); }
   function openTileJugend() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowJugend(true); }
@@ -1533,6 +1537,12 @@ export default function App() {
                 <span style={styles.tileLabel}>Hydranten</span>
               </button>
             )}
+            {kachelAn("umfragen") && !!me && (
+              <button style={styles.tile} onClick={openTileUmfragen}>
+                <CalendarCheck size={26} color="#2C2F2A" />
+                <span style={styles.tileLabel}>Terminumfragen</span>
+              </button>
+            )}
             {kachelAn("jugend") && (isJugendwart || isAdmin) && (
               <button style={styles.tile} onClick={openTileJugend}>
                 <JFFlammeIcon size={28} />
@@ -1600,6 +1610,7 @@ export default function App() {
       {showEinsatz && <Suspense fallback={<KachelLaden />}><EinsatzberichtKachel /></Suspense>}
       {showGeraete && darfGeraete && <Suspense fallback={<KachelLaden />}><GeraeteKachel /></Suspense>}
       {showHydranten && darfHydranten && <Suspense fallback={<KachelLaden />}><HydrantenKachel /></Suspense>}
+      {showUmfragen && kachelAn("umfragen") && !!me && <Suspense fallback={<KachelLaden />}><UmfrageKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>

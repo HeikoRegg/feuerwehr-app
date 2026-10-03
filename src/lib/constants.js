@@ -3,11 +3,10 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.16";
+export const APP_VERSION = "2.17";
 export const CHANGELOG = [
-  "Hydranten: Admins können „Alle dürfen Hydranten anlegen“ ein- und ausschalten – bei „Ein“ darf jeder aus der Einsatzabteilung Hydranten anlegen",
-  "Hydranten: Mängelliste mit Fotos der Kontrolle",
-  "Kalender (Admins): Terminliste der Einsatzabteilung als PDF zum Ausdrucken oder Verschicken",
+  "Neue Kachel „Terminumfragen“: Terminvorschläge zur Abstimmung (Ja/Nein, Namen sichtbar)",
+  "Beim Abschluss können mehrere Termine bestätigt werden – sie kommen in den Kalender, die Kameraden mit „Ja“ sind automatisch zugesagt",
 ];
 
 export const CATEGORIES = {

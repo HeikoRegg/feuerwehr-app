@@ -9,7 +9,7 @@ import { LION_ICON } from "../lib/icons";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
-const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
+const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["umfragen", "Terminumfragen"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
