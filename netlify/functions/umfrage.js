@@ -91,12 +91,16 @@ function kalenderTermine(u) {
   return (u.bestaetigt || []).map((b) => {
     const t = (u.termine || []).find((x) => x.id === b.terminId);
     if (!t) return null;
-    const responses = {}; (b.namen || []).forEach((n) => { responses[n] = "zu"; });
     const ts = Date.parse(u.abgeschlossenAm || "") || Date.now();
+    // Termin mit Limit („Max. Personen“): im Kalender „Ich bin dabei“ mit so vielen Plätzen, die Eingeteilten sind schon angemeldet.
+    // Termin ohne Limit: Zusage/Absage, die Eingeteilten sind zugesagt. Die Namen sind in beiden Fällen für alle sichtbar.
+    const mitLimit = Number(t.max) > 0;
+    const responses = {}, signups = {};
+    (b.namen || []).forEach((n) => { if (mitLimit) signups[n] = true; else responses[n] = "zu"; });
     return {
-      id: b.eventId, title: u.titel, date: t.datum, time: t.zeit || "", location: u.ort || "", category: u.kategorie || "uebung", notes: [u.hinweis || "", Number(t.max) > 0 ? `Max. ${Number(t.max)} Personen` : ""].filter(Boolean).join("\n"), bereich: u.bereich,
-      capacityMode: false, capacityNeeded: 3, namesVisible: true, gruppenfuehrer: "", anmeldeschluss: "", anmeldeschlussReminderDays: 3,
-      responses, signups: {}, createdAt: ts, updatedAt: ts, ausUmfrage: u.id,
+      id: b.eventId, title: u.titel, date: t.datum, time: t.zeit || "", location: u.ort || "", category: u.kategorie || "uebung", notes: u.hinweis || "", bereich: u.bereich,
+      capacityMode: mitLimit, capacityNeeded: mitLimit ? Number(t.max) : 3, namesVisible: true, gruppenfuehrer: "", anmeldeschluss: "", anmeldeschlussReminderDays: 3,
+      responses, signups, createdAt: ts, updatedAt: ts, ausUmfrage: u.id,
     };
   }).filter(Boolean);
 }

@@ -15,6 +15,15 @@ const PRAEFIX = "RW";
 const json = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const sichereId = (id) => String(id || "").replace(/[^a-z0-9]/gi, "").slice(0, 40);
 const zahl = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; };
+// Zeiten minutengenau: „1:23“ oder (alte Berichte) Dezimalstunden „1,5“
+const zuMin = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  if (s.includes(":")) { const [h, m] = s.split(":"); const min = (Number(h) || 0) * 60 + (Number(m) || 0); return Number.isFinite(min) && min > 0 ? Math.round(min) : 0; }
+  return Math.round(zahl(s) * 60);
+};
+const fmtHM = (min) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
+const normHM = (v) => { const m = zuMin(v); return m ? fmtHM(m) : ""; };
 
 async function userByToken(token) {
   if (!token) return null;
@@ -42,10 +51,14 @@ function kennzahlen(d) {
   const m = d.mannschaft || [];
   return {
     kraefte: m.length,
-    paTraeger: m.filter((x) => zahl(x.pa) > 0).length,
-    stunden: Math.round(m.reduce((s, x) => s + zahl(x.ein), 0) * 100) / 100,
-    stundenBer: Math.round(m.reduce((s, x) => s + zahl(x.ber), 0) * 100) / 100,
-    stundenPa: Math.round(m.reduce((s, x) => s + zahl(x.pa), 0) * 100) / 100,
+    paTraeger: m.filter((x) => zuMin(x.pa) > 0).length,
+    // Summen in Minuten (exakt); „stunden…“ zusätzlich als Dezimalzahl für die Statistik/Altstände
+    stundenMin: m.reduce((s, x) => s + zuMin(x.ein), 0),
+    stundenBerMin: m.reduce((s, x) => s + zuMin(x.ber), 0),
+    stundenPaMin: m.reduce((s, x) => s + zuMin(x.pa), 0),
+    stunden: Math.round(m.reduce((s, x) => s + zuMin(x.ein), 0) / 60 * 100) / 100,
+    stundenBer: Math.round(m.reduce((s, x) => s + zuMin(x.ber), 0) / 60 * 100) / 100,
+    stundenPa: Math.round(m.reduce((s, x) => s + zuMin(x.pa), 0) / 60 * 100) / 100,
     fotoAnzahl: (d.fotos || []).length,
   };
 }
@@ -53,7 +66,7 @@ function kennzahlen(d) {
 function fuerListe(row) {
   const d = row.data || {};
   const k = kennzahlen(d);
-  return { id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), datum: d.datum || "", alarm: d.alarm || "", ende: d.ende || "", einsatz: d.einsatz || "", ort: d.ort || "", kraefte: k.kraefte, stunden: k.stunden, fotoAnzahl: k.fotoAnzahl };
+  return { id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), datum: d.datum || "", alarm: d.alarm || "", ende: d.ende || "", einsatz: d.einsatz || "", ort: d.ort || "", kraefte: k.kraefte, stunden: k.stunden, stundenMin: k.stundenMin, fotoAnzahl: k.fotoAnzahl };
 }
 const sortiereBerichte = (a, b) => (b.datum || "").localeCompare(a.datum || "") || (b.alarm || "").localeCompare(a.alarm || "") || b.nr - a.nr;
 function fuerLeser(row, rechte, { mitFotos = false } = {}) {
@@ -130,7 +143,7 @@ export async function handler(event) {
       return json(200, { items: (data || []).map((row) => {
         const d = row.data || {}; const k = kennzahlen(d);
         return { id: row.id, einsatzjahr: row.einsatzjahr, nr: row.nr, nummer: einsatzNummer(row.einsatzjahr, row.nr), datum: d.datum || "", einsatz: d.einsatz || "",
-          kraefte: k.kraefte, stunden: k.stunden, fahrzeuge: d.fahrzeuge || [], fahrzeugNamen: d.fahrzeugNamen || {},
+          kraefte: k.kraefte, stunden: k.stunden, stundenMin: k.stundenMin, fahrzeuge: d.fahrzeuge || [], fahrzeugNamen: d.fahrzeugNamen || {},
           mannschaft: (d.mannschaft || []).map((m) => ({ name: m.name, ein: m.ein })) };
       }) });
     }
@@ -142,9 +155,9 @@ export async function handler(event) {
       const eingang = { ...(body.data || {}) };
       if (!eingang.datum) return json(400, { error: "Bitte das Datum eintragen." });
       // Felder, die nur der Server vergibt, nicht aus der Anfrage übernehmen.
-      ["id", "einsatzjahr", "nr", "nummer", "kraefte", "paTraeger", "stunden", "stundenBer", "stundenPa", "fotoAnzahl"].forEach((k) => delete eingang[k]);
+      ["id", "einsatzjahr", "nr", "nummer", "kraefte", "paTraeger", "stunden", "stundenBer", "stundenPa", "stundenMin", "stundenBerMin", "stundenPaMin", "fotoAnzahl"].forEach((k) => delete eingang[k]);
       eingang.fotos = (eingang.fotos || []).filter((f) => f && typeof f.path === "string" && f.path.startsWith(`${id}/`)).map((f) => ({ path: f.path, name: f.name || "" }));
-      eingang.mannschaft = (eingang.mannschaft || []).filter((m) => m && m.name).map((m) => ({ name: String(m.name), ein: zahl(m.ein), ber: zahl(m.ber), pa: zahl(m.pa), fahrzeug: m.fahrzeug || "" }));
+      eingang.mannschaft = (eingang.mannschaft || []).filter((m) => m && m.name).map((m) => ({ name: String(m.name), ein: normHM(m.ein), ber: normHM(m.ber), pa: normHM(m.pa), fahrzeug: m.fahrzeug || "" }));
 
       const { data: alt } = await db.from("einsatzberichte").select("id,einsatzjahr,nr,data").eq("id", id).maybeSingle();
       const jetzt = new Date().toISOString();

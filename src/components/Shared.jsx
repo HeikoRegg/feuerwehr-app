@@ -209,10 +209,13 @@ export function GruppenfuehrerTag({ ev }) {
 }
 
 export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich, badgeLabel }) {
+  const [namenOffen, setNamenOffen] = useState(false);
   const { day, monthShort, weekday } = formatDateParts(ev.date); const cat = CATEGORIES[ev.category]; const diff = daysUntil(ev.date);
   const relLabel = diff === 0 ? "HEUTE" : diff === 1 ? "MORGEN" : `IN ${diff} TAGEN`;
   const responses = ev.responses || {}; const zuCount = Object.values(responses).filter((v) => v === "zu").length; const abCount = Object.values(responses).filter((v) => v === "ab").length;
   const isFeier = ev.category === "sonstiges" && !ev.capacityMode;
+  const zuNamen = Object.entries(responses).filter(([, v]) => v === "zu").map(([n]) => n); const abNamen = Object.entries(responses).filter(([, v]) => v === "ab").map(([n]) => n);
+  const guests = ev.guests || {}; const angemeldet = Object.keys(ev.signups || {});
   return (
     <div style={styles.heroCard}>
       <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -231,8 +234,19 @@ export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich
       </div>
       <div style={styles.heroRespRow}>
         {ev.capacityMode ? <SignupButton ev={ev} me={me} onSignup={onSignup} /> : <ResponseButtons ev={ev} me={me} onRespond={onRespond} />}
-        {ev.capacityMode ? <span style={styles.heroCounts}>{Object.keys(ev.signups || {}).length} von {ev.capacityNeeded} angemeldet</span> : <span style={styles.heroCounts}>{zuCount} zugesagt · {abCount} abgesagt{isFeier ? ` · ${totalHeadcount(ev)} Personen gesamt` : ""}</span>}
+        {ev.capacityMode ? <span style={styles.heroCounts}>{angemeldet.length} von {ev.capacityNeeded} angemeldet</span> : <button type="button" data-testid="hero-namen-knopf" aria-expanded={namenOffen} onClick={() => setNamenOffen(!namenOffen)} style={{ ...styles.heroCounts, background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", font: "inherit", color: "inherit" }}>{zuCount} zugesagt · {abCount} abgesagt{isFeier ? ` · ${totalHeadcount(ev)} Personen gesamt` : ""}</button>}
       </div>
+      {ev.capacityMode ? (
+        ev.namesVisible && angemeldet.length > 0 && <div data-testid="hero-namen" style={{ ...styles.heroCounts, marginTop: 8, fontSize: 12, lineHeight: 1.5, textAlign: "left" }}><strong>Angemeldet:</strong> {angemeldet.join(", ")}</div>
+      ) : (
+        namenOffen && (
+          <div data-testid="hero-namen" style={{ ...styles.heroCounts, marginTop: 8, fontSize: 12, lineHeight: 1.5, textAlign: "left" }}>
+            {zuNamen.length > 0 && <div><strong>Zugesagt:</strong> {zuNamen.map((n) => guests[n] ? `${n} (+${guests[n]})` : n).join(", ")}</div>}
+            {abNamen.length > 0 && <div><strong>Abgesagt:</strong> {abNamen.join(", ")}</div>}
+            {zuNamen.length === 0 && abNamen.length === 0 && <div>Noch keine Rückmeldungen.</div>}
+          </div>
+        )
+      )}
       {isFeier && <GuestStepper ev={ev} me={me} onChange={onSetGuests} />}
     </div>
   );

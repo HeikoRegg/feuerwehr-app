@@ -2,7 +2,7 @@
 // Schreiben: Gruppenführer und Admins. Lesen: alle – ohne Namen der Einsatzkräfte, nur die Anzahl.
 // Fotos: nur Einsatzabteilung und Admins. Die Rechte prüft der Server (netlify/functions/einsatzbericht.js).
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Camera, ChevronDown, ChevronRight, Clock, MapPin, Pencil, Plus, Printer, Trash2, Truck, Users, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronDown, ChevronLeft, ChevronRight, Clock, MapPin, Pencil, Plus, Printer, Trash2, Truck, Users, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { EINSATZ_STICHWORTE } from "../lib/constants";
 import { compressImage, fmtDate, geraetTeile, matchesSearch, todayISO, uid } from "../lib/helpers";
@@ -11,6 +11,7 @@ import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 import { useApp } from "../AppContext";
 import { hole, merke } from "../lib/zwischenspeicher";
+import { zuMin, fmtHM, normHM, zeitEingabe } from "../lib/zeit";
 
 // ---------------- Hilfen ----------------
 const zahl = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -27,8 +28,12 @@ export function fmtDauer(min) {
   const h = Math.floor(min / 60), m = min % 60;
   return h ? `${h} Std.${m ? ` ${m} Min.` : ""}` : `${m} Min.`;
 }
-// Vorschlag für die Einsatzstunden: auf halbe Stunden aufgerundet.
-const stundenVorschlag = (min) => (min ? String(Math.ceil(min / 30) / 2).replace(".", ",") : "");
+// Vorschlag für die Einsatzzeit: genau die Minuten zwischen Alarmierung und Einsatzende (Std:Min, ohne Rundung).
+const stundenVorschlag = (min) => (min ? fmtHM(min) : "");
+// Summen aus dem Bericht in Minuten (neue Berichte: stundenMin; ältere Antworten nur als Dezimalstunden)
+const minVon = (b, feld) => (b[`${feld}Min`] ?? Math.round((b[feld] || 0) * 60));
+const fmtStd = (min) => fmtHM(min);
+const istZeitEinheit = (e) => /^std\.?$/i.test(String(e || "").trim());
 const neuerEntwurf = () => ({
   id: uid(), neu: true, einsatz: "", ort: "", datum: todayISO(), alarm: "", ende: "",
   fahrzeuge: [], fahrzeugNamen: {}, sonstigeFahrzeuge: "", kopieKasse: false,
@@ -57,23 +62,23 @@ export function einsatzBerichtModell(item, { fotos = [] } = {}) {
   if (item.mannschaft) {
     blocks.push({ t: "h3", text: `Mannschaft (${item.mannschaft.length})` });
     const mitFz = item.mannschaft.some((m) => fzName(m.fahrzeug));
-    const zeilen = item.mannschaft.map((m, i) => [String(i + 1), m.name, m.ein ? fmtZahl(zahl(m.ein)) : "", m.ber ? fmtZahl(zahl(m.ber)) : "", m.pa ? fmtZahl(zahl(m.pa)) : "", ...(mitFz ? [fzName(m.fahrzeug)] : [])]);
-    zeilen.push(["", "Summe Stunden", fmtZahl(item.stunden || 0), fmtZahl(item.stundenBer || 0), fmtZahl(item.stundenPa || 0), ...(mitFz ? [""] : [])]);
-    blocks.push({ t: "tabelle", kopf: ["Nr.", "Name", "EIN Std.", "BER Std.", "PA Std.", ...(mitFz ? ["Fahrzeug"] : [])], zeilen, breiten: [0.6, 3.2, 1.1, 1.1, 1.1, ...(mitFz ? [2] : [])] });
+    const zeilen = item.mannschaft.map((m, i) => [String(i + 1), m.name, zuMin(m.ein) ? fmtHM(zuMin(m.ein)) : "", zuMin(m.ber) ? fmtHM(zuMin(m.ber)) : "", zuMin(m.pa) ? fmtHM(zuMin(m.pa)) : "", ...(mitFz ? [fzName(m.fahrzeug)] : [])]);
+    zeilen.push(["", "Summe (Std:Min)", fmtStd(minVon(item, "stunden")), fmtStd(minVon(item, "stundenBer")), fmtStd(minVon(item, "stundenPa")), ...(mitFz ? [""] : [])]);
+    blocks.push({ t: "tabelle", kopf: ["Nr.", "Name", "EIN Std:Min", "BER Std:Min", "PA Std:Min", ...(mitFz ? ["Fahrzeug"] : [])], zeilen, breiten: [0.6, 3.2, 1.1, 1.1, 1.1, ...(mitFz ? [2] : [])] });
     blocks.push({ t: "text", text: "EIN = Einsatz, BER = Bereitschaft, PA = unter Atemschutz", klein: true, grau: true });
   } else {
     blocks.push({ t: "h3", text: "Mannschaft" });
-    blocks.push({ t: "text", text: `${item.kraefte || 0} Einsatzkräfte · ${fmtZahl(item.stunden || 0)} Einsatzstunden gesamt${item.paTraeger ? ` · ${item.paTraeger} unter Atemschutz` : ""}` });
+    blocks.push({ t: "text", text: `${item.kraefte || 0} Einsatzkräfte · ${fmtStd(minVon(item, "stunden"))} Std. Einsatzzeit gesamt${item.paTraeger ? ` · ${item.paTraeger} unter Atemschutz` : ""}` });
   }
   const geraete = [];
   (item.fahrzeuge || []).forEach((id) => {
     const w = (item.fahrzeugWerte || {})[id] || {};
     if (zahl(w.km)) geraete.push([`Gefahrene Kilometer ${fzName(id)}`, fmtZahl(zahl(w.km)), "km"]);
-    if (zahl(w.pumpe)) geraete.push([`Pumpenstunden ${fzName(id)}`, fmtZahl(zahl(w.pumpe)), "Std."]);
+    if (zuMin(w.pumpe)) geraete.push([`Pumpenstunden ${fzName(id)}`, fmtHM(zuMin(w.pumpe)), "Std:Min"]);
   });
   if (item.paTraeger) geraete.push(["Anzahl der eingesetzten PA", String(item.paTraeger), "Stück"]);
-  if (item.stundenPa) geraete.push(["Einsatzdauer PA", fmtZahl(item.stundenPa), "Std."]);
-  Object.entries(item.geraete || {}).forEach(([k, v]) => { if (zahl(v)) { const t = geraetTeile(k); geraete.push([t.name, fmtZahl(zahl(v)), t.einheit]); } });
+  if (minVon(item, "stundenPa")) geraete.push(["Einsatzdauer PA", fmtStd(minVon(item, "stundenPa")), "Std:Min"]);
+  Object.entries(item.geraete || {}).forEach(([k, v]) => { const t = geraetTeile(k); if (istZeitEinheit(t.einheit)) { if (zuMin(v)) geraete.push([t.name, fmtHM(zuMin(v)), "Std:Min"]); } else if (zahl(v)) geraete.push([t.name, fmtZahl(zahl(v)), t.einheit]); });
   if (geraete.length || item.sonstigesMaterial) {
     blocks.push({ t: "h3", text: "Anzahl und Betriebsdauer der eingesetzten Geräte" });
     if (geraete.length) blocks.push({ t: "tabelle", kopf: ["Gerät / Material", "Menge", "Einheit"], zeilen: geraete, breiten: [5, 1.2, 1.2] });
@@ -88,6 +93,33 @@ export function einsatzBerichtModell(item, { fotos = [] } = {}) {
     dateiname: `Einsatzbericht_${String(item.nummer || item.datum).replace(/[./]/g, "-")}`,
     blocks,
   };
+}
+
+// ---------------- Foto-Großansicht mit Blättern ----------------
+// Pfeile links/rechts, Wischen (iPhone), Pfeiltasten (PC), Zähler „2 / 5“.
+function FotoGalerie({ fotos, start, onClose }) {
+  const [i, setI] = useState(start);
+  const touch = useRef(null);
+  const n = fotos.length;
+  const vor = () => setI((x) => (x + 1) % n);
+  const zurueck = () => setI((x) => (x - 1 + n) % n);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "ArrowRight") vor(); else if (e.key === "ArrowLeft") zurueck(); else if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [n]);
+  const pfeil = (seite) => ({ position: "fixed", top: "50%", [seite]: 10, transform: "translateY(-50%)", background: "rgba(255,255,255,0.18)", border: "none", borderRadius: "50%", width: 44, height: 44, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" });
+  return (
+    <div role="dialog" aria-label="Fotos ansehen" data-testid="foto-galerie" style={styles.lightboxBackdrop} onClick={onClose}
+      onTouchStart={(e) => { const t = e.touches[0]; touch.current = { x: t.clientX, y: t.clientY }; }}
+      onTouchEnd={(e) => { const a = touch.current; touch.current = null; if (!a || n < 2) return; const t = e.changedTouches[0]; const dx = t.clientX - a.x, dy = t.clientY - a.y; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { e.stopPropagation(); if (dx < 0) vor(); else zurueck(); } }}>
+      <button style={styles.lightboxClose} onClick={onClose} aria-label="Schließen"><X size={22} color="white" /></button>
+      {n > 1 && <div data-testid="foto-zaehler" style={{ position: "fixed", top: 22, left: 0, right: 0, textAlign: "center", color: "white", fontSize: 14, fontWeight: 700, zIndex: 91, pointerEvents: "none" }}>{i + 1} / {n}</div>}
+      {n > 1 && <button style={pfeil("left")} onClick={(e) => { e.stopPropagation(); zurueck(); }} aria-label="Vorheriges Foto"><ChevronLeft size={26} color="white" /></button>}
+      <img key={fotos[i]} src={fotos[i]} alt="" style={styles.lightboxImg} onClick={(e) => e.stopPropagation()} />
+      {n > 1 && <button style={pfeil("right")} onClick={(e) => { e.stopPropagation(); vor(); }} aria-label="Nächstes Foto"><ChevronRight size={26} color="white" /></button>}
+    </div>
+  );
 }
 
 // ---------------- kleine Bausteine ----------------
@@ -139,7 +171,8 @@ function BerichtKarte({ b, onClick }) {
 
 // ---------------- Kachel ----------------
 export default function EinsatzberichtKachel() {
-  const { roster, vehicles, config, persistConfig, isAdmin, me, callAuthed, flashError, closeKachelView, kachelReturnTo, setLightboxSrc } = useApp();
+  const { roster, vehicles, config, persistConfig, isAdmin, me, callAuthed, flashError, closeKachelView, kachelReturnTo } = useApp();
+  const [galerie, setGalerie] = useState(null); // { urls, start }
   // Zuletzt geladene Liste sofort zeigen (auch nach einem Neustart der App), dann im Hintergrund auffrischen.
   const cacheKey = `einsatz:${me}`;
   const [gemerkt] = useState(() => hole(cacheKey));
@@ -197,8 +230,10 @@ export default function EinsatzberichtKachel() {
   function neu() { setDraft(neuerEntwurf()); setGeraeteOffen(false); setMSuche(""); setAnsicht({ typ: "form" }); }
   function bearbeiten(item) {
     const { nummer, kraefte, paTraeger, stunden, stundenBer, stundenPa, fotoAnzahl, ...rest } = item;
-    setDraft({ ...neuerEntwurf(), ...rest, mannschaft: (item.mannschaft || []).map((m) => ({ ...m, ein: m.ein || "", ber: m.ber || "", pa: m.pa || "" })), fotos: item.fotos || [], neu: false });
-    setGeraeteOffen(Object.values(item.geraete || {}).some(zahl) || !!item.sonstigesMaterial || Object.values(item.fahrzeugWerte || {}).some((w) => zahl(w.km) || zahl(w.pumpe)));
+    setDraft({ ...neuerEntwurf(), ...rest, mannschaft: (item.mannschaft || []).map((m) => ({ ...m, ein: normHM(m.ein), ber: normHM(m.ber), pa: normHM(m.pa) })),
+      geraete: Object.fromEntries(Object.entries(item.geraete || {}).map(([k, v]) => [k, istZeitEinheit(geraetTeile(k).einheit) ? normHM(v) : v])),
+      fahrzeugWerte: Object.fromEntries(Object.entries(item.fahrzeugWerte || {}).map(([k, w]) => [k, { ...w, ...(w && w.pumpe ? { pumpe: normHM(w.pumpe) } : {}) }])), fotos: item.fotos || [], neu: false });
+    setGeraeteOffen(Object.values(item.geraete || {}).some((v) => zuMin(v) || zahl(v)) || !!item.sonstigesMaterial || Object.values(item.fahrzeugWerte || {}).some((w) => zahl(w.km) || zuMin(w.pumpe)));
     setMSuche(""); setAnsicht({ typ: "form" });
   }
   function abbrechen() {
@@ -281,12 +316,13 @@ export default function EinsatzberichtKachel() {
       else set({ mannschaft: [...draft.mannschaft, { name, ein: vorschlag, ber: "", pa: "", fahrzeug: draft.fahrzeuge.length === 1 ? draft.fahrzeuge[0] : "" }] });
     };
     const setM = (name, patch) => set({ mannschaft: draft.mannschaft.map((m) => (m.name === name ? { ...m, ...patch } : m)) });
-    const summeEin = draft.mannschaft.reduce((s, m) => s + zahl(m.ein), 0);
-    const paAnzahl = draft.mannschaft.filter((m) => zahl(m.pa) > 0).length;
-    const paStd = draft.mannschaft.reduce((s, m) => s + zahl(m.pa), 0);
+    const summeEin = draft.mannschaft.reduce((s, m) => s + zuMin(m.ein), 0);
+    const paAnzahl = draft.mannschaft.filter((m) => zuMin(m.pa) > 0).length;
+    const paStd = draft.mannschaft.reduce((s, m) => s + zuMin(m.pa), 0);
     const fruehereStichworte = [...new Set([...(liste || []), ...Object.values(archivListen).flat()].map((b) => b.einsatz).filter(Boolean))];
     return (
       <div style={styles.fullscreenPage}>
+        {galerie && <FotoGalerie fotos={galerie.urls} start={galerie.start} onClose={() => setGalerie(null)} />}
         <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={abbrechen}><X size={18} /> Abbrechen</button></div>
         <div style={styles.modalTitle}>{draft.neu ? "Neuer Einsatzbericht" : `Einsatzbericht ${draft.nummer || ""} bearbeiten`}</div>
         <div style={{ fontSize: 11.5, color: "#8A8C86", margin: "2px 0 12px" }}>{draft.neu ? `Die Einsatznummer wird beim Speichern vergeben (Einsatzjahr ${einsatzjahr || ""}).` : "Änderungen werden erst mit „Speichern“ übernommen."}</div>
@@ -326,7 +362,7 @@ export default function EinsatzberichtKachel() {
                 <div key={m.name} style={{ borderBottom: "1px dashed #E2DFD6", padding: "5px 0" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 52px 52px 26px", gap: 4, alignItems: "center" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
-                    {["ein", "ber", "pa"].map((k) => <input key={k} style={zahlInp} inputMode="decimal" aria-label={`${k.toUpperCase()} Stunden ${m.name}`} value={m[k]} onChange={(e) => setM(m.name, { [k]: e.target.value.replace(/[^0-9.,]/g, "") })} />)}
+                    {["ein", "ber", "pa"].map((k) => <input key={k} style={zahlInp} inputMode="numeric" placeholder="0:00" aria-label={`${k.toUpperCase()} Stunden ${m.name}`} value={m[k]} onChange={(e) => setM(m.name, { [k]: zeitEingabe(e.target.value) })} onBlur={(e) => setM(m.name, { [k]: normHM(e.target.value) })} />)}
                     <button style={styles.tinyIconBtn} aria-label={`${m.name} entfernen`} onClick={() => togglePerson(m.name)}><X size={12} /></button>
                   </div>
                   {gewaehlteFz.length > 1 && (
@@ -337,10 +373,10 @@ export default function EinsatzberichtKachel() {
                   )}
                 </div>
               ))}
-              <div style={{ fontSize: 11, color: "#8A8C86", marginTop: 6 }}>Stunden: EIN = Einsatz, BER = Bereitschaft (z. B. Gerätehaus besetzt), PA = unter Atemschutz. Summe Einsatz: {fmtZahl(summeEin)} Std.{paAnzahl ? ` · ${paAnzahl} PA, ${fmtZahl(paStd)} Std.` : ""}</div>
+              <div style={{ fontSize: 11, color: "#8A8C86", marginTop: 6 }}>Zeiten als Std:Min, z. B. 1:23. EIN = Einsatz, BER = Bereitschaft (z. B. Gerätehaus besetzt), PA = unter Atemschutz. Summe Einsatz: {fmtHM(summeEin)} Std.{paAnzahl ? ` · ${paAnzahl} PA, ${fmtHM(paStd)} Std.` : ""}</div>
             </div>
           )}
-          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#5C5F58", marginBottom: 6 }}>{draft.mannschaft.length ? "Weitere Einsatzkräfte" : "Einsatzkräfte antippen"}{vorschlag ? ` – bekommen ${vorschlag} Std. vorgeschlagen` : " – tipp vorher Alarmierung und Ende ein, dann werden die Stunden vorgeschlagen"}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#5C5F58", marginBottom: 6 }}>{draft.mannschaft.length ? "Weitere Einsatzkräfte" : "Einsatzkräfte antippen"}{vorschlag ? ` – bekommen ${vorschlag} Std. (genau Alarm bis Ende) vorgeschlagen` : " – tipp vorher Alarmierung und Ende ein, dann werden die Stunden vorgeschlagen"}</div>
           <SearchBox value={mSuche} onChange={setMSuche} placeholder="Name suchen …" />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {pool.filter((r) => !ausgewaehlt.has(r.name)).map((r) => (
@@ -361,18 +397,20 @@ export default function EinsatzberichtKachel() {
                   <div key={v.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, flex: "1 1 100px" }}>{v.name}</span>
                     <label style={{ fontSize: 11.5, color: "#5C5F58", display: "flex", alignItems: "center", gap: 4 }}><input style={{ ...zahlInp, width: 64 }} inputMode="decimal" value={w.km || ""} onChange={(e) => setW({ km: e.target.value.replace(/[^0-9.,]/g, "") })} /> km</label>
-                    {v.type === "lkw" && <label style={{ fontSize: 11.5, color: "#5C5F58", display: "flex", alignItems: "center", gap: 4 }}><input style={{ ...zahlInp, width: 56 }} inputMode="decimal" value={w.pumpe || ""} onChange={(e) => setW({ pumpe: e.target.value.replace(/[^0-9.,]/g, "") })} /> Pumpen-Std.</label>}
+                    {v.type === "lkw" && <label style={{ fontSize: 11.5, color: "#5C5F58", display: "flex", alignItems: "center", gap: 4 }}><input style={{ ...zahlInp, width: 64 }} inputMode="numeric" placeholder="0:00" aria-label={`Pumpen-Std. ${v.name}`} value={w.pumpe || ""} onChange={(e) => setW({ pumpe: zeitEingabe(e.target.value) })} onBlur={(e) => setW({ pumpe: normHM(e.target.value) })} /> Pumpen-Std:Min</label>}
                   </div>
                 );
               })}
-              {paAnzahl > 0 && <div style={{ fontSize: 11.5, color: "#5C5F58", margin: "4px 0 8px" }}>Atemschutz aus der Mannschaft: {paAnzahl} PA, {fmtZahl(paStd)} Std.</div>}
+              {paAnzahl > 0 && <div style={{ fontSize: 11.5, color: "#5C5F58", margin: "4px 0 8px" }}>Atemschutz aus der Mannschaft: {paAnzahl} PA, {fmtHM(paStd)} Std.</div>}
               {(config.einsatzGeraete || []).map((g) => {
                 const t = geraetTeile(g);
                 return (
                   <div key={g} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
                     <span style={{ fontSize: 12.5, flex: 1 }}>{t.name}</span>
-                    <input style={{ ...zahlInp, width: 64 }} inputMode="decimal" aria-label={t.name} value={draft.geraete[g] || ""} onChange={(e) => set({ geraete: { ...draft.geraete, [g]: e.target.value.replace(/[^0-9.,]/g, "") } })} />
-                    <span style={{ fontSize: 11, color: "#8A8C86", width: 40 }}>{t.einheit}</span>
+                    {istZeitEinheit(t.einheit)
+                      ? <input style={{ ...zahlInp, width: 64 }} inputMode="numeric" placeholder="0:00" aria-label={t.name} value={draft.geraete[g] || ""} onChange={(e) => set({ geraete: { ...draft.geraete, [g]: zeitEingabe(e.target.value) } })} onBlur={(e) => set({ geraete: { ...draft.geraete, [g]: normHM(e.target.value) } })} />
+                      : <input style={{ ...zahlInp, width: 64 }} inputMode="decimal" aria-label={t.name} value={draft.geraete[g] || ""} onChange={(e) => set({ geraete: { ...draft.geraete, [g]: e.target.value.replace(/[^0-9.,]/g, "") } })} />}
+                    <span style={{ fontSize: 11, color: "#8A8C86", width: 40 }}>{istZeitEinheit(t.einheit) ? "Std:Min" : t.einheit}</span>
                   </div>
                 );
               })}
@@ -389,7 +427,7 @@ export default function EinsatzberichtKachel() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
             {draft.fotos.map((f) => (
               <div key={f.path} style={{ position: "relative" }}>
-                {f.url ? <img src={f.url} alt="" onClick={() => setLightboxSrc(f.url)} style={{ width: 84, height: 64, objectFit: "cover", borderRadius: 5, border: "1px solid #E2DFD6", cursor: "zoom-in" }} />
+                {f.url ? <img src={f.url} alt="" onClick={() => { const urls = draft.fotos.map((x) => x.url).filter(Boolean); setGalerie({ urls, start: Math.max(0, urls.indexOf(f.url)) }); }} style={{ width: 84, height: 64, objectFit: "cover", borderRadius: 5, border: "1px solid #E2DFD6", cursor: "zoom-in" }} />
                   : <div style={{ width: 84, height: 64, borderRadius: 5, background: "#EEEEEC" }} />}
                 <button aria-label="Foto entfernen" onClick={() => set({ fotos: draft.fotos.filter((x) => x.path !== f.path) })} style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, border: "none", background: "#2C2F2A", color: "white", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={12} /></button>
               </div>
@@ -422,6 +460,7 @@ export default function EinsatzberichtKachel() {
     const geraeteTab = modell ? modell.blocks.find((x) => x.t === "tabelle" && x.kopf[0] === "Gerät / Material") : null;
     return (
       <div style={styles.fullscreenPage}>
+        {galerie && <FotoGalerie fotos={galerie.urls} start={galerie.start} onClose={() => setGalerie(null)} />}
         <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={() => setAnsicht({ typ: "liste" })}><ArrowLeft size={18} /> Alle Einsatzberichte</button></div>
         {!b && <div style={{ fontSize: 12.5, color: "#8A8C86", padding: "20px 0" }}>Lädt …</div>}
         {b && (
@@ -442,13 +481,13 @@ export default function EinsatzberichtKachel() {
                   {b.mannschaft.map((m) => (
                     <div key={m.name} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, padding: "4px 0", borderBottom: "1px solid #F3F1EC" }}>
                       <span>{m.name}{m.fahrzeug && (b.fahrzeugNamen || {})[m.fahrzeug] ? <span style={{ color: "#8A8C86", fontSize: 11.5 }}> · {(b.fahrzeugNamen || {})[m.fahrzeug]}</span> : null}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C5F58", whiteSpace: "nowrap" }}>{m.ein ? `${fmtZahl(zahl(m.ein))} h` : "–"}{m.ber ? ` · B ${fmtZahl(zahl(m.ber))}` : ""}{m.pa ? ` · PA ${fmtZahl(zahl(m.pa))}` : ""}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C5F58", whiteSpace: "nowrap" }}>{zuMin(m.ein) ? `${fmtHM(zuMin(m.ein))} h` : "–"}{zuMin(m.ber) ? ` · B ${fmtHM(zuMin(m.ber))}` : ""}{zuMin(m.pa) ? ` · PA ${fmtHM(zuMin(m.pa))}` : ""}</span>
                     </div>
                   ))}
-                  <div style={{ fontSize: 11.5, color: "#5C5F58", marginTop: 6 }}>Summe: {fmtZahl(b.stunden)} Einsatzstunden{b.stundenBer ? ` · ${fmtZahl(b.stundenBer)} Std. Bereitschaft` : ""}{b.paTraeger ? ` · ${b.paTraeger} unter Atemschutz` : ""}</div>
+                  <div style={{ fontSize: 11.5, color: "#5C5F58", marginTop: 6 }}>Summe: {fmtStd(minVon(b, "stunden"))} Std. Einsatzzeit{minVon(b, "stundenBer") ? ` · ${fmtStd(minVon(b, "stundenBer"))} Std. Bereitschaft` : ""}{b.paTraeger ? ` · ${b.paTraeger} unter Atemschutz` : ""}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 13, color: "#2C2F2A" }}>{b.kraefte} Einsatzkräfte · {fmtZahl(b.stunden || 0)} Einsatzstunden{b.paTraeger ? ` · ${b.paTraeger} unter Atemschutz` : ""}
+                <div style={{ fontSize: 13, color: "#2C2F2A" }}>{b.kraefte} Einsatzkräfte · {fmtStd(minVon(b, "stunden"))} Std. Einsatzzeit{b.paTraeger ? ` · ${b.paTraeger} unter Atemschutz` : ""}
                   <div style={{ fontSize: 10.5, color: "#A5A79F", marginTop: 4 }}>Die Namen sehen nur Gruppenführer und Admins.</div></div>
               )}
             </Abschnitt>
@@ -462,7 +501,7 @@ export default function EinsatzberichtKachel() {
             {b.fotos && b.fotos.length > 0 && (
               <Abschnitt titel={`FOTOS (${b.fotos.length})`}>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {b.fotos.map((f) => f.url && <img key={f.path} src={f.url} alt="" onClick={() => setLightboxSrc(f.url)} style={{ width: 96, height: 72, objectFit: "cover", borderRadius: 5, border: "1px solid #E2DFD6", cursor: "zoom-in" }} />)}
+                  {b.fotos.map((f) => f.url && <img key={f.path} src={f.url} alt="" onClick={() => { const urls = b.fotos.map((x) => x.url).filter(Boolean); setGalerie({ urls, start: Math.max(0, urls.indexOf(f.url)) }); }} style={{ width: 96, height: 72, objectFit: "cover", borderRadius: 5, border: "1px solid #E2DFD6", cursor: "zoom-in" }} />)}
                 </div>
               </Abschnitt>
             )}
@@ -484,7 +523,7 @@ export default function EinsatzberichtKachel() {
   // ======================= LISTE =======================
   const aktuell = (liste || []).filter((b) => String(b.einsatzjahr) === String(einsatzjahr));
   const archivJahre = Object.keys(archivAnzahl).sort((a, b) => b.localeCompare(a, "de", { numeric: true }));
-  const summeStd = aktuell.reduce((s, b) => s + (b.stunden || 0), 0);
+  const summeStd = aktuell.reduce((s, b) => s + minVon(b, "stunden"), 0);
   const oKraefte = aktuell.length ? Math.round((aktuell.reduce((s, b) => s + (b.kraefte || 0), 0) / aktuell.length) * 10) / 10 : 0;
   const monat = new Date().getMonth() + 1;
   const jahrSeit = config.einsatzjahr && config.einsatzjahr.beginn;
@@ -499,7 +538,7 @@ export default function EinsatzberichtKachel() {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
             <Kpi wert={aktuell.length} label="Einsätze" />
-            <Kpi wert={fmtZahl(summeStd)} label="Einsatzstunden" />
+            <Kpi wert={fmtHM(summeStd)} label="Einsatzstunden (Std:Min)" />
             <Kpi wert={fmtZahl(oKraefte)} label="Ø Einsatzkräfte" />
           </div>
           {rechte.schreiben && <button style={{ ...styles.saveBtn, width: "100%", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={neu}><Plus size={16} /> Neuer Einsatzbericht</button>}

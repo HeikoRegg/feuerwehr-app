@@ -3,10 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.19";
+export const APP_VERSION = "2.20";
 export const CHANGELOG = [
-  "Terminumfragen: Zahl der Umfragen, bei denen du noch nicht abgestimmt hast, am Symbol „Funktionen“ und auf der Kachel",
-  "Tippen auf die Benachrichtigung einer Umfrage öffnet direkt die Kachel „Terminumfragen“",
+  "Einsatzbericht: Zeiten minutengenau als Std:Min (z. B. 1:23), ohne Rundung – der Vorschlag nimmt genau Alarm bis Ende",
+  "Statistik: Einsatzzeiten je Person und Einsatz auf die nächste Viertelstunde aufgerundet",
+  "Fotos im Einsatzbericht: mit Pfeilen oder Wischen durch alle Fotos blättern",
+  "Termine aus einer Umfrage mit „Max. Personen“ haben im Kalender den Knopf „Ich bin dabei“; die Namen sind für alle sichtbar, auch auf der Karte „Nächster Termin“",
 ];
 
 export const CATEGORIES = {

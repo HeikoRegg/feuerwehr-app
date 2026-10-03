@@ -2,6 +2,7 @@
 // App-Ansicht und Druckbericht nutzen dieselben Ergebnisse, damit die Zahlen immer übereinstimmen.
 import { BEREICHE, BEREICH_KEYS, CATEGORIES } from "./constants";
 import { atemschutzStatus, todayISO } from "./helpers";
+import { zuMin, fmtHM, aufViertel } from "./zeit";
 
 export const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const namenSort = (arr) => [...arr].sort((a, b) => a.localeCompare(b, "de"));
@@ -218,20 +219,21 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
   };
 
   // ---------------- EINSÄTZE (nach Einsatzjahr) ----------------
-  const zahl = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; };
   const rund = (n) => Math.round(n * 10) / 10;
   const ej = (einsaetze || []).filter((b) => String(b.einsatzjahr) === jahrStr);
-  const stdGesamt = ej.reduce((s, b) => s + (b.stunden || 0), 0);
+  // Einsatzzeiten: je Person und Einsatz auf die nächste Viertelstunde aufgerundet, dann summiert (Anzeige als Std:Min)
+  const viertelMin = (b) => (b.mannschaft || []).reduce((s, m) => s + aufViertel(zuMin(m.ein)), 0);
+  const stdGesamtMin = ej.reduce((s, b) => s + viertelMin(b), 0);
   const proPerson = {};
-  ej.forEach((b) => (b.mannschaft || []).forEach((m) => { const p = (proPerson[m.name] ||= { anzahl: 0, std: 0 }); p.anzahl++; p.std += zahl(m.ein); }));
+  ej.forEach((b) => (b.mannschaft || []).forEach((m) => { const p = (proPerson[m.name] ||= { anzahl: 0, min: 0 }); p.anzahl++; p.min += aufViertel(zuMin(m.ein)); }));
   const monate = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
   const fzZaehler = {};
   ej.forEach((b) => (b.fahrzeuge || []).forEach((id) => { const n = (b.fahrzeugNamen || {})[id] || "Fahrzeug"; fzZaehler[n] = (fzZaehler[n] || 0) + 1; }));
   const einsaetzeStat = {
-    note: einsaetze === null ? "Einsatzberichte konnten nicht geladen werden." : `Einsatzjahr ${jahr} – von Hauptversammlung zu Hauptversammlung, wie in der Kachel Einsatzberichte.`,
+    note: einsaetze === null ? "Einsatzberichte konnten nicht geladen werden." : `Einsatzjahr ${jahr} – von Hauptversammlung zu Hauptversammlung, wie in der Kachel Einsatzberichte. Einsatzzeiten: je Person und Einsatz auf die nächste Viertelstunde aufgerundet (die Berichte selbst sind minutengenau).`,
     kpis: [
       { label: `Einsätze ${jahr}`, value: ej.length },
-      { label: "Einsatzstunden", value: rund(stdGesamt) },
+      { label: "Einsatzstunden (Std:Min)", value: fmtHM(stdGesamtMin) },
       { label: "Ø Einsatzkräfte", value: ej.length ? rund(ej.reduce((s, b) => s + (b.kraefte || 0), 0) / ej.length) : "–" },
     ],
     sections: [
@@ -241,7 +243,7 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
         empty: `Keine Einsätze im Einsatzjahr ${jahr}.` },
       { id: "fahrzeuge", title: "Eingesetzte Fahrzeuge", type: "bars", items: Object.entries(fzZaehler).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value), empty: "Keine Fahrzeuge eingetragen." },
       { id: "personen", title: "Einsätze und Einsatzstunden pro Person", type: "bars", nurMitNamen: true,
-        items: Object.entries(proPerson).map(([name, p]) => ({ label: name, value: p.anzahl, suffix: ` · ${rund(p.std)} Std.` })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "de")),
+        items: Object.entries(proPerson).map(([name, p]) => ({ label: name, value: p.anzahl, suffix: ` · ${fmtHM(p.min)} Std.` })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "de")),
         empty: "Keine Einsatzkräfte eingetragen." },
     ],
   };
