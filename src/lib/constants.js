@@ -3,10 +3,10 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.17";
+export const APP_VERSION = "2.18";
 export const CHANGELOG = [
-  "Neue Kachel „Terminumfragen“: Terminvorschläge zur Abstimmung (Ja/Nein, Namen sichtbar)",
-  "Beim Abschluss können mehrere Termine bestätigt werden – sie kommen in den Kalender, die Kameraden mit „Ja“ sind automatisch zugesagt",
+  "Terminumfragen: Max. Personen je Terminvorschlag einstellbar",
+  "Ist ein Termin voll, kommen weitere „Ja“ auf eine Warteliste – wird ein Platz frei, rückt der Nächste automatisch nach (mit Benachrichtigung)",
 ];
 
 export const CATEGORIES = {

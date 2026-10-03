@@ -5,6 +5,7 @@
 // die für einen Termin mit Ja gestimmt haben, sind dort automatisch als „Zusage“ eingetragen.
 //
 //  - Tabelle terminumfragen          (eine Zeile je Umfrage: Titel, Bereich, Termine, Status, bestätigte Termine)
+//  - Limit je Termin (t.max, optional): die ersten Ja-Stimmen haben einen Platz, weitere stehen auf der Warteliste und rücken nach
 //  - Tabelle terminumfragen_stimmen  (eine Zeile je Mitglied und Termin – so gehen gleichzeitige Stimmen nicht verloren)
 //
 // Rechte (immer frisch aus der Mitgliederliste ermittelt):
@@ -63,17 +64,24 @@ async function push(an, title, text, sender) {
 }
 const alsUmfrage = (row) => ({ ...(row.data || {}), id: row.id });
 
-// Aus den Stimmen je Termin die Namen mit Ja / Nein
+// Aus den Stimmen je Termin die Namen mit Ja / Nein. Hat ein Termin ein Limit (t.max), haben die ersten Ja-Stimmen
+// (nach Zeitpunkt der Ja-Stimme) einen Platz, alle weiteren stehen in der Reihenfolge auf der Warteliste.
 function stimmenJeTermin(umfrage, stimmen) {
-  const ja = {}, nein = {};
-  umfrage.termine.forEach((t) => { ja[t.id] = []; nein[t.id] = []; });
+  const ja = {}, nein = {}, warte = {}, jaRoh = {};
+  umfrage.termine.forEach((t) => { ja[t.id] = []; nein[t.id] = []; warte[t.id] = []; jaRoh[t.id] = []; });
   (stimmen || []).forEach((s) => {
     if (!ja[s.termin]) return;
-    (s.antwort === "ja" ? ja : nein)[s.termin].push(s.name);
+    if (s.antwort === "ja") jaRoh[s.termin].push(s); else nein[s.termin].push(s.name);
   });
-  Object.values(ja).forEach((a) => a.sort((x, y) => x.localeCompare(y, "de")));
-  Object.values(nein).forEach((a) => a.sort((x, y) => x.localeCompare(y, "de")));
-  return { ja, nein };
+  umfrage.termine.forEach((t) => {
+    const reihe = jaRoh[t.id].sort((x, y) => String(x.ts || "").localeCompare(String(y.ts || "")) || x.name.localeCompare(y.name, "de")).map((s) => s.name);
+    const max = Number(t.max) > 0 ? Number(t.max) : 0;
+    ja[t.id] = max ? reihe.slice(0, max) : reihe;
+    warte[t.id] = max ? reihe.slice(max) : [];
+    ja[t.id].sort((x, y) => x.localeCompare(y, "de"));
+    nein[t.id].sort((x, y) => x.localeCompare(y, "de"));
+  });
+  return { ja, nein, warte };
 }
 
 // Fertige Kalendertermine für die bestätigten Termine (Zusage der Ja-Stimmen schon eingetragen).
@@ -85,7 +93,7 @@ function kalenderTermine(u) {
     const responses = {}; (b.namen || []).forEach((n) => { responses[n] = "zu"; });
     const ts = Date.parse(u.abgeschlossenAm || "") || Date.now();
     return {
-      id: b.eventId, title: u.titel, date: t.datum, time: t.zeit || "", location: u.ort || "", category: u.kategorie || "uebung", notes: u.hinweis || "", bereich: u.bereich,
+      id: b.eventId, title: u.titel, date: t.datum, time: t.zeit || "", location: u.ort || "", category: u.kategorie || "uebung", notes: [u.hinweis || "", Number(t.max) > 0 ? `Max. ${Number(t.max)} Personen` : ""].filter(Boolean).join("\n"), bereich: u.bereich,
       capacityMode: false, capacityNeeded: 3, namesVisible: true, gruppenfuehrer: "", anmeldeschluss: "", anmeldeschlussReminderDays: 3,
       responses, signups: {}, createdAt: ts, updatedAt: ts, ausUmfrage: u.id,
     };
@@ -142,11 +150,11 @@ export async function handler(event) {
       const stimmen = await stimmenLaden(aktuell.map((u) => u.id));
       const umfragen = aktuell.map((u) => {
         const eigene = stimmen.filter((s) => s.umfrage === u.id);
-        const { ja, nein } = stimmenJeTermin(u, eigene);
+        const { ja, nein, warte } = stimmenJeTermin(u, eigene);
         const meine = {}; eigene.filter((s) => s.name === ich).forEach((s) => { meine[s.termin] = s.antwort; });
         const mitglieder = lage.roster.filter((r) => r && (r.bereiche || []).includes(u.bereich) && !lage.gesperrt.has(r.name)).length;
         return {
-          ...u, ja, nein, meine,
+          ...u, ja, nein, warte, meine,
           abgestimmt: [...new Set(eigene.map((s) => s.name))].length, mitglieder,
           darfVerwalten: lage.darfVerwalten(ich, u.bereich),
           darfAbstimmen: u.status === "offen" && lage.istMitglied(ich, u.bereich) && !(u.abstimmenBis && u.abstimmenBis < heute()),
@@ -174,7 +182,9 @@ export async function handler(event) {
         const key = `${t.datum} ${zeit}`;
         if (gesehen.has(key)) throw fehler(400, "Zwei Terminvorschläge sind gleich.");
         gesehen.add(key);
-        termine.push({ id: neueId(), datum: t.datum, zeit });
+        const m = t.max === "" || t.max == null ? 0 : Number(t.max);
+        if (!Number.isInteger(m) || m < 0 || m > 200) throw fehler(400, "Die maximale Personenzahl muss eine ganze Zahl zwischen 1 und 200 sein (leer = unbegrenzt).");
+        termine.push({ id: neueId(), datum: t.datum, zeit, ...(m > 0 ? { max: m } : {}) });
       }
       if (termine.length < 2) throw fehler(400, "Bitte mindestens zwei Terminvorschläge eintragen.");
       if (termine.length > MAX_TERMINE) throw fehler(400, `Es sind höchstens ${MAX_TERMINE} Terminvorschläge möglich.`);
@@ -208,15 +218,29 @@ export async function handler(event) {
       if (u.status !== "offen") throw fehler(400, "Die Umfrage ist schon abgeschlossen.");
       if (u.abstimmenBis && u.abstimmenBis < heute()) throw fehler(400, "Die Abstimmung ist beendet (Frist abgelaufen).");
       const antworten = body.antworten && typeof body.antworten === "object" ? body.antworten : {};
-      const jetzt = new Date().toISOString();
+      const vorher = await stimmenLaden([u.id]);
+      const davor = stimmenJeTermin(u, vorher);
+      const bisher = {}; vorher.filter((s) => s.name === ich).forEach((s) => { bisher[s.termin] = s.antwort; });
       for (const t of u.termine) {
         if (!(t.id in antworten)) continue;
         const a = antworten[t.id];
         const sid = `${u.id}|${ich}|${t.id}`;
         if (a === "ja" || a === "nein") {
-          const { error } = await db.from("terminumfragen_stimmen").upsert({ id: sid, umfrage: u.id, name: ich, termin: t.id, antwort: a, ts: jetzt });
+          if (bisher[t.id] === a) continue; // unverändert: Zeitpunkt behalten, damit der Platz in der Reihenfolge nicht verloren geht
+          const { error } = await db.from("terminumfragen_stimmen").upsert({ id: sid, umfrage: u.id, name: ich, termin: t.id, antwort: a, ts: new Date().toISOString() });
           if (error) throw error;
         } else if (a === null) await db.from("terminumfragen_stimmen").delete().eq("id", sid);
+      }
+      // Nachrücker: wer vorher auf der Warteliste stand und jetzt einen Platz hat, bekommt eine Benachrichtigung
+      const danach = stimmenJeTermin(u, await stimmenLaden([u.id]));
+      const nachrueckt = {};
+      u.termine.forEach((t) => {
+        danach.ja[t.id].filter((n) => n !== ich && davor.warte[t.id].includes(n)).forEach((n) => {
+          (nachrueckt[n] = nachrueckt[n] || []).push(`${datumKurz(t.datum)}${t.zeit ? ` ${t.zeit} Uhr` : ""}`);
+        });
+      });
+      for (const [name, liste] of Object.entries(nachrueckt)) {
+        await push([name], `Platz frei: ${u.titel}`, `Du bist nachgerückt und hast jetzt einen Platz: ${liste.join(", ")}.`, ich);
       }
       return json(200, { ok: true });
     }
@@ -231,7 +255,7 @@ export async function handler(event) {
       const gewaehlt = (Array.isArray(body.termine) ? body.termine.map(String) : []).filter((id, i, a) => a.indexOf(id) === i);
       if (gewaehlt.some((id) => !u.termine.some((t) => t.id === id))) throw fehler(400, "Ein gewählter Termin gehört nicht zur Umfrage.");
       const stimmen = await stimmenLaden([u.id]);
-      const { ja } = stimmenJeTermin(u, stimmen);
+      const { ja } = stimmenJeTermin(u, stimmen); // nur Personen mit Platz (ohne Warteliste)
       const jetzt = new Date().toISOString();
       const bestaetigt = u.termine.filter((t) => gewaehlt.includes(t.id)).map((t) => ({
         terminId: t.id, eventId: `u${Date.now().toString(36)}${neueId()}`,

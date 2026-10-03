@@ -35,7 +35,7 @@ function stand(u) {
 function NeueUmfrage({ rechte, onClose, onSaved }) {
   const { callAuthed } = useApp();
   const erlaubt = rechte.anlegen || [];
-  const [d, setD] = useState(() => ({ titel: "", bereich: erlaubt.includes("einsatzabteilung") ? "einsatzabteilung" : erlaubt[0] || "", kategorie: "uebung", ort: "", hinweis: "", abstimmenBis: "", termine: [{ datum: "", zeit: "19:30" }, { datum: "", zeit: "19:30" }] }));
+  const [d, setD] = useState(() => ({ titel: "", bereich: erlaubt.includes("einsatzabteilung") ? "einsatzabteilung" : erlaubt[0] || "", kategorie: "uebung", ort: "", hinweis: "", abstimmenBis: "", termine: [{ datum: "", zeit: "19:30", max: "" }, { datum: "", zeit: "19:30", max: "" }] }));
   const [busy, setBusy] = useState(false); const [fehler, setFehler] = useState("");
   const set = (t) => setD((x) => ({ ...x, ...t }));
   const setTermin = (i, t) => setD((x) => ({ ...x, termine: x.termine.map((a, k) => (k === i ? { ...a, ...t } : a)) }));
@@ -43,7 +43,7 @@ function NeueUmfrage({ rechte, onClose, onSaved }) {
     setFehler("");
     if (!d.titel.trim()) { setFehler("Bitte einen Titel eingeben."); return; }
     setBusy(true);
-    const r = await callAuthed("umfrage", { action: "create", umfrage: d });
+    const r = await callAuthed("umfrage", { action: "create", umfrage: { ...d, termine: d.termine.map((t) => ({ ...t, max: t.max === "" ? 0 : Number(t.max) })) } });
     setBusy(false);
     if (r.ok) onSaved(r.data.id); else if (r.data.error !== "abgebrochen") setFehler(r.data.error || "Speichern nicht möglich.");
   }
@@ -63,17 +63,24 @@ function NeueUmfrage({ rechte, onClose, onSaved }) {
       </div>
       <label style={styles.label}>TERMINVORSCHLÄGE (2 BIS 10)</label>
       {d.termine.map((t, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+        <div key={i} style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input style={{ ...styles.input, flex: 1, marginTop: 0 }} type="date" aria-label={`Datum ${i + 1}`} min={heuteLokal()} value={t.datum} onChange={(e) => setTermin(i, { datum: e.target.value })} />
           <input style={{ ...styles.input, width: 118, marginTop: 0 }} type="time" aria-label={`Uhrzeit ${i + 1}`} value={t.zeit} onChange={(e) => setTermin(i, { zeit: e.target.value })} />
           <button type="button" style={{ ...styles.tinyBtn, padding: "9px 9px", opacity: d.termine.length <= 2 ? 0.35 : 1, display: "flex" }} aria-label={`Terminvorschlag ${i + 1} entfernen`} disabled={d.termine.length <= 2} onClick={() => set({ termine: d.termine.filter((_, k) => k !== i) })}><Trash2 size={15} color="#C1272D" /></button>
         </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+          <span style={{ ...klein, whiteSpace: "nowrap" }}>Max. Personen:</span>
+          <input style={{ ...styles.input, width: 80, marginTop: 0, padding: "6px 8px" }} type="number" inputMode="numeric" min="1" max="200" aria-label={`Max. Personen ${i + 1}`} value={t.max} placeholder="–" onChange={(e) => setTermin(i, { max: e.target.value })} />
+          <span style={klein}>leer = unbegrenzt</span>
+        </div>
+        </div>
       ))}
-      {d.termine.length < 10 && <div style={{ marginBottom: 4 }}><button type="button" style={{ ...styles.tinyBtn, fontSize: 12, padding: "7px 11px", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => set({ termine: [...d.termine, { datum: "", zeit: d.termine[d.termine.length - 1].zeit || "19:30" }] })}><Plus size={12} /> Terminvorschlag hinzufügen</button></div>}
+      {d.termine.length < 10 && <div style={{ marginBottom: 4 }}><button type="button" style={{ ...styles.tinyBtn, fontSize: 12, padding: "7px 11px", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => set({ termine: [...d.termine, { datum: "", zeit: d.termine[d.termine.length - 1].zeit || "19:30", max: d.termine[d.termine.length - 1].max || "" }] })}><Plus size={12} /> Terminvorschlag hinzufügen</button></div>}
       <label style={styles.label}>ORT (OPTIONAL)</label>
       <input style={styles.input} aria-label="Ort" maxLength={80} value={d.ort} onChange={(e) => set({ ort: e.target.value })} placeholder="z. B. Feuerwehrhaus" />
       <label style={styles.label}>HINWEIS (OPTIONAL)</label>
-      <textarea style={{ ...styles.input, minHeight: 56, resize: "vertical" }} aria-label="Hinweis" maxLength={500} value={d.hinweis} onChange={(e) => set({ hinweis: e.target.value })} placeholder="z. B. Dauer ca. 2 Stunden, Gruppe max. 8 Personen" />
+      <textarea style={{ ...styles.input, minHeight: 56, resize: "vertical" }} aria-label="Hinweis" maxLength={500} value={d.hinweis} onChange={(e) => set({ hinweis: e.target.value })} placeholder="z. B. Dauer ca. 2 Stunden" />
       <label style={styles.label}>ABSTIMMEN BIS (OPTIONAL)</label>
       <input style={styles.input} type="date" aria-label="Abstimmen bis" min={heuteLokal()} value={d.abstimmenBis} onChange={(e) => set({ abstimmenBis: e.target.value })} />
       <div style={{ ...klein, marginTop: 8 }}>Alle Mitglieder des Bereichs bekommen eine Benachrichtigung. Die Namen der Abstimmenden sind für alle sichtbar.</div>
@@ -85,7 +92,7 @@ function NeueUmfrage({ rechte, onClose, onSaved }) {
 
 // ---------------- Umfrage ansehen / abstimmen / abschließen ----------------
 function Detail({ u, onBack, onNeuLaden, onGeloescht }) {
-  const { callAuthed, flashError, events, persistEvents } = useApp();
+  const { callAuthed, flashError, events, persistEvents, me } = useApp();
   const [antw, setAntw] = useState(() => ({ ...(u.meine || {}) }));
   const [busy, setBusy] = useState(false);
   const [abschluss, setAbschluss] = useState(null); // null | Set der zu bestätigenden Termin-IDs
@@ -138,7 +145,7 @@ function Detail({ u, onBack, onNeuLaden, onGeloescht }) {
   const wahlKnopf = (t, wert, text) => {
     const an = antw[t.id] === wert;
     const farbe = wert === "ja" ? "#2E7D4F" : "#C1272D";
-    return <button aria-pressed={an} aria-label={`${terminText(t)}: ${text}`} onClick={() => setAntw((a) => { const n = { ...a }; if (n[t.id] === wert) delete n[t.id]; else n[t.id] = wert; return n; })}
+    return <button aria-pressed={an} aria-label={`${terminText(t)}: ${wert === "ja" ? "Ja" : "Nein"}`} onClick={() => setAntw((a) => { const n = { ...a }; if (n[t.id] === wert) delete n[t.id]; else n[t.id] = wert; return n; })}
       style={{ ...knopf, flex: 1, padding: "9px 6px", background: an ? farbe : "white", color: an ? "white" : farbe, border: `1.5px solid ${farbe}` }}>{text}</button>;
   };
 
@@ -155,7 +162,10 @@ function Detail({ u, onBack, onNeuLaden, onGeloescht }) {
 
       <div style={abschnitt}>{u.darfAbstimmen ? "DEINE ANTWORT" : "TERMINVORSCHLÄGE"}</div>
       {u.termine.map((t) => {
-        const ja = (u.ja || {})[t.id] || [], nein = (u.nein || {})[t.id] || [];
+        const ja = (u.ja || {})[t.id] || [], nein = (u.nein || {})[t.id] || [], warte = (u.warte || {})[t.id] || [];
+        const max = Number(t.max) > 0 ? Number(t.max) : 0;
+        const voll = !!max && ja.length >= max;
+        const meinePlatz = warte.indexOf(me) >= 0 ? warte.indexOf(me) + 1 : 0;
         const bestaetigt = bestaetigtIds.has(t.id);
         return (
           <div key={t.id} data-testid="termin-karte" style={{ ...styles.capacityBox, marginTop: 8, borderColor: bestaetigt ? "#2E7D4F" : abschluss && abschluss.has(t.id) ? "#C1272D" : "#E2DFD6" }}>
@@ -163,12 +173,15 @@ function Detail({ u, onBack, onNeuLaden, onGeloescht }) {
               {abschluss && <input type="checkbox" aria-label={`${terminText(t)} bestätigen`} checked={abschluss.has(t.id)} onChange={() => setAbschluss((a) => { const n = new Set(a); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })} style={{ width: 20, height: 20 }} />}
               <div style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>{terminText(t)}</div>
               {bestaetigt && <Pille text="Bestätigt" farbe="white" grund="#2E7D4F" />}
-              <div style={{ fontSize: 12, fontWeight: 700 }}><span style={{ color: "#2E7D4F" }}>{ja.length} Ja</span> · <span style={{ color: "#C1272D" }}>{nein.length} Nein</span></div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}><span style={{ color: "#2E7D4F" }}>{max ? `${ja.length} von ${max} Plätzen` : `${ja.length} Ja`}</span> · <span style={{ color: "#C1272D" }}>{nein.length} Nein</span></div>
             </div>
-            {u.darfAbstimmen && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>{wahlKnopf(t, "ja", "Ja")}{wahlKnopf(t, "nein", "Nein")}</div>}
-            {(ja.length > 0 || nein.length > 0) && (
+            {max > 0 && (voll || warte.length > 0) && <div style={{ ...klein, marginTop: 4, color: "#9A5B00" }}>{voll ? "Alle Plätze belegt" : ""}{warte.length > 0 ? `${voll ? " · " : ""}${warte.length} auf der Warteliste` : ""}</div>}
+            {meinePlatz > 0 && <div data-testid="meine-warteliste" style={{ fontSize: 12, fontWeight: 700, color: "#9A5B00", marginTop: 4 }}>Du stehst auf der Warteliste (Platz {meinePlatz}).</div>}
+            {u.darfAbstimmen && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>{wahlKnopf(t, "ja", voll && ja.indexOf(me) < 0 ? "Ja (Warteliste)" : "Ja")}{wahlKnopf(t, "nein", "Nein")}</div>}
+            {(ja.length > 0 || nein.length > 0 || warte.length > 0) && (
               <div data-testid="termin-namen" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5 }}>
-                {ja.length > 0 && <div><b style={{ color: "#2E7D4F" }}>Ja:</b> {ja.join(", ")}</div>}
+                {ja.length > 0 && <div><b style={{ color: "#2E7D4F" }}>{max ? "Dabei:" : "Ja:"}</b> {ja.join(", ")}</div>}
+                {warte.length > 0 && <div><b style={{ color: "#9A5B00" }}>Warteliste:</b> {warte.map((n, k) => `${k + 1}. ${n}`).join(", ")}</div>}
                 {nein.length > 0 && <div><b style={{ color: "#C1272D" }}>Nein:</b> {nein.join(", ")}</div>}
               </div>
             )}
