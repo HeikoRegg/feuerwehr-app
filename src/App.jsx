@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, ArrowLeft, Boxes, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Boxes, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -10,6 +10,7 @@ import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
 import { AppContext } from "./AppContext";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
+import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
 import BerichtAnsicht from "./components/BerichtAnsicht";
 
 // Kacheln werden erst geladen, wenn man sie öffnet – so startet die App immer gleich schnell.
@@ -78,6 +79,7 @@ export default function App() {
   const [newMemberName, setNewMemberName] = useState("");
   const [confirmDeleteName, setConfirmDeleteName] = useState(null);
   const [confirmBlock, setConfirmBlock] = useState(null); // { name, gesperrt }
+  const [terminDruck, setTerminDruck] = useState(null); // Jahr für die Terminliste (Dialog offen), sonst null
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loginSearch, setLoginSearch] = useState("");
   const [confirmTargetSearch, setConfirmTargetSearch] = useState("");
@@ -1334,6 +1336,12 @@ export default function App() {
         ))}
       </div>
 
+      {isAdmin && (
+        <div style={{ padding: "0 16px 8px" }}>
+          <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }} onClick={() => setTerminDruck(currentYear())}><Printer size={11} /> Terminliste Einsatzabteilung (PDF)</button>
+        </div>
+      )}
+
       <main style={styles.main}>
         {filtered.length === 0 && (
           <div style={styles.emptyState}>
@@ -1810,6 +1818,26 @@ export default function App() {
         <div style={styles.lightboxBackdrop} onClick={() => setLightboxSrc(null)}>
           <button style={styles.lightboxClose} onClick={() => setLightboxSrc(null)} aria-label="Schließen"><X size={22} color="white" /></button>
           <img src={lightboxSrc} alt="" style={styles.lightboxImg} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
+      {terminDruck && isAdmin && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setTerminDruck(null)}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter" role="dialog" aria-label="Terminliste">
+            <Printer size={22} color="#C1272D" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Terminliste Einsatzabteilung</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 10 }}>Alle Termine der Einsatzabteilung im gewählten Jahr mit Datum, Uhrzeit und Titel – zum Ausdrucken oder Verschicken (z. B. über WhatsApp).</div>
+            <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 6 }}>
+              {[currentYear(), currentYear() + 1].map((j) => (
+                <button key={j} aria-pressed={terminDruck === j} onClick={() => setTerminDruck(j)} style={{ ...styles.categoryChip, flex: 1, justifyContent: "center", background: terminDruck === j ? "#2C2F2A" : "#F3F1EC", color: terminDruck === j ? "white" : "#5C5F58", borderColor: terminDruck === j ? "#2C2F2A" : "#E2DFD6" }}>{j}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 12 }}>{termineDesJahres(events, terminDruck).length} Termine im Jahr {terminDruck}</div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setTerminDruck(null)}>Abbrechen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { const j = terminDruck; if (oeffneBericht(terminlisteModell(events, j))) setTerminDruck(null); else flashError("Bitte Pop-ups für diese Seite erlauben."); }}>Erstellen</button>
+            </div>
+          </div>
         </div>
       )}
 

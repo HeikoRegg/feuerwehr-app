@@ -12,7 +12,7 @@ const maengel = (h) => String(h.zustandText || "").replace(/^nicht funktionsfäh
 const nrSort = (a, b) => String(a.nr || "").localeCompare(String(b.nr || ""), "de", { numeric: true });
 
 // ---------------- Mängelliste ----------------
-export function maengelModell(hydranten, filterText) {
+export function maengelModell(hydranten, filterText, fotos) {
   const liste = hydranten.filter((h) => h.zustand === "mangel" || h.zustand === "defekt")
     .sort((a, b) => (a.zustand === "defekt" ? 0 : 1) - (b.zustand === "defekt" ? 0 : 1) || (a.gruppe || 9) - (b.gruppe || 9) || nrSort(a, b));
   const nDefekt = liste.filter((h) => h.zustand === "defekt").length;
@@ -28,6 +28,12 @@ export function maengelModell(hydranten, filterText) {
     breiten: [1.1, 2.6, 0.9, 1, 1.5, 3.4, 1.8, 1.1],
     zeilen: liste.map((h) => [h.nr, h.lage, h.gruppe ? String(h.gruppe) : "–", leitung(h), zustand(h), maengel(h), letzte(h), ""]),
   });
+  // Fotos der Kontrolle, die den Mangel gemeldet hat: Übersicht oben bleibt, die Bilder folgen darunter.
+  const mitFoto = liste.filter((h) => fotos && fotos[h.id] && fotos[h.id].dataUrl);
+  if (mitFoto.length) {
+    blocks.push({ t: "h2", text: `Fotos (${mitFoto.length})` });
+    blocks.push({ t: "bilder", spalten: 3, items: mitFoto.map((h) => ({ src: fotos[h.id].dataUrl, text: `${h.nr} · ${h.lage} · ${datumDe(fotos[h.id].datum)}` })) });
+  }
   return { titel: "Hydranten – Mängelliste", untertitel: "Hydranten-Kontrolle", dateiname: `Hydranten_Maengel_${dateiDatum()}`, querformat: true, blocks };
 }
 
@@ -133,4 +139,34 @@ export async function kartenBild(map, hydranten) {
     dataUrl = canvas.toDataURL("image/jpeg", 0.88);
   }
   return { dataUrl, breite: canvas.width, hoehe: canvas.height, sichtbar, fehlend: fehlend > 0 };
+}
+
+// ---------------- Fotos für die Mängelliste laden ----------------
+// Holt die Foto-Links vom Server und macht daraus verkleinerte Bilder (data-URL), damit sie im Ausdruck/PDF stehen.
+async function verkleinert(url, maxSeite = 800) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Foto nicht ladbar");
+  const blob = await res.blob();
+  const obj = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = obj; });
+    const s = Math.min(1, maxSeite / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+    const ctx = c.getContext("2d"); ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.8);
+  } finally { URL.revokeObjectURL(obj); }
+}
+export async function ladeMaengelFotos(callAuthed, hydranten) {
+  const ids = hydranten.filter((h) => h.zustand === "mangel" || h.zustand === "defekt").map((h) => h.id);
+  if (!ids.length) return { fotos: {}, fehlend: 0 };
+  const r = await callAuthed("hydranten", { action: "maengelFotos", ids });
+  if (!r.ok) throw new Error((r.data && r.data.error) || "Fotos nicht ladbar");
+  const eintraege = Object.entries(r.data.fotos || {}).slice(0, 80);
+  const fotos = {}; let fehlend = 0;
+  const holen = async ([id, f]) => {
+    try { fotos[id] = { dataUrl: await verkleinert(f.url), datum: f.datum, von: f.von }; } catch (e) { fehlend++; }
+  };
+  for (let i = 0; i < eintraege.length; i += 4) await Promise.all(eintraege.slice(i, i + 4).map(holen)); // je 4 gleichzeitig
+  return { fotos, fehlend };
 }

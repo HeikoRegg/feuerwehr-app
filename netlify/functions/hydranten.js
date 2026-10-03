@@ -6,6 +6,8 @@
 //
 // Rechte (immer frisch aus der Mitgliederliste ermittelt):
 //  - Ansehen, Kontrolle eintragen, Standort erfassen: Einsatzabteilung und alle Verwalter
+//  - Anlegen für alle: Ein Admin kann in der Hydranten-Kachel „Alle dürfen Hydranten anlegen“ einschalten (config.hydrantenAnlegenFuerAlle).
+//    Solange das an ist, darf jeder mit Zugriff neue Hydranten anlegen und die selbst angelegten noch korrigieren. Nach dem Ausschalten nur noch Verwalter.
 //  - Verwalter (Hydranten anlegen, ändern, löschen, Mangel als behoben eintragen, Einträge löschen):
 //    Admins, Kommandant, stellv. Kommandant und Mitglieder mit Haken "Hydranten-Verantwortlicher"
 // Ist ein Hydrant nicht funktionsfähig oder hat er einen Mangel, bekommen alle Verwalter eine Push-Nachricht.
@@ -46,7 +48,9 @@ async function ladeLage(token) {
   const admin = !!(me && me.is_admin);
   const verwalter = admin || !!e.kommandant || !!e.stellvKommandant || !!e.hydrantenwart;
   const einsatz = (e.bereiche || []).includes("einsatzabteilung");
-  return { me, users, roster: liste, config: config || {}, rechte: { verwalter, zugriff: verwalter || einsatz } };
+  // Admin-Schalter in der Hydranten-Kachel: solange er „Ein“ ist, dürfen alle mit Zugriff Hydranten anlegen.
+  const freigabe = !!(config && config.hydrantenAnlegenFuerAlle);
+  return { me, users, roster: liste, config: config || {}, rechte: { verwalter, zugriff: verwalter || einsatz, admin, freigabe, anlegen: verwalter || ((verwalter || einsatz) && freigabe) } };
 }
 // Admins, Kommandant, stellv. Kommandant und Hydranten-Verantwortliche (ohne Absender und gesperrte Mitglieder).
 function verwalterNamen(lage, ausser) {
@@ -187,12 +191,16 @@ export async function handler(event) {
     }
 
     if (action === "save") {
-      nurVerwalter();
       const h = body.hydrant || {};
       const d = saubereStammdaten(h);
       const alle = (await alleHydranten()).map(alsHydrant);
       const alt = h.id ? alle.find((x) => x.id === String(h.id)) : null;
       if (h.id && !alt) return json(404, { error: "Diesen Hydranten gibt es nicht (mehr)." });
+      if (!verwalter) {
+        // Kein Verwalter: nur bei Admin-Freigabe – neu anlegen oder den selbst angelegten Hydranten korrigieren.
+        if (!lage.rechte.freigabe) throw fehler(403, "Hydranten anlegen ist derzeit nur für Admins, Kommandant, Stellvertreter und Hydranten-Verantwortliche freigegeben.");
+        if (alt && alt.angelegtVon !== ich) throw fehler(403, "Diesen Hydranten dürfen nur Verwalter ändern.");
+      }
       const id = alt ? alt.id : neueId();
       if (!d.nr) d.nr = alt && alt.nr ? alt.nr : freieNummer(alle);
       if (alle.some((x) => x.id !== id && String(x.nr || "").toUpperCase() === d.nr)) return json(400, { error: `Die Nummer ${d.nr} gibt es schon.` });
@@ -217,6 +225,25 @@ export async function handler(event) {
       await db.from("hydranten_kontrollen").delete().eq("hydrant", row.id);
       await db.from("hydranten").delete().eq("id", row.id);
       return json(200, { ok: true });
+    }
+
+    // Fotos für die Mängelliste: je Hydrant das Foto der Kontrolle, die den aktuellen Mangel gemeldet hat.
+    if (action === "maengelFotos") {
+      const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 300);
+      if (!ids.length) return json(200, { fotos: {} });
+      const { data, error } = await db.from("hydranten_kontrollen").select("*").in("hydrant", ids);
+      if (error) throw error;
+      const nachHydrant = {};
+      (data || []).forEach((e) => { if (e.art === "kontrolle" || e.art === "behoben") (nachHydrant[e.hydrant] = nachHydrant[e.hydrant] || []).push(e); });
+      const fotos = {};
+      await Promise.all(Object.entries(nachHydrant).map(async ([hid, liste]) => {
+        const neu = liste.slice().sort(neuerZuerst)[0];
+        if (neu && neu.art === "kontrolle" && (neu.data || {}).foto) {
+          const url = await fotoUrl(neu.data.foto);
+          if (url) fotos[hid] = { url, datum: neu.datum, von: neu.von };
+        }
+      }));
+      return json(200, { fotos });
     }
 
     if (action === "uploadUrl") {

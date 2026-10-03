@@ -3,12 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.15";
+export const APP_VERSION = "2.16";
 export const CHANGELOG = [
-  "Hydranten: Leitung (Nennweite DN) bei der Kontrolle erfassen, in Liste, Karte und „Nächster Hydrant“ sichtbar, Filter nach Leitung",
-  "Hydranten: Mangel ohne Pflicht-Text (z. B. Schild fehlt)",
-  "Hydranten: Mängelliste drucken bzw. als PDF, Kartenausschnitt als PDF",
-  "Hydranten-Karte: beim Antippen ein Infofenster mit allen Angaben und Mängeln",
+  "Hydranten: Admins können „Alle dürfen Hydranten anlegen“ ein- und ausschalten – bei „Ein“ darf jeder aus der Einsatzabteilung Hydranten anlegen",
+  "Hydranten: Mängelliste mit Fotos der Kontrolle",
+  "Kalender (Admins): Terminliste der Einsatzabteilung als PDF zum Ausdrucken oder Verschicken",
 ];
 
 export const CATEGORIES = {

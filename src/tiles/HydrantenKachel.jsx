@@ -15,7 +15,7 @@ import {
   istIOS, naechste, naechsteFreieNummer, navigationsLinks, richtung, useStandort, zeitDe, zustandVon,
 } from "../lib/hydranten";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
-import { kartenModell, maengelModell } from "../lib/hydrantenDruck";
+import { kartenModell, ladeMaengelFotos, maengelModell } from "../lib/hydrantenDruck";
 import { useApp } from "../AppContext";
 
 const HydrantenKarte = lazy(() => import("../components/HydrantenKarte"));
@@ -515,7 +515,7 @@ function VerlaufEintrag({ e, verwalter, onLoeschen, setLightboxSrc }) {
 }
 
 function HydrantDetail({ id, liste, rechte, gps, onBack, onAktualisiert, onGeloescht, onKarte }) {
-  const { callAuthed, flashError, setLightboxSrc } = useApp();
+  const { callAuthed, flashError, setLightboxSrc, me } = useApp();
   const [h, setH] = useState(() => liste.find((x) => x.id === id) || null);
   const [verlauf, setVerlauf] = useState(null); const [fehler, setFehler] = useState("");
   const [ebene, setEbene] = useState(null); // kontrolle | standort | setzen | bearbeiten | loeschen | behoben | eintrag
@@ -604,10 +604,10 @@ function HydrantDetail({ id, liste, rechte, gps, onBack, onAktualisiert, onGeloe
         <div>Öffnen: <b>{h.oeffnen || "–"}</b> · Standrohr: <b>{h.standrohr || "–"}</b></div>
         {h.bemerkung && <div>Bemerkung: {h.bemerkung}</div>}
       </div>
-      {rechte.verwalter && (
+      {(rechte.verwalter || (rechte.freigabe && h.angelegtVon === me)) && (
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "6px 9px" }} onClick={() => setEbene("bearbeiten")}><Pencil size={12} /> Bearbeiten</button>
-          <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "6px 9px", color: "#C1272D" }} onClick={() => setEbene("loeschen")}><Trash2 size={12} /> Löschen</button>
+          {rechte.verwalter && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "6px 9px", color: "#C1272D" }} onClick={() => setEbene("loeschen")}><Trash2 size={12} /> Löschen</button>}
         </div>
       )}
 
@@ -657,7 +657,7 @@ function HydrantDetail({ id, liste, rechte, gps, onBack, onAktualisiert, onGeloe
 
 // ---------------- Kachel ----------------
 export default function HydrantenKachel() {
-  const { me, callAuthed, closeKachelView, kachelReturnTo, flashError } = useApp();
+  const { me, callAuthed, closeKachelView, kachelReturnTo, flashError, isAdmin, config, persistConfig } = useApp();
   // Zuletzt geladene Liste sofort zeigen (auch ohne Netz), dann im Hintergrund auffrischen.
   const cacheKey = `hydranten:${me}`;
   const [daten, setDatenRoh] = useState(() => hole(cacheKey));
@@ -707,6 +707,13 @@ export default function HydrantenKachel() {
     />
   );
   const zurListe = () => setView({ name: "liste" });
+  // Admin-Schalter: Alle Einsatzkräfte dürfen Hydranten anlegen (ein / aus). Der Server prüft das bei jedem Speichern.
+  async function anlegenUmschalten() {
+    const neu = !rechte.freigabe;
+    await persistConfig({ ...config, hydrantenAnlegenFuerAlle: neu });
+    setDaten((d) => (d ? { ...d, rechte: { ...d.rechte, freigabe: neu } } : d));
+    setHinweis(neu ? "Freigabe eingeschaltet: Alle aus der Einsatzabteilung dürfen jetzt Hydranten anlegen." : "Freigabe ausgeschaltet: Hydranten anlegen dürfen wieder nur die Verwalter.");
+  }
 
   if (view.name === "detail") return <>
     <HydrantDetail key={view.id} id={view.id} liste={hydranten} rechte={rechte} gps={gps} onBack={() => { setView(view.zurueck || { name: "liste" }); laden(true); }}
@@ -739,12 +746,19 @@ export default function HydrantenKachel() {
   else liste = liste.slice().sort(nrSort);
 
   // Mängelliste: berücksichtigt Gruppe, Leitung und Suche aus der Liste
-  function maengelDrucken() {
+  async function maengelDrucken() {
+    const fenster = bereiteFensterVor(); // PC: Fenster sofort öffnen, sonst blockiert der Browser es nach dem Laden
+    if (fenster) { try { fenster.document.write("<p style='font-family:Arial,sans-serif;padding:24px'>Mängelliste wird erstellt – Fotos werden geladen …</p>"); } catch (e) { /* egal */ } }
     let basis = hydranten.filter((h) => matchesSearch(`${h.nr} ${h.lage} ${h.bemerkung || ""} ${dnText(h)}`, suche));
     if (leitung === "unbekannt") basis = basis.filter((h) => !h.dn); else if (leitung) basis = basis.filter((h) => String(h.dn) === leitung);
     if (gruppe === "keine") basis = basis.filter((h) => !h.gruppe); else if (gruppe) basis = basis.filter((h) => String(h.gruppe) === gruppe);
     const filterText = [gruppe === "keine" ? "ohne Gruppe" : gruppe ? `Gruppe ${gruppe}` : "", leitung === "unbekannt" ? "Leitung unbekannt" : leitung ? `DN ${leitung}` : "", suche ? `Suche „${suche}“` : ""].filter(Boolean).join(" · ");
-    if (!oeffneBericht(maengelModell(basis, filterText))) flashError("Bitte Pop-ups für diese Seite erlauben.");
+    setHinweis("Fotos werden geladen …");
+    let fotos = {};
+    try { fotos = (await ladeMaengelFotos(callAuthed, basis)).fotos; }
+    catch (e) { flashError("Die Fotos konnten nicht geladen werden – die Liste wird ohne Fotos erstellt."); }
+    setHinweis("");
+    if (!oeffneBericht(maengelModell(basis, filterText, fotos), fenster)) flashError("Bitte Pop-ups für diese Seite erlauben.");
   }
   const chip = (k, t) => <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} style={{ ...styles.kontrollTab, ...(filter === k ? { background: "#2C2F2A", color: "white", border: "1.5px solid #2C2F2A" } : {}), fontSize: 12, padding: "5px 10px" }}>{t}</button>;
 
@@ -763,9 +777,19 @@ export default function HydrantenKachel() {
             <button style={knopf} onClick={() => setView({ name: "karte" })}><KarteIcon size={16} /> Karte</button>
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-            {rechte.verwalter && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 9px" }} onClick={() => setView({ name: "neu" })}><Plus size={11} /> Hydrant anlegen</button>}
+            {rechte.anlegen && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 9px" }} onClick={() => setView({ name: "neu" })}><Plus size={11} /> Hydrant anlegen</button>}
             <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 9px" }} onClick={maengelDrucken}><Printer size={11} /> Mängelliste drucken / PDF</button>
           </div>
+          {(isAdmin || rechte.admin) && (
+            <div data-testid="anlegen-freigabe" style={{ ...styles.capacityBox, display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>Alle dürfen Hydranten anlegen</div>
+                <div style={klein}>{rechte.freigabe ? "Eingeschaltet: Jeder aus der Einsatzabteilung kann Hydranten anlegen (und die selbst angelegten korrigieren)." : "Ausgeschaltet: Hydranten anlegen nur Verwalter."}</div>
+              </div>
+              <button aria-pressed={!!rechte.freigabe} aria-label="Alle dürfen Hydranten anlegen" onClick={anlegenUmschalten}
+                style={{ ...styles.tinyBtn, fontWeight: 700, fontSize: 12, padding: "7px 14px", background: rechte.freigabe ? "#1F6F5C" : "#F3F1EC", color: rechte.freigabe ? "white" : "#5C5F58", borderColor: rechte.freigabe ? "#1F6F5C" : "#E2DFD6" }}>{rechte.freigabe ? "EIN" : "AUS"}</button>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
             {chip("alle", `Alle (${hydranten.length})`)}
             {chip("nie", `Nie kontrolliert (${zaehler.nie})`)}
@@ -790,7 +814,7 @@ export default function HydrantenKachel() {
           <SearchBox value={suche} onChange={setSuche} placeholder="Nummer oder Straße suchen …" />
           {hydranten.length === 0 && (
             <div style={{ ...styles.capacityBox, fontSize: 13, lineHeight: 1.5 }}>
-              Es sind noch keine Hydranten angelegt.{rechte.verwalter ? " Die Liste aus der Kontrolle 2018 wird mit dem SQL aus der Update-Anleitung eingespielt – oder lege Hydranten einzeln an." : ""}
+              Es sind noch keine Hydranten angelegt.{rechte.anlegen && !rechte.verwalter ? " Du kannst Hydranten über „Hydrant anlegen“ eintragen." : ""}{rechte.verwalter ? " Die Liste aus der Kontrolle 2018 wird mit dem SQL aus der Update-Anleitung eingespielt – oder lege Hydranten einzeln an." : ""}
             </div>
           )}
           <div style={{ ...klein, margin: "4px 0 6px" }}>{liste.length} {liste.length === 1 ? "Eintrag" : "Einträge"}</div>

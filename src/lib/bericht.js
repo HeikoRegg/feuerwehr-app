@@ -11,6 +11,8 @@
 //  { t: "kpis", items: [{ value, label }] }
 //  { t: "balken", zeilen: [{ label, value, max, color, rechts, unter? }] }
 //  { t: "felder", items: [{ label, value }] }          – Angaben paarweise nebeneinander (z. B. Kopf eines Einsatzberichts)
+//  Optional am Modell: fuss: "Text" – steht unten auf jeder Seite (z. B. Hinweis „Änderungen jederzeit möglich“)
+//  { t: "bilder", items: [{ src: dataUrl, text? }], spalten? }   – mehrere kleine Fotos nebeneinander (Standard 3 Spalten) mit Bildunterschrift
 //  { t: "bild", src: dataUrl, text?, gross? }            – Foto (JPEG/PNG als data-URL); gross = so groß wie die Seite erlaubt (z. B. Karte)
 import { LION_ICON } from "./icons";
 import { DRUCK_NAME } from "./constants";
@@ -74,6 +76,10 @@ function blockHtml(b) {
       return `<div style="display:flex;flex-wrap:wrap;column-gap:24px;margin:8px 0;">${zellen}</div>`;
     }
     case "bild": return `<div style="margin:10px 0;page-break-inside:avoid;"><img src="${b.src}" alt="" style="max-width:100%;max-height:${b.gross ? "160mm" : "420px"};border:1px solid #E2DFD6;border-radius:4px;"/>${b.text ? `<div style="font-size:11px;color:#8A8C86;">${esc(b.text)}</div>` : ""}</div>`;
+    case "bilder": {
+      const n = b.spalten || 3;
+      return `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;">${b.items.map((i) => `<div style="width:calc(${(100 / n).toFixed(3)}% - ${Math.round(10 * (n - 1) / n)}px);page-break-inside:avoid;"><img src="${i.src}" alt="" style="width:100%;max-height:200px;object-fit:contain;object-position:left top;border:1px solid #E2DFD6;border-radius:4px;"/>${i.text ? `<div style="font-size:10.5px;color:#5C5F58;">${esc(i.text)}</div>` : ""}</div>`).join("")}</div>`;
+    }
     default: return "";
   }
 }
@@ -82,9 +88,10 @@ export function berichtHtml(modell, { vorschau = false } = {}) {
   const knoepfe = vorschau ? "" : `<button class="no-print" onclick="try{window.close()}catch(e){};setTimeout(function(){location.href='/'},300)" style="position:fixed;top:14px;right:14px;z-index:10;background:#2C2F2A;color:white;border:none;border-radius:20px;padding:9px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.25);">✕ Schließen</button>
 <button class="no-print" onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#C1272D;color:white;border:none;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;box-shadow:0 3px 10px rgba(0,0,0,0.25);">🖨️ Drucken / Als PDF sichern</button>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(modell.titel)}</title>
-<style>html,body{-webkit-text-size-adjust:100%;text-size-adjust:100%;} body{font-family:Arial,sans-serif;max-width:${modell.querformat ? 1000 : 800}px;margin:${vorschau ? 12 : 24}px auto;padding:0 16px ${vorschau ? 20 : 70}px;color:#2C2F2A;line-height:1.4;} @media print{.no-print{display:none !important;} @page{size:A4 ${modell.querformat ? "landscape" : "portrait"};}} @media screen{body{padding-top:${vorschau ? 0 : 46}px;}}</style></head><body>${knoepfe}
+<style>html,body{-webkit-text-size-adjust:100%;text-size-adjust:100%;} body{font-family:Arial,sans-serif;max-width:${modell.querformat ? 1000 : 800}px;margin:${vorschau ? 12 : 24}px auto;padding:0 16px ${vorschau ? 20 : 70}px;color:#2C2F2A;line-height:1.4;} .fuss{margin-top:22px;padding-top:8px;border-top:1px solid #E2DFD6;font-size:12px;font-weight:700;color:#5C5F58;text-align:center;} @media print{.fuss{position:fixed;left:0;right:0;bottom:0;margin:0;padding:6px 16px;background:#fff;} ${modell.fuss ? "body{padding-bottom:50px !important;} " : ""}.no-print{display:none !important;} @page{size:A4 ${modell.querformat ? "landscape" : "portrait"};}} @media screen{body{padding-top:${vorschau ? 0 : 46}px;}}</style></head><body>${knoepfe}
 <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #C1272D;padding-bottom:12px;"><img src="${druckLogo}" alt="" style="height:50px;width:auto;max-width:140px;object-fit:contain;"/><div><div style="font-size:17px;font-weight:700;letter-spacing:0.02em;">${esc(DRUCK_NAME.toUpperCase())}</div><div style="font-size:12px;color:#8A8C86;">${esc(modell.untertitel || modell.titel)}</div></div></div>
 ${modell.blocks.map(blockHtml).join("\n")}
+${modell.fuss ? `<div class="fuss">${esc(modell.fuss)}</div>` : ""}
 </body></html>`;
 }
 
@@ -231,6 +238,28 @@ export async function berichtPdf(modell) {
         if (b.text) { schreibe(b.text, M, y - 8, reg, 8, GRAU); y -= 12; }
       } catch (e) { textBlock("(Foto konnte nicht eingefügt werden)", ital, 8.5, GRAU); }
     }
+    else if (b.t === "bilder") {
+      const n = b.spalten || 3, gap = 10, cw = (BREITE - gap * (n - 1)) / n, maxH = 150;
+      for (let i = 0; i < b.items.length; i += n) {
+        const reihe = [];
+        for (const it of b.items.slice(i, i + n)) {
+          try {
+            const l = await logoBytes(it.src);
+            const img = l.png ? await doc.embedPng(l.bytes) : await doc.embedJpg(l.bytes);
+            const sc = Math.min(cw / img.width, maxH / img.height);
+            reihe.push({ img, w: img.width * sc, h: img.height * sc, z: umbrechen(it.text || "", reg, 7.5, cw).slice(0, 2) });
+          } catch (e) { reihe.push({ img: null, w: 0, h: 20, z: umbrechen(`${it.text || ""} (Foto nicht lesbar)`, reg, 7.5, cw).slice(0, 2) }); }
+        }
+        const rh = Math.max(...reihe.map((r) => r.h)) + 6 + 2 * 10 + 6;
+        platz(rh);
+        reihe.forEach((r, k) => {
+          const x = M + k * (cw + gap);
+          if (r.img) page.drawImage(r.img, { x, y: y - r.h, width: r.w, height: r.h });
+          r.z.forEach((t, j) => schreibe(t, x, y - r.h - 10 - j * 10, reg, 7.5, DUNKELGRAU));
+        });
+        y -= rh;
+      }
+    }
     else if (b.t === "tabelle") {
       const n = b.kopf.length; const anteile = b.breiten && b.breiten.length === n ? b.breiten : Array(n).fill(1);
       const summe = anteile.reduce((s, x) => s + x, 0); const bw = anteile.map((a) => (a / summe) * BREITE);
@@ -267,6 +296,7 @@ export async function berichtPdf(modell) {
   seiten.forEach((p, i) => {
     const t = sauber(`${modell.titel || "Bericht"} · ${heute} · Seite ${i + 1} von ${seiten.length}`, reg);
     p.drawText(t, { x: M, y: 24, size: 7.5, font: reg, color: GRAU });
+    if (modell.fuss) { const f = sauber(modell.fuss, bold); const fw = bold.widthOfTextAtSize(f, 8.5); p.drawText(f, { x: Math.max(M, (W - fw) / 2), y: 36, size: 8.5, font: bold, color: DUNKELGRAU }); }
   });
   const bytes = await doc.save();
   return new File([bytes], dateiname(modell), { type: "application/pdf" });
