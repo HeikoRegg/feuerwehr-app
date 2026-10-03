@@ -239,7 +239,7 @@ function Detail({ u, onBack, onNeuLaden, onGeloescht }) {
 
 // ---------------- Kachel ----------------
 export default function UmfrageKachel() {
-  const { me, callAuthed, closeKachelView, kachelReturnTo } = useApp();
+  const { me, callAuthed, closeKachelView, kachelReturnTo, ladeUmfrageStatus } = useApp();
   const cacheKey = `umfragen:${me}`;
   const [daten, setDaten] = useState(() => hole(cacheKey));
   const [fehler, setFehler] = useState("");
@@ -247,7 +247,7 @@ export default function UmfrageKachel() {
   const [archiv, setArchiv] = useState(false);
   async function laden() {
     const r = await callAuthed("umfrage", { action: "list" });
-    if (r.ok) { setDaten(r.data); merke(cacheKey, r.data); setFehler(""); }
+    if (r.ok) { setDaten(r.data); merke(cacheKey, r.data); setFehler(""); if (ladeUmfrageStatus) ladeUmfrageStatus(); } // Zahl am Symbol „Funktionen“ aktualisieren
     else if (r.data.error === "abgebrochen") { if (!daten) closeKachelView(); }
     else setFehler(r.data.error || "Die Umfragen konnten nicht geladen werden.");
   }

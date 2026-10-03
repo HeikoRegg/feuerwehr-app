@@ -25,7 +25,7 @@ export async function handler(event) {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   try {
-    const { bereich, title, text, sender, an } = JSON.parse(event.body || "{}");
+    const { bereich, title, text, sender, an, url } = JSON.parse(event.body || "{}");
     if (!bereich && !Array.isArray(an)) return { statusCode: 400, body: "bereich fehlt" };
 
     const roster = (await getKv("roster")) || [];
@@ -49,6 +49,7 @@ export async function handler(event) {
         title: title || "Neue Mitteilung",
         body: (text || "").slice(0, 180),
         badge,
+        ...(typeof url === "string" && url.startsWith("/") ? { url } : {}), // Ziel beim Antippen (z. B. direkt in eine Kachel)
       });
       try {
         await webpush.sendNotification(sub.subscription, payload);

@@ -57,10 +57,11 @@ async function ladeLage(token) {
     darfVerwalten: (name, bereich) => !!name && !gesperrt.has(name) && (adminVon(name) || !!((eintrag(name).rechte || {})[bereich] || {}).calendar),
   };
 }
+const ZIEL_URL = "/?kachel=umfragen";
 async function push(an, title, text, sender) {
   const ziel = [...new Set(an)].filter(Boolean);
   if (!ziel.length) return;
-  try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an: ziel, title, text, sender }) }); } catch (e) { /* Push ist Zusatz – die Umfrage ist gespeichert */ }
+  try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an: ziel, title, text, sender, url: ZIEL_URL }) }); } catch (e) { /* Push ist Zusatz – die Umfrage ist gespeichert */ }
 }
 const alsUmfrage = (row) => ({ ...(row.data || {}), id: row.id });
 
@@ -137,6 +138,16 @@ export async function handler(event) {
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));
     const meineVerwalten = BEREICHE.filter((b) => lage.darfVerwalten(ich, b));
     const { action } = body;
+
+    // ---------------- Zahl für das Symbol: offene Umfragen, bei denen ich noch nicht abgestimmt habe ----------------
+    if (action === "anzahl") {
+      const offen = (await alleUmfragen()).map(alsUmfrage).filter((u) => u.status === "offen" && lage.istMitglied(ich, u.bereich) && !(u.abstimmenBis && u.abstimmenBis < heute()));
+      if (!offen.length) return json(200, { offen: 0 });
+      const { data, error } = await db.from("terminumfragen_stimmen").select("umfrage").eq("name", ich).in("umfrage", offen.map((u) => u.id));
+      if (error) throw error;
+      const abgestimmt = new Set((data || []).map((s) => s.umfrage));
+      return json(200, { offen: offen.filter((u) => !abgestimmt.has(u.id)).length });
+    }
 
     // ---------------- Liste ----------------
     if (action === "list") {

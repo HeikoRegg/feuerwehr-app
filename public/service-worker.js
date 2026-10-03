@@ -15,6 +15,7 @@ self.addEventListener("push", (event) => {
       body: data.body || "",
       icon: "/icon-192.png",
       badge: "/icon-192.png",
+      data: { url: typeof data.url === "string" ? data.url : "/" },
     }),
   ];
   if (typeof data.badge === "number" && self.navigator && "setAppBadge" in self.navigator) {
@@ -24,12 +25,17 @@ self.addEventListener("push", (event) => {
 });
 
 self.addEventListener("notificationclick", (event) => {
+  const ziel = (event.notification.data && event.notification.data.url) || "/";
   event.notification.close();
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of allClients) {
-      if ("focus" in client) return client.focus();
+      if ("focus" in client) {
+        // App läuft schon: Ziel (z. B. Kachel) per Nachricht übergeben
+        try { client.postMessage({ type: "oeffne", url: ziel }); } catch (e) {}
+        return client.focus();
+      }
     }
-    if (self.clients.openWindow) return self.clients.openWindow("/");
+    if (self.clients.openWindow) return self.clients.openWindow(ziel);
   })());
 });

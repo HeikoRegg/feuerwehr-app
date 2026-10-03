@@ -41,6 +41,7 @@ const GeraeteKachel = lazy(kachelImporte.geraete);
 const HydrantenKachel = lazy(kachelImporte.hydranten);
 const UmfrageKachel = lazy(kachelImporte.umfragen);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
+const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" ? k : null; } catch (e) { return null; } })();
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
@@ -103,6 +104,7 @@ export default function App() {
   const [showStatistik, setShowStatistik] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [chatUngelesen, setChatUngelesen] = useState(0);
+  const [umfrageOffen, setUmfrageOffen] = useState(0); // offene Terminumfragen, bei denen ich noch nicht abgestimmt habe
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showGeraete, setShowGeraete] = useState(false);
   const [showHydranten, setShowHydranten] = useState(false);
@@ -302,13 +304,22 @@ export default function App() {
     if (r.ok && r.data && Array.isArray(r.data.threads)) merke(`chat:${me}`, r.data); // die Kachel zeigt diese Liste gleich beim Öffnen
     if (r.ok && r.data && Array.isArray(r.data.threads)) setChatUngelesen(r.data.threads.reduce((summe, t) => summe + (t.ungelesen || 0), 0));
   }
+  // Zahl offener, noch nicht beantworteter Terminumfragen (Symbol „Funktionen“ und Kachel)
+  async function ladeUmfrageStatus() {
+    if (!me || !kachelAn("umfragen")) { setUmfrageOffen(0); return; }
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return;
+    const r = await callServer("umfrage", { action: "anzahl", token });
+    if (r.ok && r.data && typeof r.data.offen === "number") setUmfrageOffen(r.data.offen);
+  }
   useEffect(() => {
     if (phase !== "app" || !me) return;
     const start = setTimeout(ladeChatStatus, 1500);
-    const t = setInterval(() => { if (document.visibilityState === "visible") ladeChatStatus(); }, 180000);
-    const onVis = () => { if (document.visibilityState === "visible") ladeChatStatus(); };
+    const start2 = setTimeout(ladeUmfrageStatus, 2200);
+    const t = setInterval(() => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); } }, 180000);
+    const onVis = () => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); } };
     document.addEventListener("visibilitychange", onVis);
-    return () => { clearTimeout(start); clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+    return () => { clearTimeout(start); clearTimeout(start2); clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [phase, me]);
   // QR-Code am Gerät gescannt: nach der Anmeldung direkt das Gerät öffnen.
   const startGeraetErledigt = useRef(false);
@@ -319,6 +330,28 @@ export default function App() {
     if (darfGeraete) { setGeraeteStartId(START_GERAET); setKachelReturnTo("calendar"); setShowGeraete(true); }
     else flashError(kachelAn("geraete") ? "Die Geräteprüfung ist für die Einsatzabteilung." : "Die Kachel „Geräte“ ist derzeit für die ganze Feuerwehr gesperrt.");
   }, [phase, me]);
+  // Auf eine Umfrage-Benachrichtigung getippt: direkt in die Kachel (App gestartet mit ?kachel=umfragen oder schon offen → Nachricht vom Service Worker)
+  function oeffneUmfragenAusPush() {
+    if (!kachelAn("umfragen")) { flashError("Die Kachel „Terminumfragen“ ist derzeit für die ganze Feuerwehr gesperrt."); return; }
+    closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowUmfragen(true);
+  }
+  const oeffneUmfragenRef = useRef(null); oeffneUmfragenRef.current = oeffneUmfragenAusPush;
+  const startKachelErledigt = useRef(false);
+  useEffect(() => {
+    if (phase !== "app" || !me || !START_KACHEL || startKachelErledigt.current) return;
+    startKachelErledigt.current = true;
+    try { window.history.replaceState(null, "", window.location.pathname); } catch (e) {}
+    oeffneUmfragenRef.current();
+  }, [phase, me]);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMsg = (e) => {
+      const d = e && e.data;
+      if (d && d.type === "oeffne" && typeof d.url === "string" && /[?&]kachel=umfragen/.test(d.url) && oeffneUmfragenRef.current) oeffneUmfragenRef.current();
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, []);
   function closeKachelView() {
     setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
@@ -1088,7 +1121,7 @@ export default function App() {
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
-  Object.assign(appCtx, { geraeteStartId, setGeraeteStartId, ladeChatStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
+  Object.assign(appCtx, { geraeteStartId, setGeraeteStartId, ladeChatStatus, ladeUmfrageStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
@@ -1207,7 +1240,7 @@ export default function App() {
             {me && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
-                {neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
+                {umfrageOffen > 0 && kachelAn("umfragen") ? <span data-testid="funktionen-zahl" style={styles.chatHeaderBadge}>{umfrageOffen > 9 ? "9+" : umfrageOffen}</span> : neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
               </button>
             )}
             {isAdmin && <button style={styles.settingsBtn} onClick={() => { setKachelReturnTo("calendar"); setShowSettings(true); }} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
@@ -1541,6 +1574,7 @@ export default function App() {
               <button style={styles.tile} onClick={openTileUmfragen}>
                 <CalendarCheck size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Terminumfragen</span>
+                {umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span>}
               </button>
             )}
             {kachelAn("jugend") && (isJugendwart || isAdmin) && (
