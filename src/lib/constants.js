@@ -3,10 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.21";
+export const APP_VERSION = "2.22";
 export const CHANGELOG = [
-  "Terminumfragen: neue Art „Jeder nur einmal einteilen“ (z. B. Streckendurchgang) – die App verteilt jeden auf genau einen Termin, der Vorschlag lässt sich von Hand ändern",
-  "Bei offenen Umfragen lassen sich „Max. Personen“ ändern und Termine als „nicht mehr frei“ markieren",
+  "Terminumfragen: Erinnerung am Vortag um 18 Uhr an alle, die noch nicht abgestimmt haben – der Ersteller bekommt nach Fristende eine Info",
+  "G26: Arzt direkt aus der App anrufen, zweiter Arzt eintragbar",
+  "Personalakte: Telefonnummern und E-Mail-Adressen antippen zum Anrufen bzw. Schreiben",
 ];
 
 export const CATEGORIES = {

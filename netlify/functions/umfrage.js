@@ -242,6 +242,47 @@ async function umfrageLoeschen(id) {
   await db.from("terminumfragen").delete().eq("id", id);
 }
 
+// ---------------- Zeitgesteuert (stündlich, siehe umfrage-erinnerung.js) ----------------
+// 1. Am Vortag von „Abstimmen bis“ ab 18 Uhr: Erinnerung an alle Bereichsmitglieder, die noch nicht abgestimmt haben (einmal je Umfrage).
+// 2. Ab 8 Uhr am Morgen nach Fristende: Info an den Ersteller mit „x von y haben abgestimmt“ (einmal je Umfrage, höchstens 7 Tage nach Fristende).
+const berlinTeile = (d) => {
+  const t = Object.fromEntries(new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { datum: `${t.year}-${t.month}-${t.day}`, stunde: Number(t.hour) };
+};
+const tagPlus = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+export async function pruefeErinnerungen(jetzt = new Date()) {
+  const { datum, stunde } = berlinTeile(jetzt);
+  const lage = await ladeLage(null);
+  const aus = Array.isArray(lage.config.kachelnAus) ? lage.config.kachelnAus : [];
+  if (aus.includes("umfragen")) return { erinnert: 0, info: 0 };
+  const zeilen = (await alleUmfragen()).filter((r) => (r.data || {}).status === "offen" && (r.data || {}).abstimmenBis);
+  let erinnert = 0, info = 0;
+  for (const row of zeilen) {
+    const u = alsUmfrage(row);
+    const vortag = tagPlus(u.abstimmenBis, -1);
+    const erinnern = !u.erinnertAm && datum === vortag && stunde >= 18;
+    const ende = !u.endeInfoAm && datum > u.abstimmenBis && datum <= tagPlus(u.abstimmenBis, 7) && (datum > tagPlus(u.abstimmenBis, 1) || stunde >= 8);
+    if (!erinnern && !ende) continue;
+    const stimmen = await stimmenLaden([u.id]);
+    const abgestimmt = new Set(stimmen.map((s) => s.name));
+    const mitglieder = lage.roster.filter((r) => r && (r.bereiche || []).includes(u.bereich) && !lage.gesperrt.has(r.name)).map((r) => r.name);
+    const data = { ...(row.data || {}) };
+    if (erinnern) {
+      const offen = [...new Set([...mitglieder, ...lage.users.filter((x) => x.is_admin && !x.blocked).map((x) => x.name)])].filter((n) => lage.istMitglied(n, u.bereich) && !abgestimmt.has(n));
+      await push(offen, `Erinnerung: ${u.titel}`, `Die Abstimmung endet morgen – bitte noch abstimmen${u.modus === "einteilung" ? " (alle Tage angeben, an denen du kannst)" : ""}.`, "");
+      data.erinnertAm = jetzt.toISOString(); erinnert++;
+    }
+    if (ende) {
+      const x = mitglieder.filter((n) => abgestimmt.has(n)).length;
+      if (u.erstelltVon && !lage.gesperrt.has(u.erstelltVon)) await push([u.erstelltVon], `Abstimmung beendet: ${u.titel}`, `${x} von ${mitglieder.length} haben abgestimmt – jetzt ${u.modus === "einteilung" ? "einteilen" : "abschließen"}.`, "");
+      data.endeInfoAm = jetzt.toISOString(); info++;
+    }
+    const { error } = await db.from("terminumfragen").upsert({ ...row, data, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  }
+  return { erinnert, info };
+}
+
 export async function handler(event) {
   if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
   let body = {};

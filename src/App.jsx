@@ -7,7 +7,7 @@ import { allesVergessen, merke } from "./lib/zwischenspeicher";
 import { BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
-import { EventCard, HeroCard, SearchBox, TabBtn } from "./components/Shared";
+import { EventCard, HeroCard, SearchBox, TabBtn, ArztKontakt } from "./components/Shared";
 import { AppContext } from "./AppContext";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
 import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
@@ -1296,9 +1296,7 @@ export default function App() {
               <AlertTriangle size={16} color="#B8791A" style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1, cursor: r.target ? "pointer" : "default" }} onClick={() => { if (r.target) { setKachelReturnTo("calendar"); if (r.target === "bewegung") setShowBewegung(true); else setShowKontrollen(r.target); } }}>
                 <div style={styles.reminderText}>{r.text}</div>
-                {r.doctor && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
-                  <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
-                )}
+                {r.doctor && config && <ArztKontakt config={config} />}
               </div>
               <button style={styles.reminderOk} onClick={() => setDismissedReminders({ ...dismissedReminders, [r.key]: true })}>OK</button>
             </div>

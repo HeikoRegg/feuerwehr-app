@@ -4,6 +4,7 @@ import { ATEMSCHUTZ_UEBUNG_TYPES } from "../lib/constants";
 import { atemschutzStatus, daysSince, fmtDate, todayISO } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { useApp } from "../AppContext";
+import { ArztKontakt } from "../components/Shared";
 
 // Kachel Atemschutz: G26.3, Streckendurchgang, Übung, Unterweisung, Admin-Übersicht
 export default function AtemschutzKachel() {
@@ -22,9 +23,7 @@ export default function AtemschutzKachel() {
                         <button style={{ ...styles.saveBtn, flex: "none", padding: "0 14px" }} onClick={() => g26DateInput && saveG26Date(g26DateInput)}><Check size={15} /></button>
                       </div>
                     )}
-                    {g26ReminderActive(myEntry) && config && (config.doctorName || config.doctorAddress || config.doctorPhone) && (
-                      <div style={styles.reminderDoctor}>{config.doctorName} {config.doctorAddress && `· ${config.doctorAddress}`} {config.doctorPhone && `· Tel. ${config.doctorPhone}`}</div>
-                    )}
+                    {config && <ArztKontakt config={config} />}
                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #E2DFD6" }}>
                       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>NACHWEIS-FOTO (nur du und Admin sehen das)</div>
                       {myEntry.g26.photoUrl ? (
@@ -104,6 +103,10 @@ export default function AtemschutzKachel() {
                     <input key={`docname-${config.doctorName}`} style={styles.input} placeholder="Name des Arztes" defaultValue={config.doctorName || ""} onBlur={(e) => { if (e.target.value !== config.doctorName) persistConfig({ ...config, doctorName: e.target.value }); }} />
                     <input key={`docaddr-${config.doctorAddress}`} style={{ ...styles.input, marginTop: 6 }} placeholder="Adresse" defaultValue={config.doctorAddress || ""} onBlur={(e) => { if (e.target.value !== config.doctorAddress) persistConfig({ ...config, doctorAddress: e.target.value }); }} />
                     <input key={`docphone-${config.doctorPhone}`} style={{ ...styles.input, marginTop: 6 }} placeholder="Telefonnummer" defaultValue={config.doctorPhone || ""} onBlur={(e) => { if (e.target.value !== config.doctorPhone) persistConfig({ ...config, doctorPhone: e.target.value }); }} />
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "12px 0 6px", letterSpacing: "0.04em" }}>2. ARZT (OPTIONAL)</div>
+                    <input key={`doc2name-${config.doctor2Name}`} style={styles.input} placeholder="Name des 2. Arztes" aria-label="Name des 2. Arztes" defaultValue={config.doctor2Name || ""} onBlur={(e) => { if (e.target.value !== (config.doctor2Name || "")) persistConfig({ ...config, doctor2Name: e.target.value }); }} />
+                    <input key={`doc2addr-${config.doctor2Address}`} style={{ ...styles.input, marginTop: 6 }} placeholder="Adresse" aria-label="Adresse des 2. Arztes" defaultValue={config.doctor2Address || ""} onBlur={(e) => { if (e.target.value !== (config.doctor2Address || "")) persistConfig({ ...config, doctor2Address: e.target.value }); }} />
+                    <input key={`doc2phone-${config.doctor2Phone}`} style={{ ...styles.input, marginTop: 6 }} type="tel" placeholder="Telefonnummer" aria-label="Telefon des 2. Arztes" defaultValue={config.doctor2Phone || ""} onBlur={(e) => { if (e.target.value !== (config.doctor2Phone || "")) persistConfig({ ...config, doctor2Phone: e.target.value }); }} />
                     <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 4 }}>Wird beim Verlassen des Feldes gespeichert.</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", margin: "16px 0 6px", letterSpacing: "0.04em" }}>ATEMSCHUTZTRÄGER ÜBERSICHT</div>
                     {roster.filter((r) => r.atemschutz).map((r) => {

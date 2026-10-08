@@ -5,6 +5,10 @@
 [functions]
   directory = "netlify/functions"
 
+# Terminumfragen: Erinnerung vor Fristende und Info an den Ersteller - stuendlich (kein neuer Publish)
+[functions."umfrage-erinnerung"]
+  schedule = "@hourly"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

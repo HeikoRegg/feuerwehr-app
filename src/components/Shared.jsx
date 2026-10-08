@@ -6,6 +6,41 @@ import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadco
 import { styles } from "../lib/styles";
 
 // Einfache Liste zum Pflegen von Auswahlwerten (Ränge, Funktionen) in den Einstellungen.
+// Telefonnummer / E-Mail antippbar machen (iPhone fragt vor dem Anrufen nach)
+export const telHref = (nr) => { const s = String(nr || "").replace(/[^0-9+]/g, ""); return s.length >= 3 ? `tel:${s}` : null; };
+export const mailHref = (m) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(m || "").trim()) ? `mailto:${String(m).trim()}` : null);
+const kontaktKnopf = { display: "inline-flex", alignItems: "center", gap: 4, background: "#2E7D4F", color: "white", borderRadius: 14, padding: "4px 10px", fontSize: 12, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" };
+export function AnrufKnopf({ nummer, text = "Anrufen" }) {
+  const href = telHref(nummer); if (!href) return null;
+  return <a href={href} onClick={(e) => e.stopPropagation()} style={kontaktKnopf} aria-label={`${text}: ${nummer}`}>📞 {text}</a>;
+}
+export function MailKnopf({ adresse, text = "E-Mail" }) {
+  const href = mailHref(adresse); if (!href) return null;
+  return <a href={href} onClick={(e) => e.stopPropagation()} style={{ ...kontaktKnopf, background: "#4A6670" }} aria-label={`${text}: ${adresse}`}>✉️ {text}</a>;
+}
+// G26-Ärzte (bis zu zwei) aus den Einstellungen, jeweils mit Anruf-Knopf
+export function aerzteAus(config) {
+  const c = config || {};
+  return [
+    { name: c.doctorName, adresse: c.doctorAddress, telefon: c.doctorPhone },
+    { name: c.doctor2Name, adresse: c.doctor2Address, telefon: c.doctor2Phone },
+  ].filter((a) => a.name || a.adresse || a.telefon);
+}
+export function ArztKontakt({ config }) {
+  const aerzte = aerzteAus(config);
+  if (!aerzte.length) return null;
+  return (
+    <div data-testid="arzt-kontakt">
+      {aerzte.map((a, i) => (
+        <div key={i} style={{ ...styles.reminderDoctor, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+          <span style={{ flex: "1 1 160px" }}>{[a.name, a.adresse, a.telefon ? `Tel. ${a.telefon}` : ""].filter(Boolean).join(" · ")}</span>
+          <AnrufKnopf nummer={a.telefon} text={aerzte.length > 1 ? `${i + 1}. Arzt anrufen` : "Arzt anrufen"} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SimpleListEditor({ items, onChange, placeholder, locked = [] }) {
   const [input, setInput] = useState("");
   const add = () => { const t = input.trim(); if (!t || items.includes(t)) return; onChange([...items, t]); setInput(""); };

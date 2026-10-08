@@ -5,7 +5,7 @@ import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, MASCHINIST_LEHR
 import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, geschlechtsForm, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
-import { SearchBox } from "../components/Shared";
+import { SearchBox, AnrufKnopf, MailKnopf } from "../components/Shared";
 
 // ============================================================================
 // Personalakte – sichtbar nur für die Person selbst und den Admin.
@@ -72,7 +72,10 @@ export function AkteSection({ title, children, adminOnly }) {
 export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder }) {
   return (
     <div style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>{label}
+        {type === "tel" && value && <AnrufKnopf nummer={value} />}
+        {type === "email" && value && <MailKnopf adresse={value} text="Schreiben" />}
+      </div>
       {readOnly ? (
         <div style={{ fontSize: 13, color: "#2C2F2A", minHeight: 18 }}>{type === "date" ? fmtDate(value) : (value || "—")}</div>
       ) : type === "textarea" ? (
