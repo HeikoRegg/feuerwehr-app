@@ -9,14 +9,32 @@ import { styles } from "../lib/styles";
 // Telefonnummer / E-Mail antippbar machen (iPhone fragt vor dem Anrufen nach)
 export const telHref = (nr) => { const s = String(nr || "").replace(/[^0-9+]/g, ""); return s.length >= 3 ? `tel:${s}` : null; };
 export const mailHref = (m) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(m || "").trim()) ? `mailto:${String(m).trim()}` : null);
-const kontaktKnopf = { display: "inline-flex", alignItems: "center", gap: 4, background: "#2E7D4F", color: "white", borderRadius: 14, padding: "4px 10px", fontSize: 12, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" };
-export function AnrufKnopf({ nummer, text = "Anrufen" }) {
+const kontaktKnopf = { display: "inline-flex", alignItems: "center", gap: 4, background: "linear-gradient(180deg, #6CB8EC 0%, #3D97D6 100%)", color: "white", border: "none", borderBottom: "3px solid #2A73A8", borderRadius: 14, padding: "4px 11px 3px", textDecoration: "none", whiteSpace: "nowrap", boxShadow: "0 2px 5px rgba(0,0,0,0.18)", cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 700 };
+// Anruf-Knopf (hellblau) – vor dem Wählen fragt die App nach: „Möchtest du … anrufen?“
+export function AnrufKnopf({ nummer, text = "Anrufen", name }) {
+  const [frage, setFrage] = useState(false);
   const href = telHref(nummer); if (!href) return null;
-  return <a href={href} onClick={(e) => e.stopPropagation()} style={kontaktKnopf} aria-label={`${text}: ${nummer}`}>📞 {text}</a>;
+  return (
+    <>
+      <button type="button" data-knopf="fest" onClick={(e) => { e.stopPropagation(); setFrage(true); }} style={kontaktKnopf} aria-label={`${text}: ${nummer}`}>📞 {text}</button>
+      {frage && (
+        <div style={{ ...styles.modalBackdrop, alignItems: "center", zIndex: 120 }} onClick={(e) => { e.stopPropagation(); setFrage(false); }}>
+          <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Anrufen?" className="card-enter">
+            <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 6 }}>Anrufen?</div>
+            <div style={{ fontSize: 13, color: "#2C2F2A", marginBottom: 14 }}>Möchtest du {name ? <b>{name}</b> : "diese Nummer"} ({nummer}) anrufen?</div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button type="button" style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center", color: "#5C5F58", borderColor: "#C9C6BD" }} onClick={() => setFrage(false)}>Abbrechen</button>
+              <a href={href} data-knopf="fest" onClick={() => setFrage(false)} style={{ ...kontaktKnopf, flex: 1, justifyContent: "center", borderRadius: 6, padding: "10px 14px 9px", fontSize: 14.5 }}>📞 Anrufen</a>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 export function MailKnopf({ adresse, text = "E-Mail" }) {
   const href = mailHref(adresse); if (!href) return null;
-  return <a href={href} onClick={(e) => e.stopPropagation()} style={{ ...kontaktKnopf, background: "#4A6670" }} aria-label={`${text}: ${adresse}`}>✉️ {text}</a>;
+  return <a href={href} data-knopf="fest" onClick={(e) => e.stopPropagation()} style={kontaktKnopf} aria-label={`${text}: ${adresse}`}>✉️ {text}</a>;
 }
 // G26-Ärzte (bis zu zwei) aus den Einstellungen, jeweils mit Anruf-Knopf
 export function aerzteAus(config) {
@@ -34,7 +52,7 @@ export function ArztKontakt({ config }) {
       {aerzte.map((a, i) => (
         <div key={i} style={{ ...styles.reminderDoctor, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
           <span style={{ flex: "1 1 160px" }}>{[a.name, a.adresse, a.telefon ? `Tel. ${a.telefon}` : ""].filter(Boolean).join(" · ")}</span>
-          <AnrufKnopf nummer={a.telefon} text={aerzte.length > 1 ? `${i + 1}. Arzt anrufen` : "Arzt anrufen"} />
+          <AnrufKnopf nummer={a.telefon} name={a.name || "den Arzt"} text={aerzte.length > 1 ? `${i + 1}. Arzt anrufen` : "Arzt anrufen"} />
         </div>
       ))}
     </div>
@@ -243,7 +261,7 @@ export function GruppenfuehrerTag({ ev }) {
   return <span style={styles.gfTagMissing} title="Gruppenführer noch nicht festgelegt"><UserCog size={11} /></span>;
 }
 
-export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich, badgeLabel }) {
+export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich, badgeLabel, onKalender }) {
   const [namenOffen, setNamenOffen] = useState(false);
   const { day, monthShort, weekday } = formatDateParts(ev.date); const cat = CATEGORIES[ev.category]; const diff = daysUntil(ev.date);
   const relLabel = diff === 0 ? "HEUTE" : diff === 1 ? "MORGEN" : `IN ${diff} TAGEN`;
@@ -283,11 +301,12 @@ export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich
         )
       )}
       {isFeier && <GuestStepper ev={ev} me={me} onChange={onSetGuests} />}
+      {onKalender && <div style={{ marginTop: 10 }}><button type="button" data-testid="hero-kalender" onClick={() => onKalender(ev)} style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }}>📅 In meinen Kalender</button></div>}
     </div>
   );
 }
 
-export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond, onSignup, onSetGuests, onEdit, showBereich, badgeLabel, roster, onToggleAttendance, isArchived }) {
+export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond, onSignup, onSetGuests, onEdit, showBereich, badgeLabel, roster, onToggleAttendance, isArchived, onKalender }) {
   const [showAttendance, setShowAttendance] = useState(false);
   const { day, monthShort, weekday } = formatDateParts(ev.date); const cat = CATEGORIES[ev.category];
   const responses = ev.responses || {}; const zuNames = Object.entries(responses).filter(([, v]) => v === "zu").map(([n]) => n); const abNames = Object.entries(responses).filter(([, v]) => v === "ab").map(([n]) => n);
@@ -311,7 +330,10 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
           <div style={styles.eventMeta}><span style={styles.eventMetaItem}><Clock size={11} /> {ev.time}</span>{ev.location && <span style={styles.eventMetaItem}><MapPin size={11} /> {ev.location}</span>}<GruppenfuehrerTag ev={ev} /></div>
           {ev.notes && <div style={styles.eventNotes}>{ev.notes}</div>}
         </div>
-        {canEdit && <button style={styles.editBtn} onClick={onEdit} aria-label="Bearbeiten"><Pencil size={14} color="#8A8C86" /></button>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+          {canEdit && <button style={styles.editBtn} onClick={onEdit} aria-label="Bearbeiten"><Pencil size={14} color="#8A8C86" /></button>}
+          {onKalender && !isArchived && <button type="button" style={{ ...styles.editBtn, fontSize: 15, lineHeight: 1 }} onClick={() => onKalender(ev)} aria-label="In meinen Kalender" title="In meinen Kalender">📅</button>}
+        </div>
       </div>
       {ev.capacityMode ? (
         <div style={styles.eventRespFooter}><SignupButton ev={ev} me={me} onSignup={onSignup} size="small" /><CapacityCounter ev={ev} canEdit={canEdit} /></div>

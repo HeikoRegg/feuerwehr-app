@@ -12,6 +12,9 @@ import { AppContext } from "./AppContext";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
 import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
 import BerichtAnsicht from "./components/BerichtAnsicht";
+import KalenderAbo from "./components/KalenderAbo";
+import { starteKnopfStil } from "./lib/knopfStil";
+starteKnopfStil(); // einheitliche Knopf-Optik (orange/grün/rot, erhaben) und 3D-Kacheln
 
 // Kacheln werden erst geladen, wenn man sie öffnet – so startet die App immer gleich schnell.
 const kachelImporte = {
@@ -104,7 +107,9 @@ export default function App() {
   const [showStatistik, setShowStatistik] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [chatUngelesen, setChatUngelesen] = useState(0);
-  const [umfrageOffen, setUmfrageOffen] = useState(0); // offene Terminumfragen, bei denen ich noch nicht abgestimmt habe
+  const [umfrageOffen, setUmfrageOffen] = useState(0);
+  const [kalenderAbo, setKalenderAbo] = useState(false);
+  const aboLinkRef = useRef(null); // offene Terminumfragen, bei denen ich noch nicht abgestimmt habe
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showGeraete, setShowGeraete] = useState(false);
   const [showHydranten, setShowHydranten] = useState(false);
@@ -352,6 +357,18 @@ export default function App() {
     navigator.serviceWorker.addEventListener("message", onMsg);
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
   }, []);
+  // Einzelnen Termin in den Handy-Kalender: der Server liefert ihn als Kalender-Datei (.ics), das Handy fragt „Hinzufügen?“
+  async function terminInKalender(ev) {
+    let l = aboLinkRef.current;
+    if (!l) {
+      const r = await callAuthed("kalender", { action: "abo" });
+      if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Kalender-Datei nicht verfügbar."); return; }
+      l = aboLinkRef.current = r.data;
+    }
+    const url = `${l.https}&termin=${encodeURIComponent(ev.id)}`;
+    const w = window.open(url, "_blank");
+    if (!w) window.location.href = url;
+  }
   function closeKachelView() {
     setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
@@ -1345,7 +1362,7 @@ export default function App() {
       {nextEvent && (
         <div style={styles.hero}>
           <div style={styles.heroLabel}><Bell size={13} /><span>NÄCHSTER TERMIN</span></div>
-          <HeroCard ev={nextEvent} me={me} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(nextEvent)} />
+          <HeroCard ev={nextEvent} onKalender={me ? terminInKalender : null} me={me} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(nextEvent)} />
         </div>
       )}
 
@@ -1371,11 +1388,13 @@ export default function App() {
         ))}
       </div>
 
-      {isAdmin && (
-        <div style={{ padding: "0 16px 8px" }}>
-          <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }} onClick={() => setTerminDruck(currentYear())}><Printer size={11} /> Terminliste Einsatzabteilung (PDF)</button>
+      {me && (
+        <div style={{ padding: "0 16px 8px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }} onClick={() => setKalenderAbo(true)}>📅 Termine im Handy-Kalender</button>
+          {isAdmin && <button style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }} onClick={() => setTerminDruck(currentYear())}><Printer size={11} /> Terminliste Einsatzabteilung (PDF)</button>}
         </div>
       )}
+      {kalenderAbo && <KalenderAbo callAuthed={callAuthed} flashError={flashError} isAdmin={isAdmin} roster={aktiveMitglieder} onClose={() => setKalenderAbo(false)} />}
 
       <main style={styles.main}>
         {filtered.length === 0 && (
@@ -1389,7 +1408,7 @@ export default function App() {
           <div key={monthYear} style={{ marginBottom: 22 }}>
             <div style={styles.monthLabel}>{monthYear}</div>
             {evs.map((ev) => (
-              <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} />
+              <EventCard key={ev.id} ev={ev} onKalender={me ? terminInKalender : null} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} />
             ))}
           </div>
         ))}
@@ -1403,7 +1422,7 @@ export default function App() {
               <div key={monthYear} style={{ marginBottom: 22, marginTop: 12 }}>
                 <div style={styles.monthLabel}>{monthYear}</div>
                 {evs.map((ev) => (
-                  <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} isArchived />
+                  <EventCard key={ev.id} ev={ev} onKalender={me ? terminInKalender : null} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} isArchived />
                 ))}
               </div>
             ))}

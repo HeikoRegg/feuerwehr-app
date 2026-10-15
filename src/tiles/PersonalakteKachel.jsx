@@ -69,12 +69,12 @@ export function AkteSection({ title, children, adminOnly }) {
     </div>
   );
 }
-export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder }) {
+export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder, anruf = true, mail = true, kontaktName }) {
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>{label}
-        {type === "tel" && value && <AnrufKnopf nummer={value} />}
-        {type === "email" && value && <MailKnopf adresse={value} text="Schreiben" />}
+        {type === "tel" && value && anruf && <AnrufKnopf nummer={value} name={kontaktName} />}
+        {type === "email" && value && mail && <MailKnopf adresse={value} text="Schreiben" />}
       </div>
       {readOnly ? (
         <div style={{ fontSize: 13, color: "#2C2F2A", minHeight: 18 }}>{type === "date" ? fmtDate(value) : (value || "—")}</div>
@@ -518,18 +518,18 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
               <div style={{ width: 90 }}><AkteField label="PLZ" value={akte.plz} onChange={(v) => upd({ plz: v })} /></div>
               <div style={{ flex: 1 }}><AkteField label="Ort" value={akte.ort} onChange={(v) => upd({ ort: v })} /></div>
             </div>
-            <AkteField label="Telefon" type="tel" value={akte.telefon} onChange={(v) => upd({ telefon: v })} />
-            <AkteField label="E-Mail" type="email" value={akte.email} onChange={(v) => upd({ email: v })} />
+            <AkteField label="Telefon" type="tel" value={akte.telefon} anruf={fremdeAkte} kontaktName={target} onChange={(v) => upd({ telefon: v })} />
+            <AkteField label="E-Mail" type="email" value={akte.email} mail={isAdmin} onChange={(v) => upd({ email: v })} />
           </AkteSection>
 
           <AkteSection title={jugendlicherZiel ? "NOTFALLKONTAKT / ERZIEHUNGSBERECHTIGTE" : "NOTFALLKONTAKT"}>
             <AkteField label="Name" value={akte.notfallkontakt.name} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, name: v } })} />
-            <AkteField label="Telefon" type="tel" value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
+            <AkteField label="Telefon" type="tel" kontaktName={akte.notfallkontakt.name || "den Notfallkontakt"} value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
           </AkteSection>
 
           <AkteSection title={jugendlicherZiel ? "ARBEITGEBER / SCHULE" : "ARBEITGEBER"}>
             <AkteField label="Name" value={akte.arbeitgeber.name} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, name: v } })} />
-            <AkteField label="Telefon" type="tel" value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
+            <AkteField label="Telefon" type="tel" kontaktName={akte.arbeitgeber.name || "den Arbeitgeber"} value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
             <AkteField label="E-Mail" type="email" value={akte.arbeitgeber.email} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, email: v } })} />
           </AkteSection>
 
