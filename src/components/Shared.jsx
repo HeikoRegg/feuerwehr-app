@@ -261,7 +261,7 @@ export function GruppenfuehrerTag({ ev }) {
   return <span style={styles.gfTagMissing} title="Gruppenführer noch nicht festgelegt"><UserCog size={11} /></span>;
 }
 
-export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich, badgeLabel, onKalender }) {
+export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich, badgeLabel }) {
   const [namenOffen, setNamenOffen] = useState(false);
   const { day, monthShort, weekday } = formatDateParts(ev.date); const cat = CATEGORIES[ev.category]; const diff = daysUntil(ev.date);
   const relLabel = diff === 0 ? "HEUTE" : diff === 1 ? "MORGEN" : `IN ${diff} TAGEN`;
@@ -301,12 +301,11 @@ export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich
         )
       )}
       {isFeier && <GuestStepper ev={ev} me={me} onChange={onSetGuests} />}
-      {onKalender && <div style={{ marginTop: 10 }}><button type="button" data-testid="hero-kalender" onClick={() => onKalender(ev)} style={{ ...styles.tinyBtn, fontSize: 11.5, padding: "5px 10px" }}>📅 In meinen Kalender</button></div>}
     </div>
   );
 }
 
-export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond, onSignup, onSetGuests, onEdit, showBereich, badgeLabel, roster, onToggleAttendance, isArchived, onKalender }) {
+export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond, onSignup, onSetGuests, onEdit, showBereich, badgeLabel, roster, onToggleAttendance, isArchived }) {
   const [showAttendance, setShowAttendance] = useState(false);
   const { day, monthShort, weekday } = formatDateParts(ev.date); const cat = CATEGORIES[ev.category];
   const responses = ev.responses || {}; const zuNames = Object.entries(responses).filter(([, v]) => v === "zu").map(([n]) => n); const abNames = Object.entries(responses).filter(([, v]) => v === "ab").map(([n]) => n);
@@ -332,7 +331,6 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
           {canEdit && <button style={styles.editBtn} onClick={onEdit} aria-label="Bearbeiten"><Pencil size={14} color="#8A8C86" /></button>}
-          {onKalender && !isArchived && <button type="button" style={{ ...styles.editBtn, fontSize: 15, lineHeight: 1 }} onClick={() => onKalender(ev)} aria-label="In meinen Kalender" title="In meinen Kalender">📅</button>}
         </div>
       </div>
       {ev.capacityMode ? (

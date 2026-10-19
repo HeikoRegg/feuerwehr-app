@@ -1,31 +1,31 @@
 // Einheitliche Knopf-Optik (seit 2.23): Knöpfe erhaben, Kacheln 3D.
 //  - Ja / Zusage / „Ich kann“ bleiben grün, Nein / Absage / Löschen bleiben rot (behalten ihre Farbe, werden nur erhaben)
 //  - Anrufen / E-Mail: hellblau (direkt in Shared.jsx gestaltet, hier ausgenommen)
-//  - alle anderen Knöpfe: orange (gefüllte Knöpfe orange gefüllt, helle Knöpfe weiß mit orangem Rand)
+//  - alle anderen Knöpfe: goldgelb seit 2.24 (gefüllte Knöpfe gelb gefüllt mit dunkler Schrift, helle Knöpfe weiß mit gelbem Rand)
 //  - Auswahl-Chips (runde Filter-/Kategorie-/Bereichsknöpfe), Symbol- und Textknöpfe ohne Rahmen bleiben unverändert
 // Die App hat hunderte Knöpfe mit eigenen Stilen. Statt jeden einzeln umzubauen, ordnet diese Datei jeden Knopf beim
 // Erscheinen anhand seiner Farbe und Beschriftung einer Klasse zu (CSS mit !important überschreibt nur die Farbe).
 const CSS = `
 button[style*="rgb(249, 203, 144)"] {
-  background: linear-gradient(180deg, #FDE3BE 0%, #F7BE78 100%) !important;
-  border: 1px solid #E3A257 !important; border-bottom: 4px solid #C9853A !important;
-  box-shadow: 0 6px 12px rgba(120,70,10,0.22), inset 0 1px 0 rgba(255,255,255,0.7) !important;
+  background: linear-gradient(180deg, #FFEDA8 0%, #FFD452 100%) !important;
+  border: 1px solid #E5B416 !important; border-bottom: 4px solid #C28F00 !important;
+  box-shadow: 0 6px 12px rgba(120,90,0,0.22), inset 0 1px 0 rgba(255,255,255,0.7) !important;
   transition: transform .08s, box-shadow .08s;
 }
-button[style*="rgb(249, 203, 144)"]:active { transform: translateY(3px); box-shadow: 0 2px 4px rgba(120,70,10,0.2) !important; }
+button[style*="rgb(249, 203, 144)"]:active { transform: translateY(3px); box-shadow: 0 2px 4px rgba(120,90,0,0.2) !important; }
 button.k-or {
-  background: linear-gradient(180deg, #F39A2E 0%, #D9750F 100%) !important; color: #fff !important;
-  border: none !important; border-bottom: 3px solid #A85808 !important;
-  box-shadow: 0 3px 6px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.25) !important;
+  background: linear-gradient(180deg, #FFD452 0%, #F2B70F 100%) !important; color: #3A2C00 !important;
+  border: none !important; border-bottom: 3px solid #C28F00 !important;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.45) !important;
 }
-button.k-or *:not(svg):not(path):not(line):not(circle):not(polyline):not(rect) { color: #fff !important; }
-button.k-or svg { color: #fff; }
+button.k-or *:not(svg):not(path):not(line):not(circle):not(polyline):not(rect) { color: #3A2C00 !important; }
+button.k-or svg { color: #3A2C00; }
 button.k-or2 {
-  background: linear-gradient(180deg, #FFFFFF 0%, #FFF3E4 100%) !important; color: #C46A0C !important;
-  border: 1.5px solid #E58A1F !important; border-bottom: 3px solid #E58A1F !important;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FFF8DC 100%) !important; color: #8A6500 !important;
+  border: 1.5px solid #E5B416 !important; border-bottom: 3px solid #E5B416 !important;
   box-shadow: 0 2px 5px rgba(0,0,0,0.12) !important;
 }
-button.k-or2 *:not(svg):not(path):not(line):not(circle):not(polyline):not(rect) { color: #C46A0C !important; }
+button.k-or2 *:not(svg):not(path):not(line):not(circle):not(polyline):not(rect) { color: #8A6500 !important; }
 button.k-3d { box-shadow: 0 3px 0 rgba(0,0,0,0.16), 0 4px 8px rgba(0,0,0,0.10) !important; }
 button.k-or, button.k-or2, button.k-3d { transition: transform .08s; }
 button.k-or:active:not(:disabled), button.k-or2:active:not(:disabled), button.k-3d:active:not(:disabled), a[data-knopf]:active { transform: translateY(2px); }
@@ -58,9 +58,9 @@ export function knopfKlasse(b) {
     const hell = (r + g + bl) / 3;
     if (g > r + 15 && g >= bl) return "k-3d";                 // grün = Zustand / Zusage
     if (hell < 70) return "k-3d";                              // dunkel = ausgewählt
-    if (hell < 215) return "k-or";                             // gefüllt (rot, petrol, braun …) → orange
+    if (hell < 215) return "k-or";                             // gefüllt (rot, petrol, braun …) → goldgelb
   }
-  return "k-or2";                                              // hell / nur Rahmen → weiß mit orangem Rand
+  return "k-or2";                                              // hell / nur Rahmen → weiß mit gelbem Rand
 }
 function anwenden(b) {
   const k = knopfKlasse(b);
