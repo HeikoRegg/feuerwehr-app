@@ -6,7 +6,7 @@ import { useApp } from "../AppContext";
 
 // Kachel Ausschuss: Sitzungen, Anwesenheit, Protokoll, Abstimmungen
 export default function AusschussKachel() {
-  const { roster, me, setConfirmDeleteSitzungId, sitzungen, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, setConfirmResetVote, voteStartDraft, setVoteStartDraft, kachelReturnTo, canEditSitzung, canEditProtokoll, closeKachelView, openNewSitzung, openEditSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, exportSitzungFile } = useApp();
+  const { roster, me, setConfirmDeleteSitzungId, sitzungen, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, setConfirmResetVote, voteStartDraft, setVoteStartDraft, kachelReturnTo, canEditSitzung, canEditProtokoll, closeKachelView, openNewSitzung, openEditSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, exportSitzungFile, darfBeschluss, beschlussAusSitzung } = useApp();
         const upcoming = sitzungen.filter((s) => s.date >= todayISO()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
         const past = sitzungen.filter((s) => s.date < todayISO()).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
         const renderSitzung = (s) => (
@@ -103,6 +103,7 @@ export default function AusschussKachel() {
                           </div>
                         )}
                       </div>
+                      {darfBeschluss && <button style={{ ...styles.tinyBtn, marginTop: 6 }} data-testid={`beschluss-festhalten-${idx}`} onClick={() => beschlussAusSitzung(s, idx)}>📖 Beschluss festhalten</button>}
                     </div>
                   );
                 })}

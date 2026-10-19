@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, Gavel, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -30,6 +30,7 @@ const kachelImporte = {
   geraete: () => import("./tiles/GeraeteKachel"),
   hydranten: () => import("./tiles/HydrantenKachel"),
   umfragen: () => import("./tiles/UmfrageKachel"),
+  beschluesse: () => import("./tiles/BeschlussbuchKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
@@ -43,6 +44,7 @@ const EinsatzberichtKachel = lazy(kachelImporte.einsatz);
 const GeraeteKachel = lazy(kachelImporte.geraete);
 const HydrantenKachel = lazy(kachelImporte.hydranten);
 const UmfrageKachel = lazy(kachelImporte.umfragen);
+const BeschlussbuchKachel = lazy(kachelImporte.beschluesse);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
 const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" ? k : null; } catch (e) { return null; } })();
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
@@ -114,6 +116,8 @@ export default function App() {
   const [showGeraete, setShowGeraete] = useState(false);
   const [showHydranten, setShowHydranten] = useState(false);
   const [showUmfragen, setShowUmfragen] = useState(false);
+  const [showBeschluesse, setShowBeschluesse] = useState(false);
+  const [beschlussVorlage, setBeschlussVorlage] = useState(null); // vorbefüllter Beschluss aus einer Sitzung
   const [geraeteStartId, setGeraeteStartId] = useState(null);
   const [showJugend, setShowJugend] = useState(false);
   const [showSitzungForm, setShowSitzungForm] = useState(false);
@@ -174,6 +178,7 @@ export default function App() {
   const canSeeAusschuss = isAdmin || (myEntry && myEntry.ausschuss);
   const canEditSitzung = isAdmin || (myEntry && myEntry.ausschuss && myEntry.ausschussRechte.calendar);
   const canEditProtokoll = isAdmin || (myEntry && myEntry.ausschuss && myEntry.ausschussRechte.protokoll);
+  const darfBeschluss = !!(kachelAn("beschluesse") && (canEditSitzung || canEditProtokoll));
 
   function canEditCalendarFor(bereich) { if (isAdmin) return true; if (!myEntry || !bereich) return false; return !!(myEntry.rechte[bereich] && myEntry.rechte[bereich].calendar); }
   function canEditNewsFor(bereich) { if (isAdmin) return true; if (!myEntry || !bereich) return false; return !!(myEntry.rechte[bereich] && myEntry.rechte[bereich].news); }
@@ -360,7 +365,7 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
   }, []);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowJugend(false); setShowChat(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowBeschluesse(false); setShowJugend(false); setShowChat(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
@@ -371,6 +376,22 @@ export default function App() {
   function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTileGeraete() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowGeraete(true); }
+  function openTileBeschluesse() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true); }
+  // Aus einer Sitzung: Tagesordnungspunkt (mit Protokolltext und Abstimmungsergebnis) als Beschluss festhalten
+  function beschlussAusSitzung(sz, idx) {
+    const ab = (sz.abstimmungen || {})[idx];
+    const erg = ab && ab.finalized ? voteResult(ab) : null;
+    setBeschlussVorlage({
+      datum: sz.date, titel: String((sz.tagesordnung || [])[idx] || "").slice(0, 160), text: String((sz.protokoll || [])[idx] || ""),
+      sitzung: { id: sz.id, titel: sz.title, datum: sz.date, punkt: String((sz.tagesordnung || [])[idx] || "") },
+      ergebnis: erg ? { dafuer: erg.dafuer, dagegen: erg.dagegen, label: erg.label } : null,
+    });
+    closeKachelView(); setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true);
+  }
+  // Aus dem Beschlussbuch zurück in die Sitzung (aufgeklappt)
+  function beschlussZurSitzung(id) {
+    closeKachelView(); setShowTileMenu(false); setKachelReturnTo("tiles"); setExpandedSitzung(id); setShowSitzungArchiv(true); setShowSitzungen(true);
+  }
   function openTileUmfragen() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowUmfragen(true); }
   function openTileHydranten() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowHydranten(true); }
   function openTileEinsatz() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowEinsatz(true); }
@@ -1128,7 +1149,7 @@ export default function App() {
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
-  Object.assign(appCtx, { geraeteStartId, setGeraeteStartId, ladeChatStatus, ladeUmfrageStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
+  Object.assign(appCtx, { darfBeschluss, beschlussVorlage, setBeschlussVorlage, beschlussAusSitzung, beschlussZurSitzung, geraeteStartId, setGeraeteStartId, ladeChatStatus, ladeUmfrageStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
@@ -1586,6 +1607,12 @@ export default function App() {
                 <span style={styles.tileLabel}>Hydranten</span>
               </button>
             )}
+            {kachelAn("beschluesse") && !!me && (
+              <button style={styles.tile} onClick={openTileBeschluesse}>
+                <Gavel size={26} color="#2C2F2A" />
+                <span style={styles.tileLabel}>Beschlussbuch</span>
+              </button>
+            )}
             {kachelAn("umfragen") && !!me && (
               <button style={styles.tile} onClick={openTileUmfragen}>
                 <CalendarCheck size={26} color="#2C2F2A" />
@@ -1660,6 +1687,7 @@ export default function App() {
       {showEinsatz && <Suspense fallback={<KachelLaden />}><EinsatzberichtKachel /></Suspense>}
       {showGeraete && darfGeraete && <Suspense fallback={<KachelLaden />}><GeraeteKachel /></Suspense>}
       {showHydranten && darfHydranten && <Suspense fallback={<KachelLaden />}><HydrantenKachel /></Suspense>}
+      {showBeschluesse && kachelAn("beschluesse") && !!me && <Suspense fallback={<KachelLaden />}><BeschlussbuchKachel /></Suspense>}
       {showUmfragen && kachelAn("umfragen") && !!me && <Suspense fallback={<KachelLaden />}><UmfrageKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
