@@ -110,6 +110,7 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [chatUngelesen, setChatUngelesen] = useState(0);
   const [umfrageOffen, setUmfrageOffen] = useState(0);
+  const [beschlussNeu, setBeschlussNeu] = useState(0); // neue Beschlüsse seit dem letzten Öffnen des Beschlussbuchs
   const [kalenderAbo, setKalenderAbo] = useState(false);
   const [bellMenu, setBellMenu] = useState(false); // Glocken-Menü (Benachrichtigungen, Handy-Kalender, Terminliste)
   const [showEinsatz, setShowEinsatz] = useState(false);
@@ -318,11 +319,12 @@ export default function App() {
   }
   // Zahl offener, noch nicht beantworteter Terminumfragen (Symbol „Funktionen“ und Kachel)
   async function ladeUmfrageStatus() {
-    if (!me || !kachelAn("umfragen")) { setUmfrageOffen(0); return; }
+    if (!me || (!kachelAn("umfragen") && !kachelAn("beschluesse"))) { setUmfrageOffen(0); setBeschlussNeu(0); return; }
     const token = authTokenRef.current || loadToken(me);
     if (!token) return;
     const r = await callServer("umfrage", { action: "anzahl", token });
-    if (r.ok && r.data && typeof r.data.offen === "number") setUmfrageOffen(r.data.offen);
+    if (r.ok && r.data && typeof r.data.offen === "number") setUmfrageOffen(kachelAn("umfragen") ? r.data.offen : 0);
+    if (r.ok && r.data && typeof r.data.beschluesse === "number") setBeschlussNeu(kachelAn("beschluesse") ? r.data.beschluesse : 0);
   }
   useEffect(() => {
     if (phase !== "app" || !me) return;
@@ -376,7 +378,7 @@ export default function App() {
   function openTileStatistik() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowStatistik(true); }
   function openTileBewegung() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBewegung(true); }
   function openTileGeraete() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowGeraete(true); }
-  function openTileBeschluesse() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true); }
+  function openTileBeschluesse() { setBeschlussNeu(0); setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true); }
   // Aus einer Sitzung: Tagesordnungspunkt (mit Protokolltext und Abstimmungsergebnis) als Beschluss festhalten
   function beschlussAusSitzung(sz, idx) {
     const ab = (sz.abstimmungen || {})[idx];
@@ -386,7 +388,7 @@ export default function App() {
       sitzung: { id: sz.id, titel: sz.title, datum: sz.date, punkt: String((sz.tagesordnung || [])[idx] || "") },
       ergebnis: erg ? { dafuer: erg.dafuer, dagegen: erg.dagegen, label: erg.label } : null,
     });
-    closeKachelView(); setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true);
+    setBeschlussNeu(0); closeKachelView(); setShowTileMenu(false); setKachelReturnTo("tiles"); setShowBeschluesse(true);
   }
   // Aus dem Beschlussbuch zurück in die Sitzung (aufgeklappt)
   function beschlussZurSitzung(id) {
@@ -1268,7 +1270,7 @@ export default function App() {
             {me && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
-                {umfrageOffen > 0 && kachelAn("umfragen") ? <span data-testid="funktionen-zahl" style={styles.chatHeaderBadge}>{umfrageOffen > 9 ? "9+" : umfrageOffen}</span> : neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
+                {umfrageOffen + beschlussNeu > 0 ? <span data-testid="funktionen-zahl" style={styles.chatHeaderBadge}>{umfrageOffen + beschlussNeu > 9 ? "9+" : umfrageOffen + beschlussNeu}</span> : neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
               </button>
             )}
             {isAdmin && <button style={styles.settingsBtn} onClick={() => { setKachelReturnTo("calendar"); setShowSettings(true); }} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
@@ -1611,6 +1613,7 @@ export default function App() {
               <button style={styles.tile} onClick={openTileBeschluesse}>
                 <Gavel size={26} color="#2C2F2A" />
                 <span style={styles.tileLabel}>Beschlussbuch</span>
+                {beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span>}
               </button>
             )}
             {kachelAn("umfragen") && !!me && (

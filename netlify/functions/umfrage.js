@@ -291,25 +291,40 @@ export async function handler(event) {
   try {
     const lage = await ladeLage(body.token);
     if (!lage.me) return json(401, { error: "Bitte PIN bestätigen." });
-    {
-      // Vom Hauptadmin für die ganze Feuerwehr gesperrte Kachel (Einstellungen → Kacheln verwalten).
-      const aus = Array.isArray(lage.config.kachelnAus) ? lage.config.kachelnAus : [];
-      if (aus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
-    }
     const ich = lage.me.name;
+    const kachelnAus = Array.isArray(lage.config.kachelnAus) ? lage.config.kachelnAus : [];
+    // ---------------- Zahlen für die Symbole (ein Aufruf beim App-Start): offene Umfragen + neue Beschlüsse ----------------
+    if (body.action === "anzahl") {
+      let offen = 0, beschluesse = 0;
+      if (!kachelnAus.includes("umfragen")) {
+        const liste = (await alleUmfragen()).map(alsUmfrage).filter((u) => u.status === "offen" && lage.istMitglied(ich, u.bereich) && !(u.abstimmenBis && u.abstimmenBis < heute()));
+        if (liste.length) {
+          const { data, error } = await db.from("terminumfragen_stimmen").select("umfrage").eq("name", ich).in("umfrage", liste.map((u) => u.id));
+          if (error) throw error;
+          const abgestimmt = new Set((data || []).map((x) => x.umfrage));
+          offen = liste.filter((u) => !abgestimmt.has(u.id)).length;
+        }
+      }
+      if (!kachelnAus.includes("beschluesse")) {
+        try {
+          const [{ data, error }, gesehen] = await Promise.all([db.from("beschluesse").select("data"), getKv("beschlussGesehen")]);
+          if (error) throw error;
+          const seit = String(((gesehen && typeof gesehen === "object") ? gesehen : {})[ich] || "");
+          const ausschuss = lage.admin || !!lage.eintrag(ich).ausschuss;
+          beschluesse = (data || []).map((r) => r.data || {}).filter((b) => {
+            if (b.angelegtVon === ich) return false;
+            const ab = ausschuss ? b.angelegtAm : (b.fuerAlle ? (b.freigegebenAm || b.angelegtAm) : "");
+            return !!ab && ab > seit;
+          }).length;
+        } catch (e) { beschluesse = 0; /* Beschlussbuch noch nicht eingerichtet (SQL fehlt) */ }
+      }
+      return json(200, { offen, beschluesse });
+    }
+    if (kachelnAus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));
     const meineVerwalten = BEREICHE.filter((b) => lage.darfVerwalten(ich, b));
     const { action } = body;
 
-    // ---------------- Zahl für das Symbol: offene Umfragen, bei denen ich noch nicht abgestimmt habe ----------------
-    if (action === "anzahl") {
-      const offen = (await alleUmfragen()).map(alsUmfrage).filter((u) => u.status === "offen" && lage.istMitglied(ich, u.bereich) && !(u.abstimmenBis && u.abstimmenBis < heute()));
-      if (!offen.length) return json(200, { offen: 0 });
-      const { data, error } = await db.from("terminumfragen_stimmen").select("umfrage").eq("name", ich).in("umfrage", offen.map((u) => u.id));
-      if (error) throw error;
-      const abgestimmt = new Set((data || []).map((s) => s.umfrage));
-      return json(200, { offen: offen.filter((u) => !abgestimmt.has(u.id)).length });
-    }
 
     // ---------------- Liste ----------------
     if (action === "list") {

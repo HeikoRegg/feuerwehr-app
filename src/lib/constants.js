@@ -3,7 +3,7 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.25";
+export const APP_VERSION = "2.26";
 export const CHANGELOG = [
   "Neue Optik: Knöpfe erhaben – orange, Ja/Zusage grün, Nein/Absage rot, Anrufen/E-Mail hellblau – und Kacheln in 3D",
   "Termine im Handy-Kalender: persönliches Kalender-Abo (alle Termine deiner Bereiche, Änderungen kommen automatisch) und „In meinen Kalender“ am einzelnen Termin",

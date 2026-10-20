@@ -96,6 +96,12 @@ export async function handler(event) {
       const { data, error } = await db.from("beschluesse").select("*");
       if (error) throw error;
       const alle = (data || []).map(alsBeschluss).filter((b) => sichtbar(b, rechte));
+      // Kachel geöffnet: neue Beschlüsse gelten als gesehen (Zahl an der Kachel wird 0)
+      try {
+        const g = await getKv("beschlussGesehen");
+        const neu = { ...((g && typeof g === "object") ? g : {}), [ich]: new Date().toISOString() };
+        await db.from("kv_store").upsert({ key: "beschlussGesehen", value: neu, updated_at: new Date().toISOString() });
+      } catch (e) { /* nur die Zahl – egal */ }
       return json(200, { ich, rechte, themen: await themen(), beschluesse: alle });
     }
 
@@ -151,6 +157,8 @@ export async function handler(event) {
       const jetzt = new Date().toISOString();
       const data = {
         datum: b.datum, titel, text, thema, status, ersetztDurch, fuerAlle: !!b.fuerAlle, anhaenge,
+        // Zeitpunkt, ab dem der Beschluss für alle sichtbar ist (für die Zahl „neu“ an der Kachel)
+        freigegebenAm: b.fuerAlle ? ((alt && alt.fuerAlle && alt.freigegebenAm) || (alt && alt.fuerAlle ? alt.angelegtAm : "") || jetzt) : "",
         sitzung: s ? { id: kurz(s.id, 40), titel: kurz(s.titel, 160), datum: istDatum(s.datum) ? s.datum : "", punkt: kurz(s.punkt, 300) } : (alt && alt.sitzung) || null,
         ergebnis: ergebnis || (alt && alt.ergebnis) || null,
         angelegtVon: (alt && alt.angelegtVon) || ich, angelegtAm: (alt && alt.angelegtAm) || jetzt, geaendertVon: ich,
