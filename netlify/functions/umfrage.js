@@ -61,7 +61,7 @@ const ZIEL_URL = "/?kachel=umfragen";
 async function push(an, title, text, sender) {
   const ziel = [...new Set(an)].filter(Boolean);
   if (!ziel.length) return;
-  try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an: ziel, title, text, sender, url: ZIEL_URL }) }); } catch (e) { /* Push ist Zusatz – die Umfrage ist gespeichert */ }
+  try { await sendPush({ httpMethod: "POST", intern: true, body: JSON.stringify({ an: ziel, title, text, sender, url: ZIEL_URL }) }); } catch (e) { /* Push ist Zusatz – die Umfrage ist gespeichert */ }
 }
 const alsUmfrage = (row) => ({ ...(row.data || {}), id: row.id });
 
@@ -318,7 +318,11 @@ export async function handler(event) {
           }).length;
         } catch (e) { beschluesse = 0; /* Beschlussbuch noch nicht eingerichtet (SQL fehlt) */ }
       }
-      return json(200, { offen, beschluesse });
+      // Persönliche Einstellungen gleich mitliefern (kein zusätzlicher Aufruf): Kachel-Reihenfolge und Push-Pause
+      const [reihen, pause] = await Promise.all([getKv("kachelReihenfolge"), getKv("pushAus")]);
+      const kacheln = reihen && typeof reihen === "object" && Array.isArray(reihen[ich]) ? reihen[ich] : null;
+      const pushAus = !!(pause && typeof pause === "object" && pause[ich]);
+      return json(200, { offen, beschluesse, kacheln, pushAus });
     }
     if (kachelnAus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));

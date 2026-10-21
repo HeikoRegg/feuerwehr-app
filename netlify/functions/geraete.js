@@ -59,9 +59,9 @@ function fuehrungsNamen(lage, ausser) {
   ]);
   return [...namen].filter((n) => n && !gesperrt.has(n) && n !== ausser);
 }
-async function push(an, title, text, sender) {
+async function push(an, title, text, sender, wichtig = false) {
   if (!an.length) return;
-  try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an, title, text, sender }) }); } catch (e) { /* Push ist Zusatz – die Meldung ist gespeichert */ }
+  try { await sendPush({ httpMethod: "POST", intern: true, body: JSON.stringify({ an, title, text, sender, wichtig }) }); } catch (e) { /* Push ist Zusatz – die Meldung ist gespeichert */ }
 }
 async function fotoUrl(path) {
   if (!path) return null;
@@ -343,7 +343,7 @@ export async function handler(event) {
     const mangelPush = async (row, texte, nichtEinsatzbereit) => {
       const d = row.data || {};
       const name = d.kurzname || d.name;
-      await push(fuehrungsNamen(lage, ich), `⚠️ Mangel: ${name}${nichtEinsatzbereit ? " (nicht einsatzbereit)" : ""}`, `${ich}: ${texte.join(" · ")}`, ich);
+      await push(fuehrungsNamen(lage, ich), `⚠️ Mangel: ${name}${nichtEinsatzbereit ? " (nicht einsatzbereit)" : ""}`, `${ich}: ${texte.join(" · ")}`, ich, true); // Mängel kommen auch bei Push-Pause
     };
 
     if (action === "mangel") {

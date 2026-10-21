@@ -63,7 +63,7 @@ function verwalterNamen(lage, ausser) {
 }
 async function push(an, title, text, sender) {
   if (!an.length) return;
-  try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an, title, text, sender }) }); } catch (e) { /* Push ist Zusatz – die Kontrolle ist gespeichert */ }
+  try { await sendPush({ httpMethod: "POST", intern: true, body: JSON.stringify({ an, title, text, sender }) }); } catch (e) { /* Push ist Zusatz – die Kontrolle ist gespeichert */ }
 }
 async function fotoUrl(path) {
   if (!path) return null;

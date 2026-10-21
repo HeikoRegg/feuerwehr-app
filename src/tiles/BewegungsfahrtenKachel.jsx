@@ -35,7 +35,7 @@ export default function BewegungsfahrtenKachel() {
     let maengel = bewegung.maengel || [];
     if (text) {
       maengel = [{ id: uid(), fahrzeugId: vid, fahrzeugName: v ? v.name : "Fahrzeug", text, gemeldetVon: me, datum: todayISO(), monat: key, behoben: null }, ...maengel];
-      notifyPersons(empfaengerMaengel(), `⚠️ Mangel an ${v ? v.name : "Fahrzeug"}`, text);
+      notifyPersons(empfaengerMaengel(), `⚠️ Mangel an ${v ? v.name : "Fahrzeug"}`, text, "fahrzeugmangel");
     }
     speichernPlan({ ...plan, fahrzeuge: { ...plan.fahrzeuge, [vid]: { ...f, erledigt } } }, { maengel });
     setOffen(null);

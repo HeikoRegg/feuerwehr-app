@@ -3,13 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.27";
+export const APP_VERSION = "2.28";
 export const CHANGELOG = [
-  "Neu: Beschlussbuch (unter Funktionen) – Beschlüsse des Ausschusses mit Thema, Status, Anhängen und Suche; in der Ausschuss-Sitzung per „Beschluss festhalten“",
-  "Eine Zahl an der Kachel Beschlussbuch zeigt neue Beschlüsse seit dem letzten Öffnen",
-  "Knöpfe und Kacheln jetzt goldgelb statt orange",
-  "Die Glocke oben öffnet ein Menü: Benachrichtigungen, Termine im Handy-Kalender und (Admins) Terminliste als PDF",
-  "Der Knopf „In meinen Kalender“ am einzelnen Termin ist entfallen – das Kalender-Abo bleibt",
+  "Zusagen, Absagen, Gäste und Anmeldungen gehen nicht mehr verloren, wenn viele gleichzeitig tippen",
+  "Kacheln selbst anordnen: Kachel 1 Sekunde gedrückt halten und an einen neuen Platz ziehen (gilt auf all deinen Geräten)",
+  "Glocke → „Benachrichtigungen ausschalten“: dann kommen nur noch dringende Mitteilungen und Mängel",
+  "Schnellerer Start: die zuletzt geladenen Termine erscheinen sofort",
 ];
 
 export const CATEGORIES = {

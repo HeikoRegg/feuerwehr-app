@@ -9,6 +9,12 @@
 [functions."umfrage-erinnerung"]
   schedule = "@hourly"
 
+# Schneller Start (2.28): Programmdateien haben eindeutige Namen (ändern sich bei jedem Update) -> darf das Handy dauerhaft behalten
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

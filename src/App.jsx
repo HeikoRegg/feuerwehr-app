@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, Gavel, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, BellOff, Gavel, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
-import { allesVergessen, merke } from "./lib/zwischenspeicher";
+import { allesVergessen, hole, merke } from "./lib/zwischenspeicher";
 import { BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
@@ -12,6 +12,7 @@ import { AppContext } from "./AppContext";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
 import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
 import BerichtAnsicht from "./components/BerichtAnsicht";
+import KachelRaster from "./components/KachelRaster";
 import KalenderAbo from "./components/KalenderAbo";
 import { starteKnopfStil } from "./lib/knopfStil";
 starteKnopfStil(); // einheitliche Knopf-Optik (orange/grün/rot, erhaben) und 3D-Kacheln
@@ -110,6 +111,8 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [chatUngelesen, setChatUngelesen] = useState(0);
   const [umfrageOffen, setUmfrageOffen] = useState(0);
+  const [kachelOrdnung, setKachelOrdnung] = useState(null); // eigene Reihenfolge der Kacheln (pro Person, Server)
+  const [pushAus, setPushAus] = useState(false); // Push-Pause über die Glocke (pro Person, Server)
   const [beschlussNeu, setBeschlussNeu] = useState(0); // neue Beschlüsse seit dem letzten Öffnen des Beschlussbuchs
   const [kalenderAbo, setKalenderAbo] = useState(false);
   const [bellMenu, setBellMenu] = useState(false); // Glocken-Menü (Benachrichtigungen, Handy-Kalender, Terminliste)
@@ -134,6 +137,25 @@ export default function App() {
   const [confirmDeleteEventId, setConfirmDeleteEventId] = useState(null);
   const [confirmDeleteNoticeId, setConfirmDeleteNoticeId] = useState(null);
   const [expandedEvent, setExpandedEvent] = useState(null);
+  // Persönliche Einstellungen dieses Handys sofort (Server-Stand kommt mit der Zahlen-Abfrage)
+  useEffect(() => {
+    if (!me) { setKachelOrdnung(null); setPushAus(false); return; }
+    try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); if (v && v.name === me) { setKachelOrdnung(Array.isArray(v.kacheln) ? v.kacheln : null); setPushAus(!!v.pushAus); } else { setKachelOrdnung(null); setPushAus(false); } } catch (e) { /* egal */ }
+  }, [me]);
+  function merkePerson(teil) {
+    try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); const alt = v && v.name === me ? v : { name: me }; localStorage.setItem("ffw_person", JSON.stringify({ ...alt, ...teil })); } catch (e) { /* egal */ }
+  }
+  async function speichereKachelOrdnung(keys) {
+    setKachelOrdnung(keys); merkePerson({ kacheln: keys });
+    const r = await callAuthed("person", { action: "reihenfolge", kacheln: keys });
+    if (!r.ok && r.data && r.data.error !== "abgebrochen") flashError(r.data.error || "Reihenfolge nicht gespeichert.");
+  }
+  async function schaltePushAus(aus) {
+    const vorher = pushAus;
+    setPushAus(aus); merkePerson({ pushAus: aus });
+    const r = await callAuthed("person", { action: "pushAus", aus });
+    if (!r.ok) { setPushAus(vorher); merkePerson({ pushAus: vorher }); if (r.data && r.data.error !== "abgebrochen") flashError(r.data.error || "Nicht gespeichert."); }
+  }
   // Personenwechsel am selben Handy: Archive und aufgeklappte Karten wieder zuklappen
   useEffect(() => { setShowEventArchiv(false); setShowSitzungArchiv(false); setExpandedEvent(null); setExpandedSitzung(null); setBellMenu(false); }, [me && me.name]);
   const [saveBanner, setSaveBanner] = useState(null);
@@ -240,6 +262,8 @@ export default function App() {
     }
 
     setConfig(cfg); setRoster(rst); setEvents(evs); setNotices(nts); setSitzungen(szg); setVehicles(vhs); setBewegung(bwg);
+    // Schneller Start (seit 2.28): letzte Daten auf dem Handy merken, beim nächsten Öffnen sofort anzeigen.
+    if (cfg) merke("start", { cfg, rst, evs, nts, szg, vhs, bwg }, { dauerhaft: true });
     return cfg;
   }
 
@@ -248,15 +272,27 @@ export default function App() {
       // Einmalige Umstellungen auf dem Server anstoßen – läuft im Hintergrund,
       // die App wartet beim Start nicht mehr darauf.
       callServer("auth", { action: "migrate" });
-      const cfg = await fetchAllData(true);
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem("ffw_auth") || "null"); } catch (e) { saved = null; }
+      // Schneller Start: angemeldetes Gerät mit gemerkten Daten → sofort anzeigen, frische Daten kommen gleich danach.
+      const vorrat = hole("start");
+      let sofort = false;
+      if (saved && saved.name && vorrat && vorrat.cfg && saved.code === vorrat.cfg.accessCode) {
+        try {
+          const v = { cfg: normalizeConfig(vorrat.cfg), rst: (vorrat.rst || []).map(normalizeRosterEntry), evs: (vorrat.evs || []).map(normalizeEvent), nts: vorrat.nts || [], szg: (vorrat.szg || []).map(normalizeSitzung), vhs: (vorrat.vhs || []).map(normalizeVehicle), bwg: normalizeBewegung(vorrat.bwg) };
+          configRef.current = v.cfg; rosterRef.current = v.rst; eventsRef.current = v.evs; noticesRef.current = v.nts; sitzungenRef.current = v.szg; vehiclesRef.current = v.vhs; bewegungRef.current = v.bwg;
+          setConfig(v.cfg); setRoster(v.rst); setEvents(v.evs); setNotices(v.nts); setSitzungen(v.szg); setVehicles(v.vhs); setBewegung(v.bwg);
+          setMe(saved.name); setPhase("app"); sofort = true;
+        } catch (e) { sofort = false; }
+      }
+      const cfg = await fetchAllData(!sofort);
       // Dauerhaft angemeldet bleiben: prüfen, ob dieses Gerät sich schon einmal erfolgreich angemeldet hat.
-      try {
-        const saved = JSON.parse(localStorage.getItem("ffw_auth") || "null");
-        if (saved && cfg && saved.code === cfg.accessCode && saved.name) {
-          setMe(saved.name); setPhase("app"); return;
-        }
-      } catch (e) { /* localStorage evtl. nicht verfügbar — normal weiter zum Code-Bildschirm */ }
-      setPhase("gate");
+      if (saved && cfg && saved.code === cfg.accessCode && saved.name) {
+        if (!sofort) { setMe(saved.name); setPhase("app"); }
+        return;
+      }
+      if (sofort && !cfg) return; // offline: mit den gemerkten Daten weiterarbeiten
+      setMe(null); setPhase("gate");
     })();
   }, []);
   function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
@@ -325,6 +361,8 @@ export default function App() {
     const r = await callServer("umfrage", { action: "anzahl", token });
     if (r.ok && r.data && typeof r.data.offen === "number") setUmfrageOffen(kachelAn("umfragen") ? r.data.offen : 0);
     if (r.ok && r.data && typeof r.data.beschluesse === "number") setBeschlussNeu(kachelAn("beschluesse") ? r.data.beschluesse : 0);
+    if (r.ok && r.data && "kacheln" in r.data) { setKachelOrdnung(r.data.kacheln || null); merkePerson({ kacheln: r.data.kacheln || null }); }
+    if (r.ok && r.data && typeof r.data.pushAus === "boolean") { setPushAus(r.data.pushAus); merkePerson({ pushAus: r.data.pushAus }); }
   }
   useEffect(() => {
     if (phase !== "app" || !me) return;
@@ -595,9 +633,11 @@ export default function App() {
   async function persistSitzungen(next) { lastEditRef.current.sitzungen = Date.now(); setSitzungen(next); const r = await storageSetWithRetry("sitzungen", JSON.stringify(next), true); if (!r.ok) flashError("Sitzung evtl. nicht dauerhaft gespeichert."); }
   async function persistBewegung(next) { lastEditRef.current.bewegungsfahrten = Date.now(); setBewegung(next); const r = await storageSetWithRetry("bewegungsfahrten", JSON.stringify(next), true); if (!r.ok) flashError("Bewegungsfahrten evtl. nicht dauerhaft gespeichert."); }
   // Gezielte Benachrichtigung an bestimmte Personen (Einteilung, Mängel).
-  function notifyPersons(an, title, text) {
+  function notifyPersons(an, title, text, art) {
     if (!an || an.length === 0) return;
-    fetch("/.netlify/functions/send-push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ an, title, text, sender: me }) }).catch(() => {});
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return;
+    callServer("send-push", { an, title, text, art: art || "", token }).catch(() => {});
   }
   // Aus der Personalakte übernommene Funktionen (nur Ja/Nein) in der Mitgliederliste setzen.
   function setFunktionsFlags(name, flags) {
@@ -627,42 +667,56 @@ export default function App() {
     persistEvents(next); setShowForm(false);
   }
   function deleteEvent(id) { const ev = events.find((e) => e.id === id); if (!ev || !canEditCalendarFor(ev.bereich)) return; persistEvents(events.filter((e) => e.id !== id)); }
+  // Zusagen, Gäste, Anmeldungen, Anwesenheit (seit 2.28): sofort auf dem Handy anzeigen, gespeichert wird über den
+  // Server nur der eine Eintrag (netlify/functions/person.js) – so überschreiben sich gleichzeitige Zusagen nicht mehr.
+  async function terminAktion(eventId, lokal, anfrage) {
+    const vorher = eventsRef.current.find((e) => e.id === eventId);
+    if (!vorher) return;
+    lastEditRef.current.events = Date.now();
+    setEvents((evs) => evs.map((e) => (e.id === eventId ? lokal(e) : e)));
+    const r = await callAuthed("person", { ...anfrage, termin: eventId });
+    if (r.ok && r.data && r.data.termin) {
+      lastEditRef.current.events = Date.now();
+      setEvents((evs) => evs.map((e) => (e.id === eventId ? normalizeEvent(r.data.termin) : e)));
+    } else {
+      setEvents((evs) => evs.map((e) => (e.id === eventId ? vorher : e)));
+      if (!r.data || r.data.error !== "abgebrochen") flashError((r.data && r.data.error) || "Nicht gespeichert – bitte nochmal versuchen.");
+    }
+  }
   function toggleAttendance(eventId, name) {
     const ev = events.find((e) => e.id === eventId); if (!ev || !canEditCalendarFor(ev.bereich)) return;
-    persistEvents(events.map((e) => {
-      if (e.id !== eventId) return e;
+    terminAktion(eventId, (e) => {
       const anwesenheit = { ...(e.anwesenheit || {}) };
       if (anwesenheit[name]) delete anwesenheit[name]; else anwesenheit[name] = true;
       return { ...e, anwesenheit };
-    }));
+    }, { action: "anwesenheit", name });
   }
 
   function setResponse(eventId, status) {
     if (!me) return;
-    const next = events.map((ev) => {
-      if (ev.id !== eventId) return ev;
+    terminAktion(eventId, (ev) => {
       const responses = { ...(ev.responses || {}) };
       if (responses[me] === status) delete responses[me]; else responses[me] = status;
       let guests = ev.guests;
       if (responses[me] !== "zu" && guests && guests[me] !== undefined) { guests = { ...guests }; delete guests[me]; }
       return { ...ev, responses, guests };
-    });
-    persistEvents(next);
+    }, { action: "antwort", status });
   }
   function setMyGuestCount(eventId, count) {
     if (!me) return;
-    const next = events.map((ev) => (ev.id === eventId ? { ...ev, guests: { ...(ev.guests || {}), [me]: Math.max(0, count) } } : ev));
-    persistEvents(next);
+    const n = Math.max(0, count);
+    terminAktion(eventId, (ev) => ({ ...ev, guests: { ...(ev.guests || {}), [me]: n } }), { action: "gaeste", anzahl: n });
   }
   function toggleSignup(eventId) {
     if (!me) return;
-    const next = events.map((ev) => {
-      if (ev.id !== eventId) return ev;
-      const signups = { ...(ev.signups || {}) }; const count = Object.keys(signups).length;
-      if (signups[me]) delete signups[me]; else { if (count >= (ev.capacityNeeded || 0)) return ev; signups[me] = true; }
-      return { ...ev, signups };
-    });
-    persistEvents(next);
+    const ev = events.find((e) => e.id === eventId); if (!ev) return;
+    const signups = ev.signups || {};
+    if (!signups[me] && Object.keys(signups).length >= (ev.capacityNeeded || 0)) return;
+    terminAktion(eventId, (e) => {
+      const s2 = { ...(e.signups || {}) };
+      if (s2[me]) delete s2[me]; else s2[me] = true;
+      return { ...e, signups: s2 };
+    }, { action: "anmeldung" });
   }
 
   function openNewNotice() { if (editableNewsBereiche.length === 0) return; setNoticeDraft({ ...emptyNoticeDraft(), bereich: editableNewsBereiche[0] }); setShowNoticeForm(true); setNoticeError(""); }
@@ -673,9 +727,10 @@ export default function App() {
     if (!noticeDraft.expiryDate) { setNoticeError("Bitte ein Ablaufdatum wählen."); return; }
     let next;
     if (noticeDraft.id) next = notices.map((n) => (n.id === noticeDraft.id ? { ...noticeDraft, createdBy: n.createdBy } : n));
-    else next = [...notices, { ...noticeDraft, id: uid(), createdBy: me }];
-    persistNotices(next); setShowNoticeForm(false);
-    if (!noticeDraft.id) notifyAboutNotice(noticeDraft);
+    const neu = noticeDraft.id ? null : { ...noticeDraft, id: uid(), createdBy: me };
+    if (neu) next = [...notices, neu];
+    const gespeichert = persistNotices(next); setShowNoticeForm(false);
+    if (neu) Promise.resolve(gespeichert).then(() => notifyAboutNotice(neu));
   }
   function deleteNotice(id) { const n = notices.find((x) => x.id === id); if (!n || !canEditNewsFor(n.bereich)) return; persistNotices(notices.filter((x) => x.id !== id)); }
 
@@ -926,17 +981,13 @@ export default function App() {
   // Jede neue Mitteilung löst eine kurze Benachrichtigung + Zahl am App-Symbol aus
   // (nur für Mitglieder des jeweiligen Bereichs, nicht für den Verfasser selbst).
   // "Dringend" in der Einsatzabteilung wird besonders hervorgehoben.
+  // Push zur neuen Mitteilung: der Server liest Bereich, Text und „dringend“ aus der gespeicherten Mitteilung.
   function notifyAboutNotice(notice) {
-    const label = (BEREICHE[notice.bereich] && BEREICHE[notice.bereich].label) || "";
-    const title = notice.priority === "dringend"
-      ? (notice.bereich === "einsatzabteilung" ? "🚨 DRINGEND – Einsatzabteilung" : `Dringend – ${label}`)
-      : `Neue Mitteilung – ${label}`;
-    fetch("/.netlify/functions/send-push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bereich: notice.bereich, priority: notice.priority, title, text: notice.text, sender: me }),
-    }).catch(() => {});
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return;
+    callServer("send-push", { mitteilung: notice.id, token }).catch(() => {});
   }
+
 
   function exportCSV(rows, filename) {
     const titel = filename.replace(/\.csv$/i, "").replace(/_/g, " ");
@@ -1259,7 +1310,7 @@ export default function App() {
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
             <button style={styles.settingsBtn} onClick={() => setBellMenu((v) => !v)} aria-label="Benachrichtigungen und Kalender" data-testid="glocke">
-              <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />
+              {pushAus ? <span data-testid="glocke-aus" style={{ display: "inline-flex" }}><BellOff size={17} color="#8FA0A6" /></span> : <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />}
             </button>
             {me && kachelAn("chat") && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={openChatAusKopf} aria-label="Nachrichten">
@@ -1408,7 +1459,10 @@ export default function App() {
               const zeile = { textAlign: "left", background: "transparent", border: "none", borderRadius: 10, padding: "13px 14px", fontSize: 14.5, color: "#1E2124", display: "flex", gap: 10, alignItems: "center", cursor: "pointer", fontFamily: "inherit" };
               const an = typeof Notification !== "undefined" && Notification.permission === "granted";
               return (<>
-                <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); subscribeToPush(); }}>🔔 <span>{an ? "Benachrichtigungen sind eingeschaltet ✓" : "Benachrichtigungen einschalten"}</span></button>
+                {!an && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); subscribeToPush(); }}>🔔 <span>Benachrichtigungen auf diesem Handy erlauben</span></button>}
+                {me && (pushAus
+                  ? <button data-knopf="fest" data-testid="push-ein" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(false); }}>🔔 <span>Benachrichtigungen wieder einschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Zurzeit aus – nur Dringendes und Mängel kommen</span></span></button>
+                  : <button data-knopf="fest" data-testid="push-aus" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(true); }}>🔕 <span>Benachrichtigungen ausschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Dringende Mitteilungen und Mängel kommen trotzdem</span></span></button>)}
                 {me && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setKalenderAbo(true); }}>📅 <span>Termine im Handy-Kalender</span></button>}
                 {me && isAdmin && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Einsatzabteilung (PDF)</span></button>}
               </>);
@@ -1571,100 +1625,32 @@ export default function App() {
             <button style={styles.fullscreenBackBtn} onClick={() => setShowTileMenu(false)}><ArrowLeft size={18} /> Kalender</button>
           </div>
           <div style={styles.modalTitle}>Funktionen</div>
-          <div style={{ ...styles.tileGrid, marginTop: 14 }}>
-            {kachelAn("fuehrerschein") && (inEinsatzabteilung || isAdmin) && (
-              <button style={styles.tile} onClick={openTileFuehrerschein}>
-                <Car size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Führerschein</span>
-              </button>
+          <KachelRaster
+            reihenfolge={kachelOrdnung}
+            onReihenfolge={speichereKachelOrdnung}
+            kacheln={[
+              kachelAn("fuehrerschein") && (inEinsatzabteilung || isAdmin) && { key: "fuehrerschein", onClick: openTileFuehrerschein, icon: <Car size={26} color="#2C2F2A" />, label: "Führerschein" },
+              kachelAn("atemschutz") && isAtemschutz && { key: "atemschutz", onClick: openTileAtemschutz, icon: <Stethoscope size={26} color="#2C2F2A" />, label: "Atemschutz" },
+              kachelAn("ausschuss") && canSeeAusschuss && { key: "ausschuss", onClick: openTileAusschuss, icon: <Landmark size={26} color="#2C2F2A" />, label: "Ausschuss", badge: neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span> },
+              kachelAn("einsatz") && { key: "einsatz", onClick: openTileEinsatz, icon: <ClipboardList size={26} color="#2C2F2A" />, label: "Einsatzberichte" },
+              darfGeraete && { key: "geraete", onClick: openTileGeraete, icon: <Boxes size={26} color="#2C2F2A" />, label: "Geräte" },
+              darfHydranten && { key: "hydranten", onClick: openTileHydranten, icon: <HydrantIcon size={27} />, label: "Hydranten" },
+              kachelAn("beschluesse") && !!me && { key: "beschluesse", onClick: openTileBeschluesse, icon: <Gavel size={26} color="#2C2F2A" />, label: "Beschlussbuch", badge: beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span> },
+              kachelAn("umfragen") && !!me && { key: "umfragen", onClick: openTileUmfragen, icon: <CalendarCheck size={26} color="#2C2F2A" />, label: "Terminumfragen", badge: umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span> },
+              kachelAn("jugend") && (isJugendwart || isAdmin) && { key: "jugend", onClick: openTileJugend, icon: <JFFlammeIcon size={28} />, label: "Jugendfeuerwehr" },
+              kachelAn("bewegung") && canSeeBewegung && { key: "bewegung", onClick: openTileBewegung, icon: <Truck size={26} color="#2C2F2A" />, label: "Bewegungsfahrten" },
+              kachelAn("statistik") && isAdmin && { key: "statistik", onClick: openTileStatistik, icon: <BarChart3 size={26} color="#2C2F2A" />, label: "Statistik" },
+              kachelAn("personalakte") && { key: "personalakte", onClick: openTilePersonalakte, icon: <FolderOpen size={26} color="#2C2F2A" />, label: "Personalakte" },
+              kachelAn("chat") && { key: "chat", onClick: openTileChat, icon: <MessageCircle size={26} color="#2C2F2A" />, label: "Nachrichten", badge: chatUngelesen > 0 && <span style={styles.tileBadge}>{chatUngelesen}</span> },
+              isAdmin && { key: "einstellungen", onClick: openTileSettings, icon: <Settings size={26} color="#2C2F2A" />, label: "Einstellungen" },
+            ].filter(Boolean)}
+            nachKachel={(
+              <div style={styles.tilePlaceholder}>
+                <Plus size={20} color="#A5A79F" />
+                <span style={{ fontSize: 11, color: "#8A8C86" }}>bald mehr</span>
+              </div>
             )}
-            {kachelAn("atemschutz") && (isAtemschutz) && (
-              <button style={styles.tile} onClick={openTileAtemschutz}>
-                <Stethoscope size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Atemschutz</span>
-              </button>
-            )}
-            {kachelAn("ausschuss") && canSeeAusschuss && (
-              <button style={{ ...styles.tile, position: "relative" }} onClick={openTileAusschuss}>
-                <Landmark size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Ausschuss</span>
-                {neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span>}
-              </button>
-            )}
-            {kachelAn("einsatz") && (
-              <button style={styles.tile} onClick={openTileEinsatz}>
-                <ClipboardList size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Einsatzberichte</span>
-              </button>
-            )}
-            {darfGeraete && (
-              <button style={styles.tile} onClick={openTileGeraete}>
-                <Boxes size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Geräte</span>
-              </button>
-            )}
-            {darfHydranten && (
-              <button style={styles.tile} onClick={openTileHydranten}>
-                <HydrantIcon size={27} />
-                <span style={styles.tileLabel}>Hydranten</span>
-              </button>
-            )}
-            {kachelAn("beschluesse") && !!me && (
-              <button style={styles.tile} onClick={openTileBeschluesse}>
-                <Gavel size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Beschlussbuch</span>
-                {beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span>}
-              </button>
-            )}
-            {kachelAn("umfragen") && !!me && (
-              <button style={styles.tile} onClick={openTileUmfragen}>
-                <CalendarCheck size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Terminumfragen</span>
-                {umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span>}
-              </button>
-            )}
-            {kachelAn("jugend") && (isJugendwart || isAdmin) && (
-              <button style={styles.tile} onClick={openTileJugend}>
-                <JFFlammeIcon size={28} />
-                <span style={styles.tileLabel}>Jugendfeuerwehr</span>
-              </button>
-            )}
-            {kachelAn("bewegung") && canSeeBewegung && (
-              <button style={styles.tile} onClick={openTileBewegung}>
-                <Truck size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Bewegungsfahrten</span>
-              </button>
-            )}
-            {kachelAn("statistik") && isAdmin && (
-              <button style={styles.tile} onClick={openTileStatistik}>
-                <BarChart3 size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Statistik</span>
-              </button>
-            )}
-            {kachelAn("personalakte") && (
-              <button style={styles.tile} onClick={openTilePersonalakte}>
-                <FolderOpen size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Personalakte</span>
-              </button>
-            )}
-            {kachelAn("chat") && (
-              <button style={{ ...styles.tile, position: "relative" }} onClick={openTileChat}>
-                <MessageCircle size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Nachrichten</span>
-                {chatUngelesen > 0 && <span style={styles.tileBadge}>{chatUngelesen}</span>}
-              </button>
-            )}
-            {isAdmin && (
-              <button style={styles.tile} onClick={openTileSettings}>
-                <Settings size={26} color="#2C2F2A" />
-                <span style={styles.tileLabel}>Einstellungen</span>
-              </button>
-            )}
-            <div style={styles.tilePlaceholder}>
-              <Plus size={20} color="#A5A79F" />
-              <span style={{ fontSize: 11, color: "#8A8C86" }}>bald mehr</span>
-            </div>
-          </div>
+          />
         </div>
       )}
 

@@ -8,6 +8,7 @@ import { compressImage } from "../lib/helpers";
 import { oeffneBericht } from "../lib/bericht";
 import { supabase } from "../supabaseClient";
 import { useApp } from "../AppContext";
+import { hole, merke } from "../lib/zwischenspeicher";
 
 const STATUS = { gueltig: "Gültig", aufgehoben: "Aufgehoben", ersetzt: "Ersetzt" };
 const STATUS_FARBE = { gueltig: ["#1F6F5C", "#E7F2EF"], aufgehoben: ["#C1272D", "#FBEAEA"], ersetzt: ["#9A5B00", "#FBF1E1"] };
@@ -191,7 +192,7 @@ function ThemenVerwalten({ themen, onClose, onSaved }) {
 // ---------------- Kachel ----------------
 export default function BeschlussbuchKachel() {
   const { callAuthed, flashError, closeKachelView, kachelReturnTo, setLightboxSrc, sitzungen, canSeeAusschuss, beschlussVorlage, setBeschlussVorlage, beschlussZurSitzung } = useApp();
-  const [daten, setDaten] = useState(null);
+  const [daten, setDaten] = useState(() => hole("beschluesse")); // zuletzt geladene Liste sofort zeigen (nur im Speicher, nicht dauerhaft)
   const [fehler, setFehler] = useState("");
   const [suche, setSuche] = useState("");
   const [thema, setThema] = useState("");
@@ -206,7 +207,7 @@ export default function BeschlussbuchKachel() {
   async function laden() {
     const r = await callAuthed("beschluesse", { action: "list" });
     if (!r.ok) { if (r.data.error !== "abgebrochen") setFehler(r.data.error || "Das Beschlussbuch konnte nicht geladen werden."); return null; }
-    setFehler(""); setDaten(r.data); return r.data;
+    setFehler(""); setDaten(r.data); merke("beschluesse", r.data); return r.data;
   }
   useEffect(() => { laden(); }, []);
   // Aus einer Sitzung mit „Beschluss festhalten“ gekommen: Formular vorbefüllt öffnen

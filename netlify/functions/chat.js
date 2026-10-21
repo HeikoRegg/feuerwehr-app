@@ -192,7 +192,7 @@ export async function handler(event) {
       const an = [...new Set([...(lage.gruppen[gruppe] || []), kamerad])].filter((n) => n !== ich);
       const titel = alsKamerad ? `${ich} an ${AN[gruppe]}` : `${ich} (${GRUPPEN[gruppe]})`;
       if (an.length) {
-        try { await sendPush({ httpMethod: "POST", body: JSON.stringify({ an, title: `💬 ${titel}`, text, sender: ich }) }); } catch (e) { /* Push ist Zusatz – Nachricht ist gespeichert */ }
+        try { await sendPush({ httpMethod: "POST", intern: true, body: JSON.stringify({ an, title: `💬 ${titel}`, text, sender: ich }) }); } catch (e) { /* Push ist Zusatz – Nachricht ist gespeichert */ }
       }
       return json(200, { ok: true, id, nachricht: { id: nachricht.id, von: ich, text, ts: jetzt } });
     }
