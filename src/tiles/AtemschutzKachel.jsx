@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { AlertTriangle, Check, Download, Pencil, Plus, RotateCcw } from "lucide-react";
 import { ATEMSCHUTZ_UEBUNG_TYPES } from "../lib/constants";
 import { atemschutzStatus, daysSince, fmtDate, todayISO } from "../lib/helpers";
@@ -6,9 +6,33 @@ import { styles } from "../lib/styles";
 import { useApp } from "../AppContext";
 import { ArztKontakt } from "../components/Shared";
 
+// G26-Nachweisfoto: seit 2.29 im privaten Speicher – der Link kommt vom Server und gilt 1 Stunde.
+// (Alte Fotos mit öffentlicher Adresse werden bis zum automatischen Umzug noch direkt gezeigt.)
+const g26Links = new Map();
+function G26Bild({ eintrag, breite, setLightboxSrc, callAuthed }) {
+  const g = (eintrag && eintrag.g26) || {};
+  const schluessel = g.fotoPfad ? `${eintrag.name}|${g.fotoPfad}` : "";
+  const [url, setUrl] = useState(() => (g.photoUrl && !g.fotoPfad ? g.photoUrl : (g26Links.get(schluessel) || null)));
+  useEffect(() => {
+    let aktiv = true;
+    if (!g.fotoPfad) { setUrl(g.photoUrl || null); return undefined; }
+    const gemerkt = g26Links.get(schluessel);
+    if (gemerkt && gemerkt.bis > Date.now()) { setUrl(gemerkt.url); return undefined; }
+    callAuthed("person", { action: "g26Foto", name: eintrag.name }).then((r) => {
+      if (!aktiv || !r.ok || !r.data.url) return;
+      g26Links.set(schluessel, { url: r.data.url, bis: Date.now() + 50 * 60 * 1000 });
+      setUrl(r.data.url);
+    });
+    return () => { aktiv = false; };
+  }, [schluessel, g.photoUrl]);
+  if (!g.fotoPfad && !g.photoUrl) return null;
+  if (!url) return <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 6 }}>Foto wird geladen …</div>;
+  return <img src={typeof url === "string" ? url : url.url} alt="G26-Nachweis" data-testid="g26-bild" style={{ maxWidth: breite, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6, cursor: "zoom-in" }} onClick={() => setLightboxSrc(typeof url === "string" ? url : url.url)} />;
+}
+
 // Kachel Atemschutz: G26.3, Streckendurchgang, Übung, Unterweisung, Admin-Übersicht
 export default function AtemschutzKachel() {
-  const { config, roster, me, setConfirmResetG26Name, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, setLightboxSrc, myEntry, isAdmin, canEditAtemschutzUnterweisung, persistConfig, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, g26PhotoUploading, uploadG26Photo, removeG26Photo, g26ReminderActive, exportAtemschutz, adminPendingG26 } = useApp();
+  const { callAuthed, config, roster, me, setConfirmResetG26Name, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, setLightboxSrc, myEntry, isAdmin, canEditAtemschutzUnterweisung, persistConfig, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, g26PhotoUploading, uploadG26Photo, removeG26Photo, g26ReminderActive, exportAtemschutz, adminPendingG26 } = useApp();
   return (
               <div>
                 {myEntry && myEntry.atemschutz && (
@@ -26,9 +50,9 @@ export default function AtemschutzKachel() {
                     {config && <ArztKontakt config={config} />}
                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #E2DFD6" }}>
                       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>NACHWEIS-FOTO (nur du und Admin sehen das)</div>
-                      {myEntry.g26.photoUrl ? (
+                      {myEntry.g26.photoUrl || myEntry.g26.fotoPfad ? (
                         <div>
-                          <img src={myEntry.g26.photoUrl} alt="G26-Nachweis" style={{ maxWidth: 160, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6, cursor: "zoom-in" }} onClick={() => setLightboxSrc(myEntry.g26.photoUrl)} />
+                          <G26Bild eintrag={myEntry} breite={160} setLightboxSrc={setLightboxSrc} callAuthed={callAuthed} />
                           <button style={styles.tinyBtn} onClick={removeG26Photo}>Foto entfernen</button>
                         </div>
                       ) : (
@@ -127,7 +151,7 @@ export default function AtemschutzKachel() {
                           </div>
                         </div>
                         <div style={{ fontSize: 11.5, color: "#5C5F58", marginBottom: 6 }}>G26.3: {fmtDate(r.g26.dueDate)}{r.g26.pendingConfirmation && <span style={styles.pinPendingTag}>offen</span>}</div>
-                        {r.g26.photoUrl && <img src={r.g26.photoUrl} alt="Nachweis" style={{ maxWidth: 100, borderRadius: 6, border: "1px solid #E2DFD6", display: "block", marginBottom: 6, cursor: "zoom-in" }} onClick={() => setLightboxSrc(r.g26.photoUrl)} />}
+                        <G26Bild eintrag={r} breite={100} setLightboxSrc={setLightboxSrc} callAuthed={callAuthed} />
 
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 11.5, color: "#5C5F58", width: 130 }}>Streckendurchgang:</span>

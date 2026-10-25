@@ -3,6 +3,7 @@
 // Kurzes Antippen öffnet die Kachel wie bisher; Wischen zum Scrollen löst nichts aus.
 import React, { useEffect, useRef, useState } from "react";
 import { styles } from "../lib/styles";
+import { KACHEL_FARBEN } from "../lib/constants";
 
 const HALTEZEIT = 1000; // ms (Heiko: eine ganze Sekunde)
 const TOLERANZ = 10;    // px Bewegung, die vor dem Anheben noch als „Stillhalten“ gilt
@@ -16,7 +17,13 @@ export function ordne(sichtbar, reihenfolge) {
   return reihe.map((k) => sichtbar.find((x) => x.key === k));
 }
 
-export default function KachelRaster({ kacheln, reihenfolge, onReihenfolge, nachKachel }) {
+// Hintergrund einer Kachel aus der Palette (3D: heller Verlauf, dunklere Unterkante, Schatten)
+export function kachelStil(farbe) {
+  const f = KACHEL_FARBEN[farbe] || KACHEL_FARBEN.goldgelb;
+  return { background: `linear-gradient(180deg, ${f.von} 0%, ${f.bis} 100%)`, border: `1px solid ${f.rand}`, borderBottom: `4px solid ${f.kante}`, boxShadow: `0 6px 12px ${f.schatten}, inset 0 1px 0 rgba(255,255,255,0.7)` };
+}
+
+export default function KachelRaster({ kacheln, reihenfolge, onReihenfolge, nachKachel, farben = {} }) {
   const [liste, setListe] = useState(() => ordne(kacheln, reihenfolge));
   const [zieht, setZieht] = useState(null);
   const ziehtRef = useRef(null);
@@ -91,8 +98,11 @@ export default function KachelRaster({ kacheln, reihenfolge, onReihenfolge, nach
             <button
               key={k.key}
               data-kachel={k.key}
+              data-farbe={farben[k.key] || "goldgelb"}
+              data-knopf="fest"
+              className="k-kachel"
               style={{
-                ...styles.tile, position: "relative", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none",
+                ...styles.tile, ...kachelStil(farben[k.key]), position: "relative", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none",
                 ...(aktiv ? { transform: "scale(1.08)", opacity: 0.88, zIndex: 5, boxShadow: "0 14px 28px rgba(0,0,0,0.28)" } : {}),
                 transition: "transform .12s, box-shadow .12s",
               }}

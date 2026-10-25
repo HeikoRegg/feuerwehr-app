@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "rea
 import { AlertTriangle, BellOff, Gavel, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
-import { APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
+import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { allesVergessen, hole, merke } from "./lib/zwischenspeicher";
 import { BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
@@ -467,7 +467,8 @@ export default function App() {
         if (!("serviceWorker" in navigator)) return;
         const reg = await navigator.serviceWorker.getRegistration();
         const sub = reg && (await reg.pushManager.getSubscription());
-        if (sub) await supabase.from("push_subscriptions").update({ badge_count: 0 }).eq("endpoint", sub.endpoint);
+        const tok = authTokenRef.current || (me && loadToken(me));
+        if (sub && tok) await callServer("person", { action: "pushZaehlerNull", endpoint: sub.endpoint, token: tok });
       } catch (e) {}
     };
     resetBadge();
@@ -910,25 +911,42 @@ export default function App() {
     setG26EditOpen(false); setG26DateInput("");
   }
   function adminConfirmG26(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { ...r.g26, pendingConfirmation: false, confirmedByAdmin: true, confirmedAdminDate: todayISO() } })); }
-  function resetG26Date(name) { updateRosterEntry(name, (r) => ({ ...r, g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null } })); setConfirmResetG26Name(null); }
+  async function resetG26Date(name) {
+    setConfirmResetG26Name(null);
+    const r = await callAuthed("person", { action: "g26FotoEntfernen", name }); // Foto im privaten Speicher mit löschen
+    if (!r.ok && r.data && r.data.error !== "abgebrochen" && r.status !== 404) flashError(r.data.error || "Foto konnte nicht gelöscht werden.");
+    if (r.ok) g26InListe(name, r.data.g26);
+    updateRosterEntry(name, (x) => ({ ...x, g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null, fotoPfad: null } }));
+  }
 
   // --- Datei-Uploads (Supabase Storage, Bucket "anhaenge") ---
   const [g26PhotoUploading, setG26PhotoUploading] = useState(false);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
+  // G26-Foto (seit 2.29 im privaten Speicher "g26"; ansehen nur selbst + Admins über kurzlebige Links)
+  function g26InListe(name, g26) {
+    if (!g26) return;
+    const neu = rosterRef.current.map((r) => (r.name === name ? { ...r, g26: { ...r.g26, ...g26 } } : r));
+    rosterRef.current = neu; lastEditRef.current.roster = Date.now(); setRoster(neu);
+  }
   async function uploadG26Photo(file) {
     if (!file || !me) return;
     setG26PhotoUploading(true);
     try {
       file = await compressImage(file);
-      const path = `g26/${me.replace(/[^a-z0-9]+/gi, "_")}_${Date.now()}`;
-      const { error } = await supabase.storage.from("anhaenge").upload(path, file, { upsert: true });
+      const r = await callAuthed("person", { action: "g26UploadUrl" });
+      if (!r.ok) throw new Error(r.data.error || "Upload");
+      const { error } = await supabase.storage.from("g26").uploadToSignedUrl(r.data.path, r.data.uploadToken, file);
       if (error) throw error;
-      const { data } = supabase.storage.from("anhaenge").getPublicUrl(path);
-      updateMyRosterEntry((r) => ({ ...r, g26: { ...r.g26, photoUrl: data.publicUrl } }));
+      const r2 = await callAuthed("person", { action: "g26FotoSetzen", pfad: r.data.path });
+      if (!r2.ok) throw new Error(r2.data.error || "Speichern");
+      g26InListe(me, r2.data.g26);
     } catch (e) { flashError("Foto-Upload fehlgeschlagen."); }
     setG26PhotoUploading(false);
   }
-  function removeG26Photo() { updateMyRosterEntry((r) => ({ ...r, g26: { ...r.g26, photoUrl: null } })); }
+  async function removeG26Photo() {
+    const r = await callAuthed("person", { action: "g26FotoEntfernen" });
+    if (r.ok) g26InListe(me, r.data.g26); else if (r.data.error !== "abgebrochen") flashError(r.data.error || "Foto konnte nicht entfernt werden.");
+  }
   async function uploadSitzungAttachment(file) {
     if (!file) return;
     setAttachmentUploading(true);
@@ -969,12 +987,11 @@ export default function App() {
         sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidKey) });
       }
       if (sub) {
-        await supabase.from("push_subscriptions").upsert({
-          endpoint: sub.endpoint,
-          name: me,
-          bereiche: myEntry ? myEntry.bereiche : [],
-          subscription: sub.toJSON(),
-        });
+        // Seit 2.29 über den Server (mit Anmeldung) – die Tabelle ist von außen nicht mehr erreichbar.
+        const body = { action: "pushAnmelden", subscription: sub.toJSON() };
+        const tok = authTokenRef.current || loadToken(me);
+        const r = silent ? (tok ? await callServer("person", { ...body, token: tok }) : { ok: false }) : await callAuthed("person", body);
+        if (!r.ok && !silent && (!r.data || r.data.error !== "abgebrochen")) flashError("Benachrichtigungen konnten nicht aktiviert werden.");
       }
     } catch (e) { if (!silent) flashError("Benachrichtigungen konnten nicht aktiviert werden."); }
   }
@@ -1628,6 +1645,7 @@ export default function App() {
           <KachelRaster
             reihenfolge={kachelOrdnung}
             onReihenfolge={speichereKachelOrdnung}
+            farben={{ ...KACHEL_STANDARD_FARBEN, ...((config && config.kachelFarben) || {}) }}
             kacheln={[
               kachelAn("fuehrerschein") && (inEinsatzabteilung || isAdmin) && { key: "fuehrerschein", onClick: openTileFuehrerschein, icon: <Car size={26} color="#2C2F2A" />, label: "Führerschein" },
               kachelAn("atemschutz") && isAtemschutz && { key: "atemschutz", onClick: openTileAtemschutz, icon: <Stethoscope size={26} color="#2C2F2A" />, label: "Atemschutz" },

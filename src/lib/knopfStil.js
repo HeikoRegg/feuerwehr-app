@@ -26,6 +26,7 @@ button.k-or2 {
   box-shadow: 0 2px 5px rgba(0,0,0,0.12) !important;
 }
 button.k-or2 *:not(svg):not(path):not(line):not(circle):not(polyline):not(rect) { color: #8A6500 !important; }
+button.k-kachel:active { transform: translateY(3px); }
 button.k-3d { box-shadow: 0 3px 0 rgba(0,0,0,0.16), 0 4px 8px rgba(0,0,0,0.10) !important; }
 button.k-or, button.k-or2, button.k-3d { transition: transform .08s; }
 button.k-or:active:not(:disabled), button.k-or2:active:not(:disabled), button.k-3d:active:not(:disabled), a[data-knopf]:active { transform: translateY(2px); }

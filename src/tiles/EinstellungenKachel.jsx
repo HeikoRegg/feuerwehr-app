@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ArrowLeft, Check, ChevronDown, Plus, X } from "lucide-react";
-import { APP_VERSION, EINSATZ_GERAETE_STANDARD, FESTE_FUNKTIONEN, FESTE_LEHRGAENGE, MONTHS } from "../lib/constants";
+import { KACHEL_FARBEN, KACHEL_STANDARD_FARBEN, APP_VERSION, EINSATZ_GERAETE_STANDARD, FESTE_FUNKTIONEN, FESTE_LEHRGAENGE, MONTHS } from "../lib/constants";
 import { matchesSearch, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { GeschlechtListEditor, RosterAdminRow, SearchBox, SimpleListEditor } from "../components/Shared";
@@ -11,6 +11,47 @@ import { useApp } from "../AppContext";
 
 const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["umfragen", "Terminumfragen"], ["beschluesse", "Beschlussbuch"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
+// Kachelfarben (nur Admins, gilt für alle): Farbpunkt je Kachel, feste Palette, Standard wiederherstellen.
+function KachelFarben({ config, persistConfig }) {
+  const [offen, setOffen] = useState(null);
+  const [frage, setFrage] = useState(false);
+  const eigene = config.kachelFarben || {};
+  const farbe = (key) => eigene[key] || KACHEL_STANDARD_FARBEN[key] || "goldgelb";
+  const setze = (key, f) => { const n = { ...eigene, [key]: f }; if (KACHEL_STANDARD_FARBEN[key] === f) delete n[key]; persistConfig({ ...config, kachelFarben: n }); setOffen(null); };
+  const punkt = (f, gross) => ({ width: gross ? 30 : 24, height: gross ? 30 : 24, borderRadius: "50%", background: `linear-gradient(180deg, ${KACHEL_FARBEN[f].von}, ${KACHEL_FARBEN[f].bis})`, border: `2px solid ${KACHEL_FARBEN[f].kante}`, padding: 0, cursor: "pointer", flex: "none" });
+  return (
+    <div style={{ marginTop: 22 }} data-testid="kachelfarben">
+      <label style={styles.label}>Kachelfarben</label>
+      <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 8 }}>Farbpunkt antippen und eine Farbe wählen. Gilt für alle Mitglieder.</div>
+      {[...KACHELN, ["einstellungen", "Einstellungen"]].map(([key, name]) => (
+        <div key={key} style={{ padding: "5px 0", borderBottom: "1px solid #EEEDE8" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ flex: 1, fontSize: 13.5 }}>{name}</span>
+            <span style={{ fontSize: 11.5, color: "#8A8C86" }}>{KACHEL_FARBEN[farbe(key)].label}</span>
+            <button data-knopf="fest" aria-label={`Farbe für ${name} ändern`} data-testid={`farbe-${key}`} style={punkt(farbe(key), true)} onClick={() => setOffen(offen === key ? null : key)} />
+          </div>
+          {offen === key && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "8px 0 4px" }}>
+              {Object.keys(KACHEL_FARBEN).map((f) => (
+                <button key={f} data-knopf="fest" aria-label={KACHEL_FARBEN[f].label} title={KACHEL_FARBEN[f].label} data-testid={`waehle-${key}-${f}`} onClick={() => setze(key, f)} style={{ ...punkt(f), outline: farbe(key) === f ? "2px solid #2C2F2A" : "none", outlineOffset: 2 }} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {!frage ? (
+        <button data-knopf="fest" style={{ background: "none", border: "none", color: "#8A8C86", fontSize: 11.5, textDecoration: "underline", padding: "10px 0 0", cursor: "pointer", fontFamily: "inherit" }} onClick={() => setFrage(true)}>Standardfarben wiederherstellen</button>
+      ) : (
+        <div style={{ marginTop: 10, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>Wirklich alle Farben zurücksetzen?</span>
+          <button style={styles.tinyBtn} onClick={() => setFrage(false)}>Abbrechen</button>
+          <button style={styles.tinyBtn} data-testid="farben-zuruecksetzen" onClick={() => { persistConfig({ ...config, kachelFarben: {} }); setFrage(false); }}>Zurücksetzen</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
   const { flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
@@ -146,6 +187,8 @@ export default function EinstellungenKachel() {
                 <input style={{ ...styles.input, flex: 1 }} placeholder={`aktuell: ${config.accessCode}`} value={newCode} onChange={(e) => setNewCode(e.target.value)} />
                 <button style={{ ...styles.saveBtn, flex: "none", padding: "0 16px" }} onClick={() => { if (newCode.trim().length >= 4) { persistConfig({ ...config, accessCode: newCode.trim() }); setNewCode(""); } }}><Check size={16} /></button>
               </div>
+
+              <KachelFarben config={config} persistConfig={persistConfig} />
 
               {isMainAdmin && (
                 <div style={{ marginTop: 22 }}>

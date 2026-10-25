@@ -3,10 +3,13 @@
 //  - Termine: Zusage/Absage, Gäste, Anmeldung (Teilnehmergrenze), Anwesenheit (nur mit Kalender-Recht)
 //  - eigene Kachel-Reihenfolge (gilt auf allen Geräten)
 //  - Push-Nachrichten aus/an (gilt auf allen Geräten; dringende Mitteilungen und Gerätemängel kommen trotzdem)
+//  - (seit 2.29) Push-Anmeldung des Handys (Tabelle push_subscriptions ist nur noch über den Server erreichbar)
+//  - (seit 2.29) G26-Foto im privaten Speicher "g26": hochladen, ansehen (nur selbst + Admins, Link 1 Stunde), entfernen
 // Gespeichert wird „konfliktsicher“: frisch lesen, nur den einen Eintrag ändern und nur dann schreiben, wenn
 // in der Zwischenzeit niemand anderes gespeichert hat (Vergleich über updated_at) – sonst neu versuchen.
 // Damit gehen keine Zusagen mehr verloren, wenn viele gleichzeitig tippen.
 
+import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -15,6 +18,7 @@ const json = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "ap
 const fehler = (code, text) => { const e = new Error(text); e.code = code; return e; };
 const heuteBerlin = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
 const KACHEL_KEYS = /^[a-z0-9_-]{1,30}$/;
+const G26_BUCKET = "g26";
 
 async function getKv(key) {
   const { data } = await db.from("kv_store").select("value").eq("key", key).maybeSingle();
@@ -129,6 +133,57 @@ export async function handler(event) {
       const keys = [...new Set((Array.isArray(body.kacheln) ? body.kacheln : []).map(String).filter((k) => KACHEL_KEYS.test(k)))].slice(0, 40);
       await kvAendern("kachelReihenfolge", (m) => ({ ...((m && typeof m === "object") ? m : {}), [ich]: keys }), {});
       return json(200, { ok: true, kacheln: keys });
+    }
+
+    // ---------- Push-Anmeldung dieses Handys ----------
+    if (action === "pushAnmelden") {
+      const sub = body.subscription && typeof body.subscription === "object" ? body.subscription : null;
+      const endpoint = sub && typeof sub.endpoint === "string" ? sub.endpoint : "";
+      if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000) throw fehler(400, "Ungültige Push-Anmeldung.");
+      const { data: alt } = await db.from("push_subscriptions").select("endpoint,name,badge_count").eq("endpoint", endpoint).maybeSingle();
+      const { error } = await db.from("push_subscriptions").upsert({ endpoint, name: ich, subscription: { endpoint, keys: sub.keys || {}, expirationTime: sub.expirationTime ?? null }, badge_count: alt && alt.name === ich ? alt.badge_count || 0 : 0 });
+      if (error) throw error;
+      return json(200, { ok: true });
+    }
+    if (action === "pushZaehlerNull") {
+      const endpoint = String(body.endpoint || "");
+      if (endpoint) await db.from("push_subscriptions").update({ badge_count: 0 }).eq("endpoint", endpoint).eq("name", ich);
+      return json(200, { ok: true });
+    }
+
+    // ---------- G26-Foto (privat) ----------
+    if (action === "g26UploadUrl") {
+      const pfad = `${crypto.randomBytes(8).toString("hex")}/${Date.now()}.jpg`;
+      const { data, error } = await db.storage.from(G26_BUCKET).createSignedUploadUrl(pfad);
+      if (error) throw fehler(500, "Der Speicher für G26-Fotos fehlt noch – bitte das SQL aus der Update-Anleitung ausführen.");
+      return json(200, { path: pfad, uploadToken: data.token });
+    }
+    if (action === "g26FotoSetzen" || action === "g26FotoEntfernen") {
+      const name = action === "g26FotoEntfernen" && body.name ? String(body.name) : ich;
+      if (name !== ich && !lage.admin) throw fehler(403, "Das darfst du nur bei dir selbst.");
+      const neu = action === "g26FotoSetzen" ? String(body.pfad || "") : "";
+      if (neu && !/^[a-f0-9]{16}\/\d+\.jpg$/.test(neu)) throw fehler(400, "Ungültiges Foto.");
+      let altPfad = "", g26 = null;
+      await kvAendern("roster", (liste) => {
+        const arr = Array.isArray(liste) ? liste : [];
+        const i = arr.findIndex((r) => r && r.name === name);
+        if (i < 0) throw fehler(404, "Mitglied nicht gefunden.");
+        altPfad = ((arr[i].g26 || {}).fotoPfad) || "";
+        g26 = { ...(arr[i].g26 || {}), fotoPfad: neu || null, photoUrl: null };
+        arr[i] = { ...arr[i], g26 };
+        return arr;
+      }, []);
+      if (altPfad && altPfad !== neu) { try { await db.storage.from(G26_BUCKET).remove([altPfad]); } catch (e) { /* egal */ } }
+      return json(200, { ok: true, g26 });
+    }
+    if (action === "g26Foto") {
+      const name = String(body.name || ich);
+      if (name !== ich && !lage.admin) throw fehler(403, "G26-Fotos anderer sehen nur Admins.");
+      const roster = (await getKv("roster")) || [];
+      const pfad = ((roster.find((r) => r && r.name === name) || {}).g26 || {}).fotoPfad;
+      if (!pfad) return json(200, { url: null });
+      const { data } = await db.storage.from(G26_BUCKET).createSignedUrl(pfad, 60 * 60);
+      return json(200, { url: data ? data.signedUrl : null });
     }
 
     if (action === "pushAus") {

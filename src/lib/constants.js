@@ -3,13 +3,32 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.28";
+export const APP_VERSION = "2.29";
 export const CHANGELOG = [
-  "Zusagen, Absagen, Gäste und Anmeldungen gehen nicht mehr verloren, wenn viele gleichzeitig tippen",
-  "Kacheln selbst anordnen: Kachel 1 Sekunde gedrückt halten und an einen neuen Platz ziehen (gilt auf all deinen Geräten)",
-  "Glocke → „Benachrichtigungen ausschalten“: dann kommen nur noch dringende Mitteilungen und Mängel",
-  "Schnellerer Start: die zuletzt geladenen Termine erscheinen sofort",
+  "Kacheln in Farben nach Bereich: Rot = Einsatz & Technik, Blau = Organisation, Grün = Personal, Gelb = Nachrichten (Admins können die Farben in den Einstellungen ändern)",
+  "G26-Nachweisfoto liegt jetzt in einem geschützten Speicher – sehen können es nur du und die Admins",
+  "Push-Anmeldung der Handys läuft jetzt geschützt über den Server",
 ];
+
+// Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.
+export const KACHEL_FARBEN = {
+  rot: { label: "Rot", von: "#FDE3E1", bis: "#F6B9B4", rand: "#E08A83", kante: "#C1574F", schatten: "rgba(140,30,20,0.18)" },
+  orange: { label: "Orange", von: "#FFE9D2", bis: "#FBC890", rand: "#EBA65C", kante: "#C77A2A", schatten: "rgba(140,70,10,0.18)" },
+  goldgelb: { label: "Goldgelb", von: "#FFEDA8", bis: "#FFD452", rand: "#E5B416", kante: "#C28F00", schatten: "rgba(120,90,0,0.22)" },
+  gelb: { label: "Gelb", von: "#FFF3C9", bis: "#FFDF7E", rand: "#E8C04A", kante: "#C29A12", schatten: "rgba(120,90,0,0.18)" },
+  gruen: { label: "Grün", von: "#E3F2E6", bis: "#B9DEC1", rand: "#86C091", kante: "#4F9460", schatten: "rgba(20,90,40,0.18)" },
+  blau: { label: "Blau", von: "#E4EEF8", bis: "#BBD3EC", rand: "#8DB2D8", kante: "#5E89B5", schatten: "rgba(20,60,110,0.18)" },
+  lila: { label: "Lila", von: "#EFE6F7", bis: "#D4C0EA", rand: "#AE93D3", kante: "#7E5FAE", schatten: "rgba(70,30,110,0.18)" },
+  grau: { label: "Grau", von: "#F1F0EC", bis: "#D8D6CF", rand: "#B9B6AC", kante: "#8E8B82", schatten: "rgba(0,0,0,0.15)" },
+};
+// Standard: Einsatz & Technik rot, Organisation blau, Personal grün, Kommunikation gelb, Verwaltung grau
+export const KACHEL_STANDARD_FARBEN = {
+  einsatz: "rot", geraete: "rot", hydranten: "rot", atemschutz: "rot", fuehrerschein: "rot", bewegung: "rot",
+  ausschuss: "blau", beschluesse: "blau", umfragen: "blau", statistik: "blau",
+  personalakte: "gruen", jugend: "gruen",
+  chat: "gelb",
+  einstellungen: "grau",
+};
 
 export const CATEGORIES = {
   uebung: { label: "Übung", color: "#C1272D", bg: "#FBEAEA" },

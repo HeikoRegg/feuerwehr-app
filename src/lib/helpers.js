@@ -37,7 +37,7 @@ export const emptyRosterEntry = (name, hasPin) => ({
   jugendwart: false,
   ausschuss: false,
   ausschussRechte: { calendar: false, protokoll: false },
-  g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null },
+  g26: { dueDate: null, pendingConfirmation: false, enteredDate: null, confirmedByAdmin: false, confirmedAdminDate: null, photoUrl: null, fotoPfad: null },
   streckendurchgang: { date: null, confirmedBy: null },
   atemschutzUebung: { type: null, date: null },
   atemschutzUnterweisung: { date: null, confirmedBy: null },

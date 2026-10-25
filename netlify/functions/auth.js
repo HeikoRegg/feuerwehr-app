@@ -128,6 +128,39 @@ async function migrate() {
     }
     migrationen.maschinistLehrgang = new Date().toISOString(); migrationenGeaendert = true;
   }
+  // Version 2.29: G26-Fotos aus dem öffentlichen Speicher "anhaenge" in den privaten Speicher "g26" umziehen.
+  // Läuft nur, bis alle umgezogen sind (z. B. falls der neue Speicher per SQL noch fehlt, beim nächsten Mal erneut).
+  if (!migrationen.g26Privat) {
+    let alleOk = true, rosterNeu = null;
+    const liste = rosterNeu || cleaned;
+    for (const r of liste) {
+      const url = r && r.g26 && r.g26.photoUrl;
+      if (!url) continue;
+      const m = /\/storage\/v1\/object\/public\/anhaenge\/(.+)$/.exec(String(url).split("?")[0]);
+      try {
+        if (m) {
+          const alt = decodeURIComponent(m[1]);
+          const { data: datei, error: e1 } = await db.storage.from("anhaenge").download(alt);
+          if (e1 || !datei) throw e1 || new Error("Download");
+          const pfad = `${crypto.randomBytes(8).toString("hex")}/${Date.now()}.jpg`;
+          const { error: e2 } = await db.storage.from("g26").upload(pfad, datei, { contentType: "image/jpeg", upsert: false });
+          if (e2) throw e2;
+          r.g26 = { ...r.g26, fotoPfad: pfad, photoUrl: null };
+          try { await db.storage.from("anhaenge").remove([alt]); } catch (e) { /* egal */ }
+        } else {
+          r.g26 = { ...r.g26, photoUrl: null }; // fremder/ungültiger Link – nicht mehr anzeigen
+        }
+        rosterNeu = liste;
+      } catch (e) { alleOk = false; }
+    }
+    if (rosterNeu) {
+      // nur die g26-Angaben in der aktuellen Liste ersetzen (falls inzwischen jemand anderes gespeichert hat)
+      const aktuell = (await getKv("roster")) || [];
+      const nachName = new Map(rosterNeu.filter(Boolean).map((r) => [r.name, r.g26]));
+      await setKv("roster", aktuell.map((r) => (r && nachName.has(r.name) && r.g26 && r.g26.photoUrl ? { ...r, g26: nachName.get(r.name) } : r)));
+    }
+    if (alleOk) { migrationen.g26Privat = new Date().toISOString(); migrationenGeaendert = true; }
+  }
   if (migrationenGeaendert) await setKv("migrationen", migrationen);
 
   // Admin-Rechte einmalig aus der Konfiguration übernehmen (danach gilt nur noch app_users).
