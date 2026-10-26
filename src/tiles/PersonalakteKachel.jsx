@@ -115,9 +115,9 @@ export function AkteList({ items, onChange, readOnly, textKey = "titel", textLab
   return (
     <div>
       {sorted.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Einträge.</div>}
-      {sorted.map((it) => (
+      {sorted.map((it, idx) => (
         readOnly ? (
-          <div key={it.id} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{label(it[textKey]) || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
+          <div key={it.id || `z${idx}`} style={{ fontSize: 12.5, color: "#2C2F2A", marginBottom: 4 }}>{label(it[textKey]) || "—"} <span style={{ color: "#8A8C86" }}>{it.datum ? `· ${fmtDate(it.datum)}` : ""}</span></div>
         ) : (
           <div key={it.id} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
             {options ? (
@@ -419,6 +419,9 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
         {overview === null && !errorText && <div style={{ fontSize: 12.5, color: "#8A8C86", marginTop: 12 }}>Lädt …</div>}
         {overview !== null && (
           <div style={{ marginTop: 14 }}>
+            {(roster || []).some((r) => istJugendlicher(r) && !r.gesperrt) && !(roster || []).some((r) => r.jugendwart && !r.gesperrt) && (
+              <div data-testid="kein-jugendwart" style={{ fontSize: 12, color: "#9A5B00", background: "#FBF1E1", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>Es ist kein Jugendwart eingetragen. Eintritt und Leistungsabzeichen der Jugendlichen kann nur ein Jugendwart eintragen – bitte die Funktion „Jugendwart“ in einer Personalakte vergeben.</div>
+            )}
             <AkteSection title="GEBURTSTAGE (NÄCHSTE 30 TAGE)">
               {geburtstage.length === 0 ? <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine anstehenden Geburtstage.</div> : geburtstage.map((g) => (
                 <div key={g.name} style={{ fontSize: 12.5, marginBottom: 3 }}><strong>{g.name}</strong> wird {g.bd.age} · {g.bd.days === 0 ? "heute 🎉" : g.bd.days === 1 ? "morgen" : `in ${g.bd.days} Tagen`} <span style={{ color: "#8A8C86" }}>({fmtDate(g.bd.date.toISOString().slice(0, 10))})</span></div>
@@ -493,6 +496,9 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   const form = (name) => geschlechtsForm(name, akte && akte.geschlecht, weiblich);
   const fremdeAkte = target !== me;
   const jugendlicherZiel = istJugendlicher(entry);
+  // Seit 2.33: Eintritt, Mitgliedsverlauf und Leistungsabzeichen von Jugendlichen trägt nur der Jugendwart ein (auch nicht der Admin).
+  const ichJugendwart = !!((roster || []).find((r) => r.name === me) || {}).jugendwart;
+  const jfNurJugendwart = jugendlicherZiel && !ichJugendwart;
   return (
     <div>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {jugendModus ? "Alle Jugendlichen" : isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
@@ -527,34 +533,46 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <AkteField label="Telefon" type="tel" kontaktName={akte.notfallkontakt.name || "den Notfallkontakt"} value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
           </AkteSection>
 
-          <AkteSection title={jugendlicherZiel ? "ARBEITGEBER / SCHULE" : "ARBEITGEBER"}>
+{!jugendlicherZiel && (
+          <AkteSection title="ARBEITGEBER">
             <AkteField label="Name" value={akte.arbeitgeber.name} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, name: v } })} />
             <AkteField label="Telefon" type="tel" kontaktName={akte.arbeitgeber.name || "den Arbeitgeber"} value={akte.arbeitgeber.telefon} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, telefon: v } })} />
             <AkteField label="E-Mail" type="email" value={akte.arbeitgeber.email} onChange={(v) => upd({ arbeitgeber: { ...akte.arbeitgeber, email: v } })} />
           </AkteSection>
+          )}
 
           <AkteSection title="FEUERWEHR">
-            <AkteField label="Eintrittsdatum" type="date" value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
+            <AkteField label={jugendlicherZiel ? "Eintritt Jugendfeuerwehr" : "Eintrittsdatum"} type="date" readOnly={jfNurJugendwart} value={akte.eintrittsdatum} onChange={(v) => upd({ eintrittsdatum: v })} />
             {dienstjahre !== null && <div style={{ fontSize: 12, color: "#5C5F58", marginBottom: 8 }}>{dienstjahre} Dienstjahre (Stand {currentYear()}){dienstbeginnDatum !== akte.eintrittsdatum ? `, gezählt ab dem 14. Geburtstag (${fmtDate(dienstbeginnDatum)})` : ""}</div>}
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "4px 0 4px" }}>Mitgliedsverlauf (Eintritt, Übertritte)</div>
-            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} textKey="text" textLabel="Eintrag" options={VERLAUF_VORLAGEN} frei />
+            <AkteList items={akte.mitgliedsverlauf} onChange={(v) => upd({ mitgliedsverlauf: v })} readOnly={jfNurJugendwart} textKey="text" textLabel="Eintrag" options={VERLAUF_VORLAGEN} frei />
+            {jfNurJugendwart && <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 2 }} data-testid="nur-jugendwart">Eintritt und Abzeichen trägt der Jugendwart ein.</div>}
             <div style={{ fontSize: 11, color: "#8A8C86", margin: "10px 0 4px" }}>Funktionen{!darfAdminFelder ? " (trägt der Admin ein)" : ""}</div>
             <FunktionenEditor items={akte.funktionen} onChange={(v) => upd({ funktionen: v })} options={config.funktionen || []} readOnly={!darfAdminFelder} label={form} />
           </AkteSection>
 
+{jugendlicherZiel ? (
+            <AkteSection title="DIENSTGRAD">
+              <div style={{ fontSize: 13, fontWeight: 600 }} data-testid="dienstgrad-jf">Jugendfeuerwehr</div>
+            </AkteSection>
+          ) : (
           <AkteSection title="DIENSTGRAD" adminOnly>
             <AkteList items={akte.befoerderungen} onChange={(v) => upd({ befoerderungen: v })} readOnly={!darfAdminFelder} textKey="rang" textLabel="Dienstgrad" options={config.raenge || []} label={form} addLabel="Dienstgrad eintragen" />
             {darfAdminFelder && (config.raenge || []).length === 0 && <div style={{ fontSize: 11, color: "#B8791A", marginTop: 4 }}>Bitte zuerst die Dienstgrade in den Einstellungen anlegen.</div>}
           </AkteSection>
+          )}
 
+{!jugendlicherZiel && (
           <AkteSection title="EHRUNGEN & AUSZEICHNUNGEN" adminOnly>
             <AkteList items={akte.ehrungen} onChange={(v) => upd({ ehrungen: v })} readOnly={!darfAdminFelder} textLabel="Ehrung" options={config.ehrungen || []} frei label={form} addLabel="Ehrung eintragen" />
           </AkteSection>
+          )}
 
           <AkteSection title="LEISTUNGSABZEICHEN">
-            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} textLabel="Abzeichen" options={config.leistungsabzeichen || []} frei label={form} addLabel="Abzeichen eintragen" />
+            <AkteList items={akte.leistungsabzeichen} onChange={(v) => upd({ leistungsabzeichen: v })} readOnly={jfNurJugendwart} textLabel="Abzeichen" options={config.leistungsabzeichen || []} frei label={form} addLabel="Abzeichen eintragen" />
           </AkteSection>
 
+{!jugendlicherZiel && (
           <AkteSection title="LEHRGÄNGE">
             {akte.lehrgaenge.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F", marginBottom: 6 }}>Noch keine Lehrgänge.</div>}
             {akte.lehrgaenge.map((l) => (
@@ -576,8 +594,9 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             ))}
             <button style={styles.smallAddBtn} onClick={() => upd({ lehrgaenge: [...akte.lehrgaenge, { id: uid(), titel: "", datum: "", photoPath: null }] })}><Plus size={12} /> Lehrgang hinzufügen</button>
           </AkteSection>
+          )}
 
-          {!(jugendModus && fremdeAkte) && <AkteSection title="FÜHRERSCHEINKLASSEN">
+          {!jugendlicherZiel && !(jugendModus && fremdeAkte) && <AkteSection title="FÜHRERSCHEINKLASSEN">
             <ChipPicker options={FUEHRERSCHEIN_KLASSEN} selected={klassen} onToggle={(k) => onSetKlassen(target, klassen.includes(k) ? klassen.filter((x) => x !== k) : [...klassen, k])} />
             <div style={{ fontSize: 10.5, color: "#8A8C86", marginTop: 6 }}>Wird sofort gespeichert. Bestimmt, ob PKW/LKW bei der Führerscheinkontrolle und den Fahrzeugeinweisungen erscheinen. FF = Feuerwehrführerschein.</div>
           </AkteSection>}

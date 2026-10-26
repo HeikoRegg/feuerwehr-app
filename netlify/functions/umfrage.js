@@ -16,6 +16,7 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { handler as sendPush } from "./send-push.js";
+import { kvAendern } from "./person.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BEREICHE = ["einsatzabteilung", "jugendfeuerwehr", "wettkampfgruppe", "altersabteilung", "atemschutz", "fuehrungskraefte"];
@@ -324,7 +325,18 @@ export async function handler(event) {
       const [reihen, pause] = await Promise.all([getKv("kachelReihenfolge"), getKv("pushAus")]);
       const kacheln = reihen && typeof reihen === "object" && Array.isArray(reihen[ich]) ? reihen[ich] : null;
       const pushAus = !!(pause && typeof pause === "object" && pause[ich]);
-      return json(200, { offen, beschluesse, kacheln, pushAus });
+      // Seit 2.33: App-Version merken (nur bei Änderung oder spätestens alle 12 Stunden), Admins bekommen die Übersicht.
+      let versionen;
+      const v = String(body.version || "").slice(0, 12);
+      if (/^\d+\.\d+$/.test(v)) {
+        const alleV = (await getKv("appVersionen")) || {};
+        const alt = alleV[ich];
+        if (!alt || alt.version !== v || Date.now() - Date.parse(alt.am || 0) > 12 * 3600 * 1000) {
+          try { await kvAendern("appVersionen", (m) => ({ ...((m && typeof m === "object") ? m : {}), [ich]: { version: v, am: new Date().toISOString() } }), {}); } catch (e) { /* nur Info */ }
+        }
+        if (lage.admin) versionen = { ...alleV, [ich]: { version: v, am: new Date().toISOString() } };
+      }
+      return json(200, { offen, beschluesse, kacheln, pushAus, ...(versionen ? { versionen } : {}) });
     }
     if (kachelnAus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));

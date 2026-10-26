@@ -86,8 +86,11 @@ export default function KachelRaster({ kacheln, reihenfolge, onReihenfolge, nach
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
-    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); abbrechen(); };
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
   });
+  // Halte-Zeitgeber nur beim Schließen abbrechen – nicht bei jedem Neuzeichnen (sonst bricht z. B. eine
+  // im Hintergrund ankommende Aktualisierung das 1-Sekunden-Halten ab; Fehler bis 2.32).
+  useEffect(() => () => abbrechen(), []);
 
   return (
     <>

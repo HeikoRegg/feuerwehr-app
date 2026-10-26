@@ -145,12 +145,12 @@ export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onTogg
   );
 }
 
-export function RosterAdminRow({ r, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
+export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}{r.hydrantenwart && <span style={styles.funktionTag}>HY</span>}</span>
+        <span>{r.name} {version && <span data-testid={`version-${r.name}`} title={version.am ? `zuletzt geöffnet ${new Date(version.am).toLocaleDateString("de-DE")}` : ""} style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, marginRight: 4, background: version.version === aktuelleVersion ? "#E6F2EA" : "#FBEAEA", color: version.version === aktuelleVersion ? "#2E7D4F" : "#C1272D" }}>App {version.version}</span>}{isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}{r.hydrantenwart && <span style={styles.funktionTag}>HY</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}
@@ -338,7 +338,7 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
               <EventBadge label={badgeLabel} />
               {showBereich && <span style={styles.miniBereichTag}><BereichIcon bereich={ev.bereich} size={11} /> {BEREICHE[ev.bereich].short}</span>}
             </div>
-            <span style={{ ...styles.eventBadge, background: "white", color: cat.color }}>{cat.label}</span>
+            <span data-testid="termin-kategorie" style={{ ...styles.eventBadge, background: cat.color, color: "white" }}>{cat.label}</span>
           </div>
           <div style={styles.eventMeta}><span style={styles.eventMetaItem}><Clock size={11} /> {ev.time}</span>{ev.location && <span style={styles.eventMetaItem}><MapPin size={11} /> {ev.location}</span>}<GruppenfuehrerTag ev={ev} /></div>
           {ev.notes && <div style={styles.eventNotes}>{ev.notes}</div>}
@@ -387,9 +387,10 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
   );
 }
 
-export function TabBtn({ active, onClick, label, color, dot }) {
+// Seit 2.33: Kategorie-Auswahl in der Farbe der Kategorie (hell = nicht gewählt, kräftig = gewählt).
+export function TabBtn({ active, onClick, label, color, bg, dot }) {
   return (
-    <button onClick={onClick} style={{ ...styles.tabBtn, position: "relative", background: active ? (color || "#2C2F2A") : "transparent", color: active ? "white" : "#5C5F58", borderColor: active ? (color || "#2C2F2A") : "#E2DFD6" }}>
+    <button onClick={onClick} data-testid={`tab-${label}`} style={{ ...styles.tabBtn, position: "relative", background: active ? (color || "#2C2F2A") : (bg || "transparent"), color: active ? "white" : (color || "#5C5F58"), borderColor: active ? (color || "#2C2F2A") : (color ? `${color}55` : "#E2DFD6") }}>
       {label}
       {dot && <span style={styles.tabDot} />}
     </button>

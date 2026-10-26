@@ -167,6 +167,12 @@ export async function handler(event) {
       const incoming = { ...(body.data || {}) };
       // Nicht-Admins können Rang/Beförderungen/Ehrungen nicht ändern – alte Werte bleiben.
       if (!isAdmin) for (const f of ADMIN_ONLY_FIELDS) incoming[f] = old[f] || [];
+      // Seit 2.33: Bei Jugendlichen tragen Eintritt, Mitgliedsverlauf und Leistungsabzeichen nur Jugendwarte ein (auch nicht der Admin).
+      if ((await jugendlicheNamen()).has(target) && !(await istJugendwart(me.name))) {
+        incoming.eintrittsdatum = old.eintrittsdatum || "";
+        incoming.mitgliedsverlauf = old.mitgliedsverlauf || [];
+        incoming.leistungsabzeichen = old.leistungsabzeichen || [];
+      }
       incoming.lehrgaenge = (incoming.lehrgaenge || []).map(({ photoUrl, ...rest }) => {
         // Foto-Pfade dürfen nur in den Ordner der Person zeigen.
         if (rest.photoPath && !rest.photoPath.startsWith(folderFor(target) + "/")) rest.photoPath = null;

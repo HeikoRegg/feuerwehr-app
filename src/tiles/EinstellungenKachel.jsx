@@ -54,7 +54,7 @@ function KachelFarben({ config, persistConfig }) {
 
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
-  const { flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
+  const { appVersionen, flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
   // Ein Listen-Paar (Einträge + weibliche Formen) gemeinsam speichern.
   const listeSpeichern = (key) => (items, weiblich) => persistConfig({ ...config, [key]: items, weiblich });
   // Einträge ohne weibliche Form, für die es einen Vorschlag gibt (z. B. ältere Listen von vor Version 2.8).
@@ -94,7 +94,7 @@ export default function EinstellungenKachel() {
               <SearchBox value={rosterSearch} onChange={setRosterSearch} placeholder="Name suchen …" />
               <div style={styles.rosterManageList}>
                 {roster.filter((r) => matchesSearch(r.name, rosterSearch)).map((r) => (
-                  <RosterAdminRow key={r.name} r={r} isAdminName={config.adminNames.includes(r.name)}
+                  <RosterAdminRow key={r.name} r={r} version={(appVersionen || {})[r.name]} aktuelleVersion={APP_VERSION} isAdminName={config.adminNames.includes(r.name)}
                     onResetPin={() => resetPin(r.name)}
                     onRequestRemove={() => setConfirmDeleteName(r.name)}
                     onRequestBlock={() => setConfirmBlock({ name: r.name, gesperrt: true })}
