@@ -246,6 +246,7 @@ function MangelKarte({ m, bearbeiter, verwalter, callAuthed, flashError, onChang
               <button key={k} onClick={() => setStatus(k)} style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: "5px 4px", borderRadius: 6, border: `1.5px solid ${status === k ? "#2C2F2A" : "#E2DFD6"}`, background: status === k ? "#2C2F2A" : "white", color: status === k ? "white" : "#2C2F2A" }}>{t}</button>
             ))}
           </div>
+          {status === "behoben" && m.status !== "behoben" && <div style={{ fontSize: 11.5, color: "#2E7D4F", marginBottom: 6, lineHeight: 1.4 }} data-testid="behoben-hinweis">Mit „Behoben“ gilt das ganze Gerät als heute geprüft (Sicht-, Funktions- und alle anderen regelmäßigen Prüfungen). Elektro-, externe Prüfung und Verfallsdatum bleiben unverändert.</div>}
           <div style={{ display: "flex", gap: 6 }}>
             <input style={{ ...styles.input, flex: 1, marginTop: 0 }} value={text} maxLength={600} placeholder="Kurze Notiz, z. B. Ersatzteil bestellt …" onChange={(e) => setText(e.target.value)} />
             <button style={{ ...styles.saveBtn, flex: "0 0 44px", width: 44, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }} aria-label="Notiz speichern" disabled={busy} onClick={speichern}><Send size={16} /></button>
@@ -319,16 +320,19 @@ function GeraetDetail({ id, rechte, orte, onBack, onChanged, onBearbeiten, onEti
       {(g.pruefarten || []).length === 0 && <div style={{ fontSize: 12, color: "#A5A79F" }}>Keine Prüfarten festgelegt.</div>}
       {(g.pruefarten || []).map((p) => {
         const def = PRUEFART[p.art]; if (!def) return null; const s = artStatus(g, p.art);
+        // Mangel aus dieser Prüfung nur anzeigen, solange er noch offen ist (seit 2.30) – behoben = wieder in Ordnung
+        const mangelOffen = !!(s.stand && s.stand.ergebnis === "mangel" && offene.some((m) => m.art === p.art));
+        const mangelBehoben = !!(s.stand && s.stand.ergebnis === "mangel" && !mangelOffen);
         return (
           <div key={p.art} style={{ ...styles.kontrollRow, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{def.name}{def.typ === "intervall" && p.intervall ? <span style={{ fontWeight: 400, color: "#8A8C86" }}> · alle {intervallText(p)}</span> : null}</div>
               <div style={{ fontSize: 11, color: "#8A8C86" }}>
-                {s.stand ? `zuletzt ${zeitDe(s.stand.ts).slice(0, 10)} von ${s.stand.von}${s.stand.ergebnis === "mangel" ? " (Mangel)" : ""}` : "noch nie geprüft"}
+                {s.stand ? `zuletzt ${zeitDe(s.stand.ts).slice(0, 10)} von ${s.stand.von}${mangelOffen ? " (Mangel)" : mangelBehoben ? " (Mangel inzwischen behoben)" : s.stand.nachMangel ? " (nach Mangelbehebung)" : ""}` : "noch nie geprüft"}
                 {s.faelligAm ? ` · ${def.typ === "datum" ? (p.art === "verfall" ? "verfällt" : "gültig bis") : "nächste"} ${datumDe(s.faelligAm)}` : ""}
               </div>
             </div>
-            {s.stand && s.stand.ergebnis === "mangel" && s.status !== "ueberfaellig" && s.status !== "nie" ? <Pille status="mangel" text="Mangel gemeldet" /> : <Pille status={s.status} text={s.status === "nie" ? "offen" : undefined} />}
+            {mangelOffen && s.status !== "ueberfaellig" && s.status !== "nie" ? <Pille status="mangel" text="Mangel gemeldet" /> : <Pille status={s.status} text={s.status === "nie" ? "offen" : undefined} />}
           </div>
         );
       })}

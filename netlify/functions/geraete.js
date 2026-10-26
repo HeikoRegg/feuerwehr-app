@@ -409,6 +409,27 @@ export async function handler(event) {
       if (neuerStatus && neuerStatus !== "behoben") { delete neu.behobenVon; delete neu.behobenAm; }
       const { error } = await db.from("geraete_maengel").upsert({ ...m, status: neuerStatus || m.status, data: neu, updated_at: jetzt });
       if (error) throw error;
+      // Seit 2.30 (Heiko): „Behoben“ heißt, der Gerätewart hat das ganze Gerät geprüft → alle Intervall-Prüfungen
+      // (Sicht, Funktion, Tank, Akku, Vollzähligkeit) gelten als heute durchgeführt. Datums-Prüfungen
+      // (Elektro, extern, Verfall) bleiben unverändert – deren „gültig bis“ kommt aus der jeweiligen Bescheinigung.
+      let geprueft = [];
+      if (neuerStatus === "behoben") {
+        const row = await geraetLaden(m.geraet);
+        if (row) {
+          const gd = row.data || {};
+          const { data: rest } = await db.from("geraete_maengel").select("id,status,data").eq("geraet", row.id);
+          const nochOffen = new Set((rest || []).filter((x) => x.id !== m.id && x.status !== "behoben").map((x) => (x.data || {}).art).filter(Boolean));
+          const stand = { ...(gd.pruefstand || {}) };
+          for (const p of gd.pruefarten || []) {
+            if (ARTEN[p.art] !== "intervall") continue;
+            const ergebnis = nochOffen.has(p.art) ? "mangel" : "ok";
+            stand[p.art] = { ts: jetzt, von: ich, ergebnis, nachMangel: true };
+            await db.from("geraete_pruefungen").upsert({ id: neueId(), geraet: row.id, ts: jetzt, von: ich, art: p.art, ergebnis, text: `Nach Mangelbehebung geprüft${text ? `: ${text}` : ""}`, bis: "" });
+            geprueft.push(ART_NAME[p.art]);
+          }
+          if (geprueft.length) await db.from("geraete").upsert({ ...row, data: { ...gd, pruefstand: stand }, updated_at: jetzt });
+        }
+      }
       // Der Melder erfährt, was daraus geworden ist.
       if (d.von && d.von !== ich) {
         const row = await geraetLaden(m.geraet);
@@ -416,7 +437,7 @@ export async function handler(event) {
         const zeile = [text, neuerStatus ? `Status: ${STATUS[neuerStatus]}` : ""].filter(Boolean).join(" · ");
         await push([d.von], `🔧 Dein Mangel: ${gd.kurzname || gd.name || "Gerät"}`, `${ich}: ${zeile}`, ich);
       }
-      return json(200, { ok: true });
+      return json(200, { ok: true, geprueft });
     }
 
     if (action === "deleteMangel") {
