@@ -3,12 +3,13 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.30";
+export const APP_VERSION = "2.31";
 export const CHANGELOG = [
-  "Kacheln in Farben nach Bereich: Rot = Einsatz & Technik, Blau = Organisation, Grün = Personal, Gelb = Nachrichten (Admins können die Farben in den Einstellungen ändern)",
-  "G26-Nachweisfoto liegt jetzt in einem geschützten Speicher – sehen können es nur du und die Admins",
-  "Push-Anmeldung der Handys läuft jetzt geschützt über den Server",
-  "Geräte: Wird ein Mangel auf „Behoben“ gesetzt, gilt das ganze Gerät als heute geprüft (alle regelmäßigen Prüfungen starten neu)",
+  "Hydranten-Karte: beim Hineinzoomen erscheinen Hydrantenschilder mit Leitungsdurchmesser und Zustand",
+  "Kalender: Datum leicht farbig hinterlegt; nach dem Anmeldeschluss steht „Anmeldung geschlossen“ mit deiner Antwort",
+  "Oben der Löwe – bei der Jugendfeuerwehr „Jugendfeuerwehr Regglisweiler“",
+  "Jugendwart und Admins: Terminliste der Jugendfeuerwehr als PDF (über die Glocke)",
+  "Neues Symbol für die Kachel Atemschutz",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.

@@ -210,6 +210,18 @@ export function SearchBox({ value, onChange, placeholder }) {
 export function ResponseButtons({ ev, me, onRespond, size = "normal" }) {
   const myStatus = (ev.responses || {})[me]; const small = size === "small";
   const locked = ev.anmeldeschluss && todayISO() > ev.anmeldeschluss;
+  // Seit 2.31: nach dem Anmeldeschluss keine blassen Knöpfe mehr, sondern klar „Anmeldung geschlossen“ + eigene Antwort.
+  if (locked) {
+    const gaeste = (ev.guests || {})[me] || 0;
+    const text = myStatus === "zu" ? `Du hast zugesagt${gaeste ? ` (+${gaeste} Begleitung)` : ""}` : myStatus === "ab" ? "Du hast abgesagt" : "Keine Rückmeldung von dir";
+    const farbe = myStatus === "zu" ? "#2E7D46" : myStatus === "ab" ? "#C1272D" : "#8A8C86";
+    return (
+      <div data-testid="anmeldung-geschlossen" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 10px", borderRadius: 8, background: "rgba(138,140,134,0.12)" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.85 }}>🔒 Anmeldung geschlossen (seit {fmtDate(ev.anmeldeschluss)})</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: farbe, display: "inline-flex", alignItems: "center", gap: 5 }}>{myStatus === "zu" ? <UserCheck size={13} /> : myStatus === "ab" ? <UserX size={13} /> : null}{text}</span>
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", gap: 6, flexDirection: "column" }}>
       <div style={{ display: "flex", gap: 6 }}>
@@ -224,6 +236,7 @@ export function GuestStepper({ ev, me, onChange }) {
   if ((ev.responses || {})[me] !== "zu") return null;
   const guests = (ev.guests || {})[me] || 0;
   const locked = ev.anmeldeschluss && todayISO() > ev.anmeldeschluss;
+  if (locked) return null; // steht schon in „Anmeldung geschlossen“
   return (
     <div style={styles.guestStepper}>
       <span style={{ fontSize: 11, color: "#8A8C86" }}>+ Begleitung:</span>
@@ -316,7 +329,7 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
   return (
     <div className="card-enter" style={{ ...styles.eventCard, borderLeftColor: cat.color }}>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={styles.eventDateCol}><div style={styles.eventDay}>{day}</div><div style={styles.eventWeekday}>{weekday}</div></div>
+        <div style={{ ...styles.eventDateCol, background: cat.bg, borderRadius: 8, padding: "6px 0", width: 42 }} data-testid="datum-feld"><div style={styles.eventDay}>{day}</div><div style={styles.eventWeekday}>{weekday}</div></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.eventTitleRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>

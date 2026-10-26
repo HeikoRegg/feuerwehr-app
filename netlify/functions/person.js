@@ -100,7 +100,10 @@ export async function handler(event) {
 
     if (action === "gaeste") {
       const anzahl = Math.max(0, Math.min(20, parseInt(body.anzahl, 10) || 0));
-      const termin = await terminAendern(id, (ev) => ({ ...ev, guests: { ...(ev.guests || {}), [ich]: anzahl } }));
+      const termin = await terminAendern(id, (ev) => {
+        if (ev.anmeldeschluss && heuteBerlin() > ev.anmeldeschluss) throw fehler(409, "Der Anmeldeschluss ist vorbei.");
+        return { ...ev, guests: { ...(ev.guests || {}), [ich]: anzahl } };
+      });
       return json(200, { ok: true, termin });
     }
 

@@ -10,19 +10,21 @@ const datumKurz = (iso) => {
   return `${WEEKDAYS_SHORT[d.getDay()]} ${zweistellig(d.getDate())}.${zweistellig(d.getMonth() + 1)}.${d.getFullYear()}`;
 };
 
-// Termine des Bereichs Einsatzabteilung im gewählten Jahr, nach Datum und Uhrzeit sortiert.
-export function termineDesJahres(events, jahr) {
+// Termine eines Bereichs (Standard Einsatzabteilung; seit 2.31 auch Jugendfeuerwehr) im gewählten Jahr, nach Datum und Uhrzeit sortiert.
+export function termineDesJahres(events, jahr, bereich = "einsatzabteilung") {
   return (events || [])
-    .filter((ev) => ev && ev.bereich === "einsatzabteilung" && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || "") && ev.date.startsWith(`${jahr}-`))
+    .filter((ev) => ev && ev.bereich === bereich && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || "") && ev.date.startsWith(`${jahr}-`))
     .slice()
     .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
 }
 
-export function terminlisteModell(events, jahr, heute = new Date()) {
-  const liste = termineDesJahres(events, jahr);
+const NAME = { einsatzabteilung: "Einsatzabteilung", jugendfeuerwehr: "Jugendfeuerwehr" };
+export function terminlisteModell(events, jahr, heute = new Date(), bereich = "einsatzabteilung") {
+  const liste = termineDesJahres(events, jahr, bereich);
+  const name = NAME[bereich] || bereich;
   const stand = `${zweistellig(heute.getDate())}.${zweistellig(heute.getMonth() + 1)}.${heute.getFullYear()}`;
   const blocks = [
-    { t: "h1", text: `Termine Einsatzabteilung ${jahr}` },
+    { t: "h1", text: `Termine ${name} ${jahr}` },
     { t: "text", text: `Stand ${stand}`, grau: true, klein: true },
   ];
   if (!liste.length) blocks.push({ t: "text", text: `Für ${jahr} sind noch keine Termine eingetragen.` });
@@ -35,5 +37,5 @@ export function terminlisteModell(events, jahr, heute = new Date()) {
       zeilen: nachMonat[m].map((ev) => [datumKurz(ev.date), ev.time ? `${ev.time} Uhr` : "", ev.title || ""]),
     });
   });
-  return { titel: `Termine Einsatzabteilung ${jahr}`, untertitel: "Terminliste Einsatzabteilung", dateiname: `Termine_Einsatzabteilung_${jahr}`, fuss: TERMINLISTE_FUSS, blocks };
+  return { titel: `Termine ${name} ${jahr}`, untertitel: `Terminliste ${name}`, dateiname: `Termine_${name}_${jahr}`, fuss: TERMINLISTE_FUSS, blocks };
 }

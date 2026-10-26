@@ -1,10 +1,10 @@
 // Karte für die Hydranten-Kachel (OpenStreetMap über Leaflet). Wird erst geladen, wenn die Karte geöffnet wird.
 //  modus "ansehen": alle Hydranten mit Standort als farbige Punkte, eigener Standort blau, Antippen wählt aus.
 //  modus "setzen":  Fadenkreuz in der Mitte – die Karte wird verschoben, bis es auf dem Hydranten sitzt.
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { ORT_MITTE, ZUSTAND, hatStandort, zustandVon } from "../lib/hydranten";
+import { ORT_MITTE, SCHILD_AB_ZOOM, ZUSTAND, hatStandort, schildSvg, zustandVon } from "../lib/hydranten";
 import { kartenBild } from "../lib/hydrantenDruck";
 
 export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, modus = "ansehen", start, onMitte, folgen, onApi }) {
@@ -16,6 +16,7 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
   const onMitteRef = useRef(onMitte); onMitteRef.current = onMitte;
   const ersteAnsicht = useRef(false);
   const hydrantenRef = useRef(hydranten); hydrantenRef.current = hydranten;
+  const [schilder, setSchilder] = useState(false); // ab Straßen-Zoom Hydrantenschilder statt Punkte
 
   // Karte einmalig anlegen
   useEffect(() => {
@@ -30,6 +31,8 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
     mapRef.current = map;
     const mitte = () => { const c = map.getCenter(); if (onMitteRef.current) onMitteRef.current({ lat: c.lat, lng: c.lng }); };
     map.on("moveend", mitte);
+    const zoomPruefen = () => setSchilder(map.getZoom() >= SCHILD_AB_ZOOM);
+    map.on("zoomend", zoomPruefen);
     // Startausschnitt
     const mitStandort = (hydranten || []).filter(hatStandort);
     if (start && hatStandort(start)) map.setView([start.lat, start.lng], 18);
@@ -38,7 +41,7 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
     else if (pos) map.setView([pos.lat, pos.lng], 17);
     else map.setView([ORT_MITTE.lat, ORT_MITTE.lng], 15);
     ersteAnsicht.current = !!(start || mitStandort.length || pos);
-    mitte();
+    mitte(); zoomPruefen();
     if (onApi) onApi({ bild: () => kartenBild(map, hydrantenRef.current) });
     // Die Kachel baut sich gerade erst auf – danach die Größe neu messen.
     const t = setTimeout(() => map.invalidateSize(), 150);
@@ -52,15 +55,17 @@ export default function HydrantenKarte({ hydranten, pos, auswahl, onAuswahl, mod
     (hydranten || []).filter(hatStandort).forEach((h) => {
       const z = ZUSTAND[zustandVon(h)];
       const gewaehlt = h.id === auswahl;
-      const m = L.circleMarker([h.lat, h.lng], {
-        radius: gewaehlt ? 12 : 8, color: gewaehlt ? "#1F2422" : "#FFFFFF", weight: gewaehlt ? 3 : 2,
-        fillColor: h.typ === "schieber" ? "#5B7C99" : z.karte, fillOpacity: 1,
-      });
-      m.bindTooltip(String(h.nr || ""), { direction: "top", offset: [0, -8] });
+      const m = schilder
+        ? L.marker([h.lat, h.lng], { icon: L.divIcon({ html: schildSvg(h, gewaehlt), className: "hydrant-schild", iconSize: [58, 50], iconAnchor: [29, 48] }), zIndexOffset: gewaehlt ? 1000 : 0, keyboard: false })
+        : L.circleMarker([h.lat, h.lng], {
+          radius: gewaehlt ? 12 : 8, color: gewaehlt ? "#1F2422" : "#FFFFFF", weight: gewaehlt ? 3 : 2,
+          fillColor: h.typ === "schieber" ? "#5B7C99" : z.karte, fillOpacity: 1,
+        });
+      m.bindTooltip(String(h.nr || ""), { direction: "top", offset: schilder ? [0, -48] : [0, -8] });
       m.on("click", () => { if (onAuswahlRef.current) onAuswahlRef.current(h.id); });
       m.addTo(ebene);
     });
-  }, [hydranten, auswahl, modus]);
+  }, [hydranten, auswahl, modus, schilder]);
 
   // Eigener Standort
   useEffect(() => {

@@ -13,6 +13,32 @@ export const ZUSTAND = {
 export const DN_WERTE = [80, 100, 125, 150, 200, 250, 300];
 export const dnText = (h) => (h && h.dn ? `DN ${h.dn}` : "");
 export const zustandVon = (h) => (h && ZUSTAND[h.zustand] ? h.zustand : "");
+
+// Hydrantenschild auf der Karte (seit 2.31): ab dieser Zoomstufe Schilder statt Punkte.
+export const SCHILD_AB_ZOOM = 17;
+const SCHILD_BAND = {
+  "": { text: "NIE GEPRÜFT", grund: "#9A9890", schrift: "#FFFFFF" },
+  ok: { text: "IN ORDNUNG", grund: "#2E7D4F", schrift: "#FFFFFF" },
+  mangel: { text: "MANGEL", grund: "#E3A21A", schrift: "#2C2F2A" },
+  defekt: { text: "DEFEKT", grund: "#C1272D", schrift: "#FFFFFF" },
+};
+// Angaben für das Schild: Kopfzeile „H 100“ (Schieber „S 100“), Rahmenfarbe, Statusband.
+export function schildDaten(h) {
+  const schieber = h && h.typ === "schieber";
+  const band = SCHILD_BAND[zustandVon(h)];
+  return { kopf: `${schieber ? "S" : "H"} ${h && h.dn ? h.dn : "?"}`, rahmen: schieber ? "#1F5FA8" : "#C1272D", band, bandSchrift: band.text.length > 9 ? 6.3 : 7.5 };
+}
+// SVG des Schilds (58 × 50, Spitze unten mittig). gewaehlt = dunkler, dickerer Rand.
+export function schildSvg(h, gewaehlt = false) {
+  const d = schildDaten(h);
+  const rand = gewaehlt ? "#1F2422" : d.rahmen;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="58" height="50" viewBox="0 0 58 50" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))">`
+    + `<rect x="1.5" y="1.5" width="55" height="36" rx="3" fill="#fff" stroke="${rand}" stroke-width="${gewaehlt ? 4 : 3}"/>`
+    + `<text x="29" y="21" text-anchor="middle" font-size="15" font-weight="800" fill="${d.rahmen}" font-family="Arial, sans-serif">${d.kopf}</text>`
+    + `<rect x="5" y="25" width="48" height="9" rx="2" fill="${d.band.grund}"/>`
+    + `<text x="29" y="32.5" text-anchor="middle" font-size="${d.bandSchrift}" font-weight="700" fill="${d.band.schrift}" font-family="Arial, sans-serif">${d.band.text}</text>`
+    + `<path d="M23 38 L29 48 L35 38 Z" fill="${rand}"/></svg>`;
+}
 export const hatStandort = (h) => !!h && typeof h.lat === "number" && typeof h.lng === "number";
 // Ungefähre Mitte von Regglisweiler – nur Startausschnitt der Karte, solange kein Hydrant einen Standort hat.
 export const ORT_MITTE = { lat: 48.2335, lng: 10.0700 };

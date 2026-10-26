@@ -1,6 +1,6 @@
 // Ausdrucke der Hydranten-Kachel: Mängelliste und Kartenausschnitt.
 // Beide werden als Bericht-Modell beschrieben (lib/bericht.js): PC = Druckvorschau, Handy = PDF zum Teilen.
-import { ZUSTAND, datumDe, hatStandort, zustandVon } from "./hydranten";
+import { SCHILD_AB_ZOOM, ZUSTAND, datumDe, hatStandort, schildDaten, zustandVon } from "./hydranten";
 
 const heuteDe = () => new Date().toLocaleDateString("de-DE");
 const dateiDatum = () => new Date().toLocaleDateString("sv-SE");
@@ -82,6 +82,19 @@ export async function kartenBild(map, hydranten) {
   ctx.scale(verkl, verkl);
   const u = skala; // Größe eines Bildschirmpunkts im Bild
 
+  // Hydrantenschild (58 × 50 Bildschirmpunkte, Spitze auf dem Standort) – gleiche Gestaltung wie schildSvg()
+  const schild = (h, x, y) => {
+    const d = schildDaten(h);
+    const l = x - 29 * u, o = y - 48 * u;
+    const rr = (rx, ry, rw, rh, r) => { ctx.beginPath(); ctx.moveTo(rx + r, ry); ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r); ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r); ctx.arcTo(rx, ry + rh, rx, ry, r); ctx.arcTo(rx, ry, rx + rw, ry, r); ctx.closePath(); };
+    ctx.beginPath(); ctx.moveTo(l + 23 * u, o + 37 * u); ctx.lineTo(l + 29 * u, o + 48 * u); ctx.lineTo(l + 35 * u, o + 37 * u); ctx.closePath(); ctx.fillStyle = d.rahmen; ctx.fill();
+    rr(l + 1.5 * u, o + 1.5 * u, 55 * u, 36 * u, 3 * u); ctx.fillStyle = "#FFFFFF"; ctx.fill(); ctx.lineWidth = 3 * u; ctx.strokeStyle = d.rahmen; ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.font = `bold ${15 * u}px Arial, sans-serif`; ctx.fillStyle = d.rahmen; ctx.fillText(d.kopf, l + 29 * u, o + 21 * u);
+    rr(l + 5 * u, o + 25 * u, 48 * u, 9 * u, 2 * u); ctx.fillStyle = d.band.grund; ctx.fill();
+    ctx.font = `bold ${d.bandSchrift * u}px Arial, sans-serif`; ctx.fillStyle = d.band.schrift; ctx.fillText(d.band.text, l + 29 * u, o + 32.5 * u);
+    ctx.textAlign = "left";
+  };
   const zeichnePunkte = () => {
     const sichtbar = [];
     (hydranten || []).filter(hatStandort).forEach((h) => {
@@ -89,6 +102,7 @@ export async function kartenBild(map, hydranten) {
       const x = p.x - ox, y = p.y - oy;
       if (x < -10 || y < -10 || x > W + 10 || y > H + 10) return;
       sichtbar.push(h.id);
+      if (zoom >= SCHILD_AB_ZOOM) { schild(h, x, y); return; } // wie auf dem Bildschirm: Hydrantenschild
       ctx.beginPath(); ctx.arc(x, y, 7 * u, 0, Math.PI * 2);
       ctx.fillStyle = h.typ === "schieber" ? "#5B7C99" : ZUSTAND[zustandVon(h)].karte; ctx.fill();
       ctx.lineWidth = 2 * u; ctx.strokeStyle = "#FFFFFF"; ctx.stroke();

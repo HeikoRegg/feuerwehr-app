@@ -66,3 +66,15 @@ export function HydrantIcon({ size = 26, color = "#2C2F2A" }) {
     </svg>
   );
 }
+
+// Atemschutz-Vollmaske von vorn (Sichtscheibe, Innenmaske, Anschluss Lungenautomat) – seit 2.31 Symbol der Kachel Atemschutz.
+export function AtemschutzIcon({ size = 26, color = "#2C2F2A" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Atemschutz">
+      <path d="M12 2.5c4.2 0 7 2.6 7 6.8 0 3.3-1.2 6-2.9 7.9-1.1 1.2-2.5 1.8-4.1 1.8s-3-.6-4.1-1.8C6.2 15.3 5 12.6 5 9.3 5 5.1 7.8 2.5 12 2.5z" />
+      <path d="M7.6 7.4c1.3-.9 2.8-1.3 4.4-1.3s3.1.4 4.4 1.3c.2 1.9-.4 3.6-1.6 4.5-.9.6-1.9.6-2.8.2-.9.4-1.9.4-2.8-.2-1.2-.9-1.8-2.6-1.6-4.5z" />
+      <circle cx="12" cy="17" r="2.6" />
+      <path d="M12 19.6v1.9" />
+    </svg>
+  );
+}

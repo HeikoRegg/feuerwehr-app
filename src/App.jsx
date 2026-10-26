@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import { LION_ICON } from "./lib/icons";
 import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { allesVergessen, hole, merke } from "./lib/zwischenspeicher";
-import { BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
+import { AtemschutzIcon, BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn, ArztKontakt } from "./components/Shared";
@@ -88,6 +88,7 @@ export default function App() {
   const [newMemberName, setNewMemberName] = useState("");
   const [confirmDeleteName, setConfirmDeleteName] = useState(null);
   const [confirmBlock, setConfirmBlock] = useState(null); // { name, gesperrt }
+  const [terminDruckBereich, setTerminDruckBereich] = useState("einsatzabteilung");
   const [terminDruck, setTerminDruck] = useState(null); // Jahr für die Terminliste (Dialog offen), sonst null
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loginSearch, setLoginSearch] = useState("");
@@ -187,6 +188,8 @@ export default function App() {
   const isHydrantenwart = !!(myEntry && myEntry.hydrantenwart);
   const isKommando = !!(myEntry && (myEntry.kommandant || myEntry.stellvKommandant));
   const isJugendwart = !!(myEntry && myEntry.jugendwart);
+  // Nur in der Jugendfeuerwehr eingetragen (nicht Einsatzabteilung) → Kopfbereich „Jugendfeuerwehr Regglisweiler“
+  const nurJugend = !!(myEntry && (myEntry.bereiche || []).includes("jugendfeuerwehr") && !(myEntry.bereiche || []).includes("einsatzabteilung"));
   const lkwFahrzeuge = useMemo(() => vehicles.filter((v) => v.type === "lkw"), [vehicles]);
   const isAdmin = !!(me && config && config.adminNames && config.adminNames.includes(me));
   const canSeeBewegung = isAdmin || isMaschinist || isGeraetewart;
@@ -1321,8 +1324,10 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.headerTop}>
           <div style={styles.headerBrand}>
-            <Flame size={20} color="#C1272D" strokeWidth={2.4} />
-            <div><div style={styles.headerBrandText}>{APP_NAME.toUpperCase()}</div><div style={styles.headerBrandSub}>Terminplan</div></div>
+            {nurJugend
+              ? <span data-testid="kopf-jf" style={{ display: "inline-flex" }}><JFFlammeIcon size={26} color="#F3F1EC" /></span>
+              : <img data-testid="kopf-loewe" src={(config && config.druckLogoUrl) || LION_ICON} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 6, background: "rgba(255,255,255,0.92)", padding: 2 }} />}
+            <div><div style={styles.headerBrandText}>{nurJugend ? "JUGENDFEUERWEHR REGGLISWEILER" : APP_NAME.toUpperCase()}</div><div style={styles.headerBrandSub}>Terminplan</div></div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
@@ -1481,7 +1486,8 @@ export default function App() {
                   ? <button data-knopf="fest" data-testid="push-ein" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(false); }}>🔔 <span>Benachrichtigungen wieder einschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Zurzeit aus – nur Dringendes und Mängel kommen</span></span></button>
                   : <button data-knopf="fest" data-testid="push-aus" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(true); }}>🔕 <span>Benachrichtigungen ausschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Dringende Mitteilungen und Mängel kommen trotzdem</span></span></button>)}
                 {me && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setKalenderAbo(true); }}>📅 <span>Termine im Handy-Kalender</span></button>}
-                {me && isAdmin && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Einsatzabteilung (PDF)</span></button>}
+                {me && isAdmin && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setTerminDruckBereich("einsatzabteilung"); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Einsatzabteilung (PDF)</span></button>}
+                {me && (isAdmin || isJugendwart) && <button data-knopf="fest" data-testid="terminliste-jf" style={zeile} onClick={() => { setBellMenu(false); setTerminDruckBereich("jugendfeuerwehr"); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Jugendfeuerwehr (PDF)</span></button>}
               </>);
             })()}
           </div>
@@ -1648,7 +1654,7 @@ export default function App() {
             farben={{ ...KACHEL_STANDARD_FARBEN, ...((config && config.kachelFarben) || {}) }}
             kacheln={[
               kachelAn("fuehrerschein") && (inEinsatzabteilung || isAdmin) && { key: "fuehrerschein", onClick: openTileFuehrerschein, icon: <Car size={26} color="#2C2F2A" />, label: "Führerschein" },
-              kachelAn("atemschutz") && isAtemschutz && { key: "atemschutz", onClick: openTileAtemschutz, icon: <Stethoscope size={26} color="#2C2F2A" />, label: "Atemschutz" },
+              kachelAn("atemschutz") && isAtemschutz && { key: "atemschutz", onClick: openTileAtemschutz, icon: <AtemschutzIcon size={28} />, label: "Atemschutz" },
               kachelAn("ausschuss") && canSeeAusschuss && { key: "ausschuss", onClick: openTileAusschuss, icon: <Landmark size={26} color="#2C2F2A" />, label: "Ausschuss", badge: neueSitzungenCount > 0 && <span style={styles.tileBadge}>{neueSitzungenCount}</span> },
               kachelAn("einsatz") && { key: "einsatz", onClick: openTileEinsatz, icon: <ClipboardList size={26} color="#2C2F2A" />, label: "Einsatzberichte" },
               darfGeraete && { key: "geraete", onClick: openTileGeraete, icon: <Boxes size={26} color="#2C2F2A" />, label: "Geräte" },
@@ -1917,21 +1923,21 @@ export default function App() {
         </div>
       )}
 
-      {terminDruck && isAdmin && (
+      {terminDruck && (isAdmin || (isJugendwart && terminDruckBereich === "jugendfeuerwehr")) && (
         <div style={{ ...styles.modalBackdrop, alignItems: "center" }} onClick={() => setTerminDruck(null)}>
           <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter" role="dialog" aria-label="Terminliste">
             <Printer size={22} color="#C1272D" style={{ marginBottom: 8 }} />
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Terminliste Einsatzabteilung</div>
-            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 10 }}>Alle Termine der Einsatzabteilung im gewählten Jahr mit Datum, Uhrzeit und Titel – zum Ausdrucken oder Verschicken (z. B. über WhatsApp).</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Terminliste {BEREICHE[terminDruckBereich].label}</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 10 }}>Alle Termine {terminDruckBereich === "jugendfeuerwehr" ? "der Jugendfeuerwehr" : "der Einsatzabteilung"} im gewählten Jahr mit Datum, Uhrzeit und Titel – zum Ausdrucken oder Verschicken (z. B. über WhatsApp).</div>
             <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 6 }}>
               {[currentYear(), currentYear() + 1].map((j) => (
                 <button key={j} aria-pressed={terminDruck === j} onClick={() => setTerminDruck(j)} style={{ ...styles.categoryChip, flex: 1, justifyContent: "center", background: terminDruck === j ? "#2C2F2A" : "#F3F1EC", color: terminDruck === j ? "white" : "#5C5F58", borderColor: terminDruck === j ? "#2C2F2A" : "#E2DFD6" }}>{j}</button>
               ))}
             </div>
-            <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 12 }}>{termineDesJahres(events, terminDruck).length} Termine im Jahr {terminDruck}</div>
+            <div style={{ fontSize: 11.5, color: "#8A8C86", marginBottom: 12 }}>{termineDesJahres(events, terminDruck, terminDruckBereich).length} Termine im Jahr {terminDruck}</div>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setTerminDruck(null)}>Abbrechen</button>
-              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { const j = terminDruck; if (oeffneBericht(terminlisteModell(events, j))) setTerminDruck(null); else flashError("Bitte Pop-ups für diese Seite erlauben."); }}>Erstellen</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { const j = terminDruck; if (oeffneBericht(terminlisteModell(events, j, new Date(), terminDruckBereich))) setTerminDruck(null); else flashError("Bitte Pop-ups für diese Seite erlauben."); }}>Erstellen</button>
             </div>
           </div>
         </div>
