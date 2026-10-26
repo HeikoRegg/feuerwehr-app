@@ -328,8 +328,9 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
   const guests = ev.guests || {};
   return (
     <div className="card-enter" style={{ ...styles.eventCard, borderLeftColor: cat.color }}>
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ ...styles.eventDateCol, background: cat.bg, borderRadius: 8, padding: "6px 0", width: 42 }} data-testid="datum-feld"><div style={styles.eventDay}>{day}</div><div style={styles.eventWeekday}>{weekday}</div></div>
+      {/* Seit 2.32: ganze obere Zeile (Datum, Titel, Zeit, Ort) hell in der Farbe der Terminart */}
+      <div data-testid="termin-kopf" style={{ display: "flex", gap: 12, background: cat.bg, margin: "-12px -12px 0", padding: "12px", borderBottom: `1px solid ${cat.color}22` }}>
+        <div style={styles.eventDateCol}><div style={styles.eventDay}>{day}</div><div style={styles.eventWeekday}>{weekday}</div></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.eventTitleRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -337,7 +338,7 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
               <EventBadge label={badgeLabel} />
               {showBereich && <span style={styles.miniBereichTag}><BereichIcon bereich={ev.bereich} size={11} /> {BEREICHE[ev.bereich].short}</span>}
             </div>
-            <span style={{ ...styles.eventBadge, background: cat.bg, color: cat.color }}>{cat.label}</span>
+            <span style={{ ...styles.eventBadge, background: "white", color: cat.color }}>{cat.label}</span>
           </div>
           <div style={styles.eventMeta}><span style={styles.eventMetaItem}><Clock size={11} /> {ev.time}</span>{ev.location && <span style={styles.eventMetaItem}><MapPin size={11} /> {ev.location}</span>}<GruppenfuehrerTag ev={ev} /></div>
           {ev.notes && <div style={styles.eventNotes}>{ev.notes}</div>}
@@ -347,10 +348,10 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
         </div>
       </div>
       {ev.capacityMode ? (
-        <div style={styles.eventRespFooter}><SignupButton ev={ev} me={me} onSignup={onSignup} size="small" /><CapacityCounter ev={ev} canEdit={canEdit} /></div>
+        <div style={{ ...styles.eventRespFooter, borderTop: "none" }}><SignupButton ev={ev} me={me} onSignup={onSignup} size="small" /><CapacityCounter ev={ev} canEdit={canEdit} /></div>
       ) : (
         <>
-          <div style={styles.eventRespFooter}>
+          <div style={{ ...styles.eventRespFooter, borderTop: "none" }}>
             <ResponseButtons ev={ev} me={me} onRespond={onRespond} size="small" />
             <button style={styles.expandLink} onClick={onToggleExpand}>{zuNames.length} zugesagt{abNames.length > 0 ? ` · ${abNames.length} abgesagt` : ""}{isFeier ? ` · ${totalHeadcount(ev)} gesamt` : ""}</button>
           </div>

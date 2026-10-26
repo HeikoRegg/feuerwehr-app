@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { AlertTriangle, BellOff, Gavel, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { LION_ICON } from "./lib/icons";
+import { JF_KOPF, LION_KOPF } from "./lib/icons";
 import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { allesVergessen, hole, merke } from "./lib/zwischenspeicher";
 import { AtemschutzIcon, BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
@@ -1325,8 +1325,8 @@ export default function App() {
         <div style={styles.headerTop}>
           <div style={styles.headerBrand}>
             {nurJugend
-              ? <span data-testid="kopf-jf" style={{ display: "inline-flex" }}><JFFlammeIcon size={26} color="#F3F1EC" /></span>
-              : <img data-testid="kopf-loewe" src={(config && config.druckLogoUrl) || LION_ICON} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 6, background: "rgba(255,255,255,0.92)", padding: 2 }} />}
+              ? <img data-testid="kopf-jf" src={JF_KOPF} alt="" style={{ width: 36, height: 33, objectFit: "contain" }} />
+              : <img data-testid="kopf-loewe" src={LION_KOPF} alt="" style={{ width: 28, height: 36, objectFit: "contain" }} />}
             <div><div style={styles.headerBrandText}>{nurJugend ? "JUGENDFEUERWEHR REGGLISWEILER" : APP_NAME.toUpperCase()}</div><div style={styles.headerBrandSub}>Terminplan</div></div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -1659,7 +1659,7 @@ export default function App() {
               kachelAn("einsatz") && { key: "einsatz", onClick: openTileEinsatz, icon: <ClipboardList size={26} color="#2C2F2A" />, label: "Einsatzberichte" },
               darfGeraete && { key: "geraete", onClick: openTileGeraete, icon: <Boxes size={26} color="#2C2F2A" />, label: "Geräte" },
               darfHydranten && { key: "hydranten", onClick: openTileHydranten, icon: <HydrantIcon size={27} />, label: "Hydranten" },
-              kachelAn("beschluesse") && !!me && { key: "beschluesse", onClick: openTileBeschluesse, icon: <Gavel size={26} color="#2C2F2A" />, label: "Beschlussbuch", badge: beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span> },
+              kachelAn("beschluesse") && !!me && !(nurJugend && !canSeeAusschuss) && { key: "beschluesse", onClick: openTileBeschluesse, icon: <Gavel size={26} color="#2C2F2A" />, label: "Beschlussbuch", badge: beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span> },
               kachelAn("umfragen") && !!me && { key: "umfragen", onClick: openTileUmfragen, icon: <CalendarCheck size={26} color="#2C2F2A" />, label: "Terminumfragen", badge: umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span> },
               kachelAn("jugend") && (isJugendwart || isAdmin) && { key: "jugend", onClick: openTileJugend, icon: <JFFlammeIcon size={28} />, label: "Jugendfeuerwehr" },
               kachelAn("bewegung") && canSeeBewegung && { key: "bewegung", onClick: openTileBewegung, icon: <Truck size={26} color="#2C2F2A" />, label: "Bewegungsfahrten" },

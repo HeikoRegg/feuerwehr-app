@@ -3,13 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.31";
+export const APP_VERSION = "2.32";
 export const CHANGELOG = [
-  "Hydranten-Karte: beim Hineinzoomen erscheinen Hydrantenschilder mit Leitungsdurchmesser und Zustand",
-  "Kalender: Datum leicht farbig hinterlegt; nach dem Anmeldeschluss steht „Anmeldung geschlossen“ mit deiner Antwort",
-  "Oben der Löwe – bei der Jugendfeuerwehr „Jugendfeuerwehr Regglisweiler“",
-  "Jugendwart und Admins: Terminliste der Jugendfeuerwehr als PDF (über die Glocke)",
-  "Neues Symbol für die Kachel Atemschutz",
+  "Termine: die obere Zeile ist in der Farbe der Terminart hinterlegt",
+  "Neue Logos oben: Löwe ohne Kästchen, bei der Jugendfeuerwehr das JF-Logo",
+  "Jugendfeuerwehr: Nachrichten nur noch mit dem Jugendwart, das Beschlussbuch ist ausgeblendet",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.

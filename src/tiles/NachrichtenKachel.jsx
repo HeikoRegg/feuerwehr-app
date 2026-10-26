@@ -86,7 +86,7 @@ export default function NachrichtenKachel() {
           </div>
           <SearchBox value={suche} onChange={setSuche} placeholder="Name suchen …" />
           <div style={{ maxHeight: 280, overflowY: "auto" }}>
-            {roster.filter((r) => r.name !== me && !((gruppen[waehle] && gruppen[waehle].mitglieder) || []).includes(r.name) && (waehle !== "jugendwart" || (r.bereiche || []).includes("jugendfeuerwehr")) && matchesSearch(r.name, suche)).map((r) => (
+            {roster.filter((r) => r.name !== me && !((gruppen[waehle] && gruppen[waehle].mitglieder) || []).includes(r.name) && (waehle !== "jugendwart" ? !((r.bereiche || []).includes("jugendfeuerwehr") && !(r.bereiche || []).includes("einsatzabteilung")) : (r.bereiche || []).includes("jugendfeuerwehr")) && matchesSearch(r.name, suche)).map((r) => (
               <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => { setOffen({ gruppe: waehle, kamerad: r.name }); setWaehle(null); setSuche(""); }}>
                 <span>{r.name}</span><ChevronRight size={15} color="#A5A79F" />
               </button>

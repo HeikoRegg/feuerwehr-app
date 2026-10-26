@@ -42,7 +42,9 @@ async function ladeLage(token) {
   const ausschuss = admin || !!e.ausschuss;
   const r = e.ausschussRechte || {};
   const bearbeiter = admin || (!!e.ausschuss && (!!r.calendar || !!r.protokoll));
-  return { me, config: config || {}, rechte: { admin, ausschuss, bearbeiter } };
+  // Seit 2.32: Mitglieder nur der Jugendfeuerwehr sehen das Beschlussbuch nicht (außer Admin/Ausschuss).
+  const nurJugend = (e.bereiche || []).includes("jugendfeuerwehr") && !(e.bereiche || []).includes("einsatzabteilung");
+  return { me, config: config || {}, gesperrtJugend: nurJugend && !ausschuss, rechte: { admin, ausschuss, bearbeiter } };
 }
 
 async function themen() {
@@ -87,6 +89,7 @@ export async function handler(event) {
       const aus = Array.isArray(lage.config.kachelnAus) ? lage.config.kachelnAus : [];
       if (aus.includes("beschluesse")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     }
+    if (lage.gesperrtJugend) return json(403, { error: "Das Beschlussbuch ist für die Jugendfeuerwehr nicht freigegeben." });
     const { rechte } = lage;
     const ich = lage.me.name;
     const { action } = body;

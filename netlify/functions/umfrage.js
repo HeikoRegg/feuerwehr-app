@@ -305,7 +305,9 @@ export async function handler(event) {
           offen = liste.filter((u) => !abgestimmt.has(u.id)).length;
         }
       }
-      if (!kachelnAus.includes("beschluesse")) {
+      const ein = lage.eintrag(ich);
+      const nurJugendOhneAusschuss = (ein.bereiche || []).includes("jugendfeuerwehr") && !(ein.bereiche || []).includes("einsatzabteilung") && !ein.ausschuss && !lage.admin;
+      if (!kachelnAus.includes("beschluesse") && !nurJugendOhneAusschuss) {
         try {
           const [{ data, error }, gesehen] = await Promise.all([db.from("beschluesse").select("data"), getKv("beschlussGesehen")]);
           if (error) throw error;

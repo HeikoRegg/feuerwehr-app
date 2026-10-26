@@ -62,11 +62,14 @@ async function ladeLage(token) {
   };
   // Jugendfeuerwehr = Mitglieder mit dem Bereich „Jugendfeuerwehr“ (nur sie schreiben mit dem Jugendwart).
   const jugend = new Set((roster || []).filter((r) => r && aktiv(r.name) && (r.bereiche || []).includes("jugendfeuerwehr")).map((r) => r.name));
-  return { me, gruppen, mitglieder, jugend, config: config || {} };
+  // Seit 2.32: Nur-Jugend (Jugendfeuerwehr, nicht Einsatzabteilung) schreibt ausschließlich mit dem Jugendwart.
+  const nurJugend = new Set((roster || []).filter((r) => r && (r.bereiche || []).includes("jugendfeuerwehr") && !(r.bereiche || []).includes("einsatzabteilung")).map((r) => r.name));
+  return { me, gruppen, mitglieder, jugend, nurJugend, config: config || {} };
 }
 const istMitglied = (lage, gruppe, name) => (lage.gruppen[gruppe] || []).includes(name);
 // Beim Jugendwart-Chat ist die Kamerad-Seite immer ein Mitglied der Jugendfeuerwehr.
-const kameradOk = (lage, gruppe, kamerad) => gruppe !== "jugendwart" || lage.jugend.has(kamerad);
+// Seit 2.32: Mitglieder nur der Jugendfeuerwehr haben ausschließlich den Jugendwart als Gegenüber.
+const kameradOk = (lage, gruppe, kamerad) => (gruppe === "jugendwart" ? lage.jugend.has(kamerad) : !lage.nurJugend.has(kamerad));
 const darfThread = (lage, t) => t && (t.kamerad === lage.me.name || istMitglied(lage, t.gruppe, lage.me.name));
 
 // Unterhaltungen, deren letzte Nachricht älter als 6 Monate ist, endgültig löschen (aus der ohnehin geladenen Liste).
@@ -109,7 +112,7 @@ export async function handler(event) {
       const { data: alleThreads, error } = await threadsVorab;
       if (error) throw error;
       const threads = await alteLoeschen(alleThreads);
-      const sichtbar = (threads || []).filter((t) => GRUPPEN[t.gruppe] && darfThread(lage, t));
+      const sichtbar = (threads || []).filter((t) => GRUPPEN[t.gruppe] && darfThread(lage, t) && kameradOk(lage, t.gruppe, t.kamerad));
       const ids = sichtbar.map((t) => t.id);
       let nachrichten = [], gelesen = [];
       if (ids.length) {
@@ -129,7 +132,8 @@ export async function handler(event) {
       const gruppen = Object.fromEntries(Object.keys(GRUPPEN).map((g) => [g, {
         mitglied: istMitglied(lage, g, ich),
         // Den Jugendwart sehen nur Jugendfeuerwehr und Jugendwarte selbst.
-        sichtbar: g !== "jugendwart" || lage.jugend.has(ich) || istMitglied(lage, g, ich),
+        // Nur-Jugend sieht nur den Jugendwart (seit 2.32).
+        sichtbar: istMitglied(lage, g, ich) || (g === "jugendwart" ? lage.jugend.has(ich) : !lage.nurJugend.has(ich)),
         // „Verfügbar“ = es gibt jemanden außer mir, der die Nachricht lesen kann.
         verfuegbar: (lage.gruppen[g] || []).some((n) => n !== ich),
         // Wer selbst zur Gruppe gehört, sieht die Mitglieder (für „Kameraden anschreiben“).
@@ -171,7 +175,7 @@ export async function handler(event) {
       if (!text) return json(400, { error: "Bitte eine Nachricht eingeben." });
       if (text.length > MAX_TEXT) return json(400, { error: `Die Nachricht ist zu lang (höchstens ${MAX_TEXT} Zeichen).` });
       if (!lage.mitglieder.has(kamerad)) return json(400, { error: "Dieses Mitglied gibt es nicht (mehr)." });
-      if (!kameradOk(lage, gruppe, kamerad)) return json(403, { error: "Mit dem Jugendwart schreiben nur Mitglieder der Jugendfeuerwehr." });
+      if (!kameradOk(lage, gruppe, kamerad)) return json(403, { error: gruppe === "jugendwart" ? "Mit dem Jugendwart schreiben nur Mitglieder der Jugendfeuerwehr." : "Mitglieder der Jugendfeuerwehr schreiben nur mit dem Jugendwart." });
       const alsKamerad = kamerad === ich;
       if (!alsKamerad && !istMitglied(lage, gruppe, ich)) return json(403, { error: "Du kannst nur an Ausschuss, Kommandantschaft oder Entwickler schreiben." });
       if (!alsKamerad && istMitglied(lage, gruppe, kamerad)) return json(400, { error: `${kamerad} gehört selbst ${ZU[gruppe]}.` });
