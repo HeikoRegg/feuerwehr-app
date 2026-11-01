@@ -17,6 +17,8 @@ export const emptyAkte = () => ({
   strasse: "", plz: "", ort: "", email: "", telefon: "", geburtsdatum: "",
   arbeitgeber: { name: "", telefon: "", email: "" },
   notfallkontakt: { name: "", telefon: "" },
+  // Seit 2.34: zweiter (optionaler) Notfallkontakt – nur bei Jugendlichen angezeigt.
+  notfallkontakt2: { name: "", telefon: "" },
   bemerkung: "", eintrittsdatum: "",
   lehrgaenge: [], leistungsabzeichen: [], funktionen: [], mitgliedsverlauf: [],
   befoerderungen: [], ehrungen: [],
@@ -27,6 +29,7 @@ export function normalizeAkte(d) {
     ...b, ...d,
     arbeitgeber: { ...b.arbeitgeber, ...(d.arbeitgeber || {}) },
     notfallkontakt: { ...b.notfallkontakt, ...(d.notfallkontakt || {}) },
+    notfallkontakt2: { ...b.notfallkontakt2, ...(d.notfallkontakt2 || {}) },
     lehrgaenge: d.lehrgaenge || [], leistungsabzeichen: d.leistungsabzeichen || [],
     // Funktionen früher nur als Name gespeichert – jetzt mit Status aktiv / a.D. und Datum.
     funktionen: (d.funktionen || []).map((f) => (typeof f === "string" ? { name: f, status: "aktiv", seit: "", adSeit: "" } : { status: "aktiv", seit: "", adSeit: "", ...f })),
@@ -69,9 +72,9 @@ export function AkteSection({ title, children, adminOnly }) {
     </div>
   );
 }
-export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder, anruf = true, mail = true, kontaktName }) {
+export function AkteField({ label, value, onChange, type = "text", readOnly, placeholder, anruf = true, mail = true, kontaktName, testId }) {
   return (
-    <div style={{ marginBottom: 6 }}>
+    <div style={{ marginBottom: 6 }} data-testid={testId}>
       <div style={{ fontSize: 11, color: "#8A8C86", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>{label}
         {type === "tel" && value && anruf && <AnrufKnopf nummer={value} name={kontaktName} />}
         {type === "email" && value && mail && <MailKnopf adresse={value} text="Schreiben" />}
@@ -499,6 +502,9 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   // Seit 2.33: Eintritt, Mitgliedsverlauf und Leistungsabzeichen von Jugendlichen trägt nur der Jugendwart ein (auch nicht der Admin).
   const ichJugendwart = !!((roster || []).find((r) => r.name === me) || {}).jugendwart;
   const jfNurJugendwart = jugendlicherZiel && !ichJugendwart;
+  // Seit 2.34: Bei Jugendlichen dürfen nur Jugendwart und Admin die Erziehungsberechtigten anrufen
+  // (der Jugendliche selbst sieht seine Nummern, aber keinen Anruf-Knopf).
+  const darfNotfallAnrufen = !jugendlicherZiel || ichJugendwart || !!isAdmin;
   return (
     <div>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {jugendModus ? "Alle Jugendlichen" : isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
@@ -530,7 +536,14 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
 
           <AkteSection title={jugendlicherZiel ? "NOTFALLKONTAKT / ERZIEHUNGSBERECHTIGTE" : "NOTFALLKONTAKT"}>
             <AkteField label="Name" value={akte.notfallkontakt.name} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, name: v } })} />
-            <AkteField label="Telefon" type="tel" kontaktName={akte.notfallkontakt.name || "den Notfallkontakt"} value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
+            <AkteField label="Telefon" type="tel" testId="notfall-telefon" anruf={darfNotfallAnrufen} kontaktName={akte.notfallkontakt.name || "den Notfallkontakt"} value={akte.notfallkontakt.telefon} onChange={(v) => upd({ notfallkontakt: { ...akte.notfallkontakt, telefon: v } })} />
+            {jugendlicherZiel && (
+              <div data-testid="notfallkontakt2" style={{ borderTop: "1px dashed #E2DFD6", marginTop: 8, paddingTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", marginBottom: 6 }}>2. KONTAKT <span style={{ fontWeight: 600, color: "#A5A79F" }}>(optional)</span></div>
+                <AkteField label="Name" value={akte.notfallkontakt2.name} placeholder="optional" onChange={(v) => upd({ notfallkontakt2: { ...akte.notfallkontakt2, name: v } })} />
+                <AkteField label="Telefon" type="tel" testId="notfall2-telefon" placeholder="optional" anruf={darfNotfallAnrufen} kontaktName={akte.notfallkontakt2.name || "den 2. Kontakt"} value={akte.notfallkontakt2.telefon} onChange={(v) => upd({ notfallkontakt2: { ...akte.notfallkontakt2, telefon: v } })} />
+              </div>
+            )}
           </AkteSection>
 
 {!jugendlicherZiel && (

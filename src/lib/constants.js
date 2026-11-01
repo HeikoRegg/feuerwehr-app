@@ -3,12 +3,10 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.33";
+export const APP_VERSION = "2.34";
 export const CHANGELOG = [
-  "Kalender: die Auswahl Übung, Brandwache usw. und das Kästchen im Termin sind in der Farbe der Terminart",
-  "Oben unter „Terminplan“ steht jetzt die Version der App",
-  "Personalakte der Jugendfeuerwehr aufgeräumt: Dienstgrad automatisch „Jugendfeuerwehr“; Eintritt und Abzeichen trägt der Jugendwart ein",
-  "Kacheln verschieben klappt jetzt zuverlässig",
+  "Personalakte der Jugendfeuerwehr: Platz für einen zweiten Notfallkontakt (optional)",
+  "Die Erziehungsberechtigten anrufen können nur noch der Jugendwart und der Admin",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.
