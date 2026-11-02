@@ -4,6 +4,7 @@ import { BEREICHE, BEREICH_KEYS, CATEGORIES, GRUPPENFUEHRER_CATEGORIES } from ".
 import { BereichIcon } from "./BereichIcon";
 import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadcount, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
+import { Avatar } from "./Profilfoto";
 
 // Einfache Liste zum Pflegen von Auswahlwerten (Ränge, Funktionen) in den Einstellungen.
 // Telefonnummer / E-Mail antippbar machen (iPhone fragt vor dem Anrufen nach)
@@ -145,12 +146,12 @@ export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onTogg
   );
 }
 
-export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
+export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onProfilfoto, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={styles.rosterManageItemFull}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => setOpen(!open)}>
-        <span>{r.name} {version && <span data-testid={`version-${r.name}`} title={version.am ? `zuletzt geöffnet ${new Date(version.am).toLocaleDateString("de-DE")}` : ""} style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, marginRight: 4, background: version.version === aktuelleVersion ? "#E6F2EA" : "#FBEAEA", color: version.version === aktuelleVersion ? "#2E7D4F" : "#C1272D" }}>App {version.version}</span>}{isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}{r.hydrantenwart && <span style={styles.funktionTag}>HY</span>}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", minWidth: 0 }}><Avatar name={r.name} size={26} onClick={onProfilfoto} />{r.name} {version && <span data-testid={`version-${r.name}`} title={version.am ? `zuletzt geöffnet ${new Date(version.am).toLocaleDateString("de-DE")}` : ""} style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4, marginRight: 4, background: version.version === aktuelleVersion ? "#E6F2EA" : "#FBEAEA", color: version.version === aktuelleVersion ? "#2E7D4F" : "#C1272D" }}>App {version.version}</span>}{isAdminName && <span style={styles.adminTag}>Admin</span>}{!r.hasPin && <span style={styles.pinPendingTag}>PIN offen</span>}{r.gruppenfuehrer && <span style={styles.funktionTag}>GF</span>}{r.maschinist && <span style={styles.funktionTag}>Ma</span>}{r.geraetewart && <span style={styles.funktionTag}>GW</span>}{r.jugendwart && <span style={styles.funktionTag}>JW</span>}{r.hydrantenwart && <span style={styles.funktionTag}>HY</span>}</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button style={styles.rosterRemoveBtn} title="PIN zurücksetzen" onClick={(e) => { e.stopPropagation(); onResetPin(); }}><RotateCcw size={13} /></button>
           {!isAdminName && onRequestBlock && <button style={styles.rosterRemoveBtn} title="Sperren" onClick={(e) => { e.stopPropagation(); onRequestBlock(); }}><Lock size={13} /></button>}

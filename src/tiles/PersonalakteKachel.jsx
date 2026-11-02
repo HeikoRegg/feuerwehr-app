@@ -6,6 +6,8 @@ import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr
 import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox, AnrufKnopf, MailKnopf } from "../components/Shared";
+import { Avatar } from "../components/Profilfoto";
+import { useApp } from "../AppContext";
 
 // ============================================================================
 // Personalakte – sichtbar nur für die Person selbst und den Admin.
@@ -200,6 +202,7 @@ function FunktionenEditor({ items, onChange, options, readOnly, label = (x) => x
 
 // modus "jugend": Jugendwart verwaltet die Jugendlichen (anlegen, Akte pflegen, sperren/entsperren) – ohne Admin-Rechte.
 export default function PersonalakteView({ me, isAdmin, roster, config, callAuthed, flashError, onOpenPhoto, onSetKlassen, onSetFlags, onClose, modus = "normal", onAddMember, onRequestBlock }) {
+  const profilApp = useApp() || {}; // Profilfoto (seit 2.35): Anzeige und „Foto ändern“
   const jugendModus = modus === "jugend";
   const uebersicht = isAdmin || jugendModus; // mit Übersicht über mehrere Akten
   const darfAdminFelder = isAdmin && !jugendModus; // Dienstgrad, Ehrungen, Funktionen
@@ -469,7 +472,7 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
             <SearchBox value={search} onChange={setSearch} placeholder="Name suchen …" />
             {aktive.filter((r) => matchesSearch(r.name, search)).map((r) => (
               <button key={r.name} style={{ ...styles.rosterItem, marginBottom: 6 }} onClick={() => setTarget(r.name)}>
-                <span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {geschlechtsForm(byName[r.name].rang, byName[r.name].geschlecht, weiblich)}</span>}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><Avatar name={r.name} size={28} /><span>{r.name}{byName[r.name] && byName[r.name].rang && <span style={{ fontSize: 11, color: "#8A8C86" }}> · {geschlechtsForm(byName[r.name].rang, byName[r.name].geschlecht, weiblich)}</span>}</span></span>
                 <ChevronRight size={15} color="#A5A79F" />
               </button>
             ))}
@@ -508,8 +511,16 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
   return (
     <div>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={back}><ArrowLeft size={18} /> {jugendModus ? "Alle Jugendlichen" : isAdmin ? "Alle Personalakten" : "Zurück"}</button></div>
-      <div style={styles.modalTitle}>Personalakte {target}</div>
-      {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{form(rang.rang)}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Avatar name={target} size={58} onClick={profilApp.oeffneProfilfoto ? () => profilApp.oeffneProfilfoto(target) : undefined} testId="akte-avatar" />
+        <div style={{ minWidth: 0 }}>
+          <div style={styles.modalTitle}>Personalakte {target}</div>
+          {rang && <div style={{ fontSize: 12.5, color: "#5C5F58", marginTop: 2 }}>{form(rang.rang)}{rang.datum ? ` seit ${fmtDate(rang.datum)}` : ""}</div>}
+          {!fremdeAkte && profilApp.darfProfilfoto && profilApp.darfProfilfoto(me) && profilApp.oeffneProfilfoto && (
+            <button style={{ ...styles.tinyBtn, marginTop: 4 }} data-testid="akte-foto-aendern" onClick={() => profilApp.oeffneProfilfoto(me)}>Foto ändern</button>
+          )}
+        </div>
+      </div>
       <div style={{ fontSize: 10.5, color: "#A5A79F", margin: "4px 0 12px" }}>Nur {fremdeAkte ? `${target},` : "du,"} {jugendlicherZiel ? "die Jugendwarte und " : ""}der Admin können diese Akte sehen.</div>
       {errorText && <div style={styles.errorText}>{errorText}</div>}
       {loading && <div style={{ fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>}

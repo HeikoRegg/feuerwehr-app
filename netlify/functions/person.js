@@ -5,6 +5,10 @@
 //  - Push-Nachrichten aus/an (gilt auf allen Geräten; dringende Mitteilungen und Gerätemängel kommen trotzdem)
 //  - (seit 2.29) Push-Anmeldung des Handys (Tabelle push_subscriptions ist nur noch über den Server erreichbar)
 //  - (seit 2.29) G26-Foto im privaten Speicher "g26": hochladen, ansehen (nur selbst + Admins, Link 1 Stunde), entfernen
+//  - (seit 2.35) Profilfoto im privaten Speicher "profilfotos": jedes Mitglied stellt selbst ein Foto ein, alle Angemeldeten
+//    sehen es (signierte Links, 24 Stunden). Kein Profilfoto für die Jugendfeuerwehr (nur JF ohne Einsatzabteilung) und für
+//    Gesperrte. Entfernen: selbst oder Admin. Welche Datei zu wem gehört, steht im kv-Schlüssel "profilfotos" (schreibt nur
+//    der Server); der Ordner jeder Person ist ein Prüfwert aus ihrem Namen, damit niemand ein fremdes Foto „übernehmen“ kann.
 // Gespeichert wird „konfliktsicher“: frisch lesen, nur den einen Eintrag ändern und nur dann schreiben, wenn
 // in der Zwischenzeit niemand anderes gespeichert hat (Vergleich über updated_at) – sonst neu versuchen.
 // Damit gehen keine Zusagen mehr verloren, wenn viele gleichzeitig tippen.
@@ -19,6 +23,38 @@ const fehler = (code, text) => { const e = new Error(text); e.code = code; retur
 const heuteBerlin = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
 const KACHEL_KEYS = /^[a-z0-9_-]{1,30}$/;
 const G26_BUCKET = "g26";
+export const PROFIL_BUCKET = "profilfotos";
+const PROFIL_GUELTIG_S = 24 * 60 * 60; // so lange gelten die Foto-Links (die App holt rechtzeitig neue)
+
+// ---------- Profilfotos (seit 2.35) ----------
+// Ordner einer Person im Speicher: Prüfwert aus dem Namen (nicht erratbar, aber immer gleich).
+export function profilOrdner(name) {
+  const geheim = process.env.KALENDER_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "profilfoto";
+  return crypto.createHmac("sha256", geheim).update(`profilfoto:${String(name || "")}`).digest("hex").slice(0, 16);
+}
+// Jugendliche (nur Jugendfeuerwehr, keine Einsatzabteilung, kein Admin) und Gesperrte haben kein Profilfoto.
+export function darfProfilfoto(eintrag, istAdmin) {
+  if (!eintrag || eintrag.gesperrt) return false;
+  const b = eintrag.bereiche || [];
+  if (b.includes("jugendfeuerwehr") && !b.includes("einsatzabteilung") && !istAdmin) return false;
+  return true;
+}
+function profilErlaubteNamen(roster, users) {
+  const gesperrt = new Set((users || []).filter((u) => u.blocked).map((u) => u.name));
+  const admins = new Set((users || []).filter((u) => u.is_admin).map((u) => u.name));
+  return new Set((roster || []).filter((r) => r && r.name && !gesperrt.has(r.name) && darfProfilfoto(r, admins.has(r.name))).map((r) => r.name));
+}
+function profilEintraege(map, erlaubt) {
+  return Object.entries((map && typeof map === "object") ? map : {})
+    .filter(([name, f]) => erlaubt.has(name) && f && typeof f.pfad === "string")
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+}
+// Kurzer Prüfwert über alle sichtbaren Profilfotos – ändert sich, sobald jemand ein Foto ändert oder nicht mehr sichtbar ist.
+// Damit holt die App die Foto-Links nur dann neu, wenn sich wirklich etwas geändert hat (spart Server-Aufrufe).
+const standAus = (eintraege) => crypto.createHash("sha1").update(JSON.stringify(eintraege.map(([n, f]) => [n, f.am || ""]))).digest("hex").slice(0, 12);
+export async function profilfotoStand(roster, users) {
+  return standAus(profilEintraege(await getKv("profilfotos"), profilErlaubteNamen(roster, users)));
+}
 
 async function getKv(key) {
   const { data } = await db.from("kv_store").select("value").eq("key", key).maybeSingle();
@@ -54,7 +90,7 @@ async function ladeLage(token) {
   const me = token ? users.find((u) => !u.blocked && Array.isArray(u.tokens) && u.tokens.includes(token)) : null;
   const e = (me && (roster || []).find((r) => r && r.name === me.name)) || {};
   const admin = !!(me && me.is_admin);
-  return { me: me && !e.gesperrt ? me : null, admin, eintrag: e, config: config || {}, kalenderRecht: (b) => admin || !!(((e.rechte || {})[b] || {}).calendar) };
+  return { me: me && !e.gesperrt ? me : null, admin, eintrag: e, config: config || {}, users, roster: roster || [], kalenderRecht: (b) => admin || !!(((e.rechte || {})[b] || {}).calendar) };
 }
 
 // Einen Termin in der Liste „events“ ändern.
@@ -187,6 +223,59 @@ export async function handler(event) {
       if (!pfad) return json(200, { url: null });
       const { data } = await db.storage.from(G26_BUCKET).createSignedUrl(pfad, 60 * 60);
       return json(200, { url: data ? data.signedUrl : null });
+    }
+
+    // ---------- Profilfoto (seit 2.35, privat, sichtbar für alle Angemeldeten) ----------
+    if (action === "fotoUploadUrl") {
+      if (!darfProfilfoto(lage.eintrag, lage.admin)) throw fehler(403, "Für die Jugendfeuerwehr gibt es kein Profilfoto.");
+      const pfad = `${profilOrdner(ich)}/${Date.now()}.jpg`;
+      const { data, error } = await db.storage.from(PROFIL_BUCKET).createSignedUploadUrl(pfad);
+      if (error) throw fehler(500, "Der Speicher für Profilfotos fehlt noch – bitte das SQL aus der Update-Anleitung ausführen.");
+      return json(200, { path: pfad, uploadToken: data.token });
+    }
+    if (action === "fotoSetzen") {
+      if (!darfProfilfoto(lage.eintrag, lage.admin)) throw fehler(403, "Für die Jugendfeuerwehr gibt es kein Profilfoto.");
+      const pfad = String(body.pfad || "");
+      if (!new RegExp(`^${profilOrdner(ich)}/\\d{10,14}\\.jpg$`).test(pfad)) throw fehler(400, "Ungültiges Foto.");
+      let altPfad = "";
+      const am = new Date().toISOString();
+      await kvAendern("profilfotos", (m) => {
+        const n = { ...((m && typeof m === "object") ? m : {}) };
+        altPfad = (n[ich] && n[ich].pfad) || "";
+        n[ich] = { pfad, am };
+        return n;
+      }, {});
+      if (altPfad && altPfad !== pfad) { try { await db.storage.from(PROFIL_BUCKET).remove([altPfad]); } catch (e) { /* egal */ } }
+      const { data } = await db.storage.from(PROFIL_BUCKET).createSignedUrl(pfad, PROFIL_GUELTIG_S);
+      return json(200, { ok: true, foto: { url: data ? data.signedUrl : null, am } });
+    }
+    if (action === "fotoEntfernen") {
+      const name = body.name ? String(body.name) : ich;
+      if (name !== ich && !lage.admin) throw fehler(403, "Fremde Profilfotos dürfen nur Admins entfernen.");
+      let altPfad = "";
+      await kvAendern("profilfotos", (m) => {
+        const n = { ...((m && typeof m === "object") ? m : {}) };
+        altPfad = (n[name] && n[name].pfad) || "";
+        delete n[name];
+        return n;
+      }, {});
+      if (altPfad) { try { await db.storage.from(PROFIL_BUCKET).remove([altPfad]); } catch (e) { /* egal */ } }
+      return json(200, { ok: true });
+    }
+    if (action === "fotos") {
+      const map = await getKv("profilfotos");
+      const eintraege = profilEintraege(map, profilErlaubteNamen(lage.roster, lage.users));
+      const stand = standAus(eintraege);
+      const fotos = {};
+      if (eintraege.length) {
+        const { data, error } = await db.storage.from(PROFIL_BUCKET).createSignedUrls(eintraege.map(([, f]) => f.pfad), PROFIL_GUELTIG_S);
+        if (error) throw fehler(500, "Profilfotos konnten nicht geladen werden.");
+        eintraege.forEach(([name, f], i) => {
+          const url = data && data[i] && !data[i].error ? data[i].signedUrl : null;
+          if (url) fotos[name] = { url, am: f.am || "" };
+        });
+      }
+      return json(200, { fotos, stand, gueltigBis: new Date(Date.now() + PROFIL_GUELTIG_S * 1000).toISOString() });
     }
 
     if (action === "pushAus") {

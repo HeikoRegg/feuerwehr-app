@@ -10,6 +10,7 @@ import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 import { useApp } from "../AppContext";
+import { Avatar } from "../components/Profilfoto";
 import { hole, merke } from "../lib/zwischenspeicher";
 import { zuMin, fmtHM, normHM, zeitEingabe } from "../lib/zeit";
 
@@ -361,7 +362,7 @@ export default function EinsatzberichtKachel() {
               {draft.mannschaft.map((m) => (
                 <div key={m.name} style={{ borderBottom: "1px dashed #E2DFD6", padding: "5px 0" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 52px 52px 26px", gap: 4, alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}><Avatar name={m.name} size={24} /><span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span></span>
                     {["ein", "ber", "pa"].map((k) => <input key={k} style={zahlInp} inputMode="numeric" placeholder="0:00" aria-label={`${k.toUpperCase()} Stunden ${m.name}`} value={m[k]} onChange={(e) => setM(m.name, { [k]: zeitEingabe(e.target.value) })} onBlur={(e) => setM(m.name, { [k]: normHM(e.target.value) })} />)}
                     <button style={styles.tinyIconBtn} aria-label={`${m.name} entfernen`} onClick={() => togglePerson(m.name)}><X size={12} /></button>
                   </div>
@@ -479,8 +480,8 @@ export default function EinsatzberichtKachel() {
               {b.mannschaft ? (
                 <>
                   {b.mannschaft.map((m) => (
-                    <div key={m.name} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, padding: "4px 0", borderBottom: "1px solid #F3F1EC" }}>
-                      <span>{m.name}{m.fahrzeug && (b.fahrzeugNamen || {})[m.fahrzeug] ? <span style={{ color: "#8A8C86", fontSize: 11.5 }}> · {(b.fahrzeugNamen || {})[m.fahrzeug]}</span> : null}</span>
+                    <div key={m.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", borderBottom: "1px solid #F3F1EC" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}><Avatar name={m.name} size={26} /><span>{m.name}{m.fahrzeug && (b.fahrzeugNamen || {})[m.fahrzeug] ? <span style={{ color: "#8A8C86", fontSize: 11.5 }}> · {(b.fahrzeugNamen || {})[m.fahrzeug]}</span> : null}</span></span>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C5F58", whiteSpace: "nowrap" }}>{zuMin(m.ein) ? `${fmtHM(zuMin(m.ein))} h` : "–"}{zuMin(m.ber) ? ` · B ${fmtHM(zuMin(m.ber))}` : ""}{zuMin(m.pa) ? ` · PA ${fmtHM(zuMin(m.pa))}` : ""}</span>
                     </div>
                   ))}

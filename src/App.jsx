@@ -8,6 +8,7 @@ import { AtemschutzIcon, BereichIcon, HydrantIcon, JFFlammeIcon } from "./compon
 import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn, ArztKontakt } from "./components/Shared";
+import { Avatar, ProfilfotoDialog, profilfotoZuschneiden } from "./components/Profilfoto";
 import { AppContext } from "./AppContext";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
 import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
@@ -117,6 +118,10 @@ export default function App() {
   const [beschlussNeu, setBeschlussNeu] = useState(0);
   const [appVersionen, setAppVersionen] = useState({}); // Admin: welche App-Version jedes Mitglied zuletzt offen hatte // neue Beschlüsse seit dem letzten Öffnen des Beschlussbuchs
   const [kalenderAbo, setKalenderAbo] = useState(false);
+  // Profilfotos (seit 2.35): Name → { url, am }. Die Links holt die App gesammelt und merkt sie sich (24 Std. gültig).
+  const [profilfotos, setProfilfotos] = useState(() => { const v = hole("profilfotos"); return (v && v.fotos) || {}; });
+  const [profilfotoDialog, setProfilfotoDialog] = useState(null); // Name, dessen Profilfoto-Fenster offen ist
+  const [profilfotoBusy, setProfilfotoBusy] = useState(false);
   const [bellMenu, setBellMenu] = useState(false); // Glocken-Menü (Benachrichtigungen, Handy-Kalender, Terminliste)
   const [showEinsatz, setShowEinsatz] = useState(false);
   const [showGeraete, setShowGeraete] = useState(false);
@@ -301,7 +306,7 @@ export default function App() {
   }, []);
   function saveAuth(code, name) { try { localStorage.setItem("ffw_auth", JSON.stringify({ code, name })); } catch (e) {} }
   function clearAuth() { try { localStorage.removeItem("ffw_auth"); localStorage.removeItem("ffw_token"); } catch (e) {} authTokenRef.current = null; }
-  function logout() { clearAuth(); allesVergessen(); setMe(null); setCodeInput(""); setPhase("gate"); }
+  function logout() { clearAuth(); allesVergessen(); setProfilfotos({}); setMe(null); setCodeInput(""); setPhase("gate"); }
 
   // --- Sitzungs-Schlüssel (Token) für geschützte Serverfunktionen ---
   // Wird bei der PIN-Anmeldung vom Server ausgegeben. Wer schon vor dem Update angemeldet
@@ -359,7 +364,7 @@ export default function App() {
   }
   // Zahl offener, noch nicht beantworteter Terminumfragen (Symbol „Funktionen“ und Kachel)
   async function ladeUmfrageStatus() {
-    if (!me || (!kachelAn("umfragen") && !kachelAn("beschluesse"))) { setUmfrageOffen(0); setBeschlussNeu(0); return; }
+    if (!me || (!kachelAn("umfragen") && !kachelAn("beschluesse"))) { setUmfrageOffen(0); setBeschlussNeu(0); if (me) ladeProfilfotos(); return; }
     const token = authTokenRef.current || loadToken(me);
     if (!token) return;
     const r = await callServer("umfrage", { action: "anzahl", token, version: APP_VERSION });
@@ -368,6 +373,59 @@ export default function App() {
     if (r.ok && r.data && typeof r.data.beschluesse === "number") setBeschlussNeu(kachelAn("beschluesse") ? r.data.beschluesse : 0);
     if (r.ok && r.data && "kacheln" in r.data) { setKachelOrdnung(r.data.kacheln || null); merkePerson({ kacheln: r.data.kacheln || null }); }
     if (r.ok && r.data && typeof r.data.pushAus === "boolean") { setPushAus(r.data.pushAus); merkePerson({ pushAus: r.data.pushAus }); }
+    if (r.ok && r.data && "fotoStand" in r.data) ladeProfilfotos(r.data.fotoStand);
+  }
+  // Profilfoto-Links nur neu holen, wenn sich etwas geändert hat (Prüfwert vom Server) oder die Links bald ablaufen.
+  async function ladeProfilfotos(stand, erzwingen = false) {
+    if (!me) return;
+    const vorrat = hole("profilfotos");
+    const bald = !vorrat || !vorrat.gueltigBis || Date.parse(vorrat.gueltigBis) - Date.now() < 2 * 3600 * 1000;
+    if (!erzwingen && vorrat && !bald && (stand === undefined || stand === null || vorrat.stand === stand)) return;
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return;
+    const r = await callServer("person", { action: "fotos", token });
+    if (r.ok && r.data && r.data.fotos) {
+      merke("profilfotos", { fotos: r.data.fotos, stand: r.data.stand, gueltigBis: r.data.gueltigBis }, { dauerhaft: true });
+      setProfilfotos(r.data.fotos);
+    }
+  }
+  // Darf diese Person ein Profilfoto haben? (keine Jugendfeuerwehr ohne Einsatzabteilung, nicht gesperrt; Admins immer)
+  function darfProfilfoto(name) {
+    const r = (rosterRef.current || roster || []).find((x) => x.name === name);
+    if (!r || r.gesperrt) return false;
+    const admin = !!(config && config.adminNames && config.adminNames.includes(name));
+    const b = r.bereiche || [];
+    return admin || !(b.includes("jugendfeuerwehr") && !b.includes("einsatzabteilung"));
+  }
+  async function profilfotoHochladen(datei) {
+    if (!datei || !me) return false;
+    setProfilfotoBusy(true);
+    try {
+      const klein = await profilfotoZuschneiden(datei);
+      const r = await callAuthed("person", { action: "fotoUploadUrl" });
+      if (!r.ok) throw new Error(r.data.error || "Upload");
+      const { error } = await supabase.storage.from("profilfotos").uploadToSignedUrl(r.data.path, r.data.uploadToken, klein);
+      if (error) throw error;
+      const r2 = await callAuthed("person", { action: "fotoSetzen", pfad: r.data.path });
+      if (!r2.ok) throw new Error(r2.data.error || "Speichern");
+      if (r2.data.foto && r2.data.foto.url) setProfilfotos((m) => ({ ...m, [me]: r2.data.foto }));
+      await ladeProfilfotos(null, true);
+      setProfilfotoBusy(false);
+      return true;
+    } catch (e) {
+      flashError(e && e.message && e.message !== "Upload" && e.message !== "Speichern" ? e.message : "Profilfoto konnte nicht gespeichert werden.");
+      setProfilfotoBusy(false);
+      return false;
+    }
+  }
+  async function profilfotoEntfernen(name) {
+    setProfilfotoBusy(true);
+    const r = await callAuthed("person", { action: "fotoEntfernen", ...(name && name !== me ? { name } : {}) });
+    setProfilfotoBusy(false);
+    if (!r.ok) { if (r.data.error !== "abgebrochen") flashError(r.data.error || "Profilfoto konnte nicht entfernt werden."); return false; }
+    setProfilfotos((m) => { const n = { ...m }; delete n[name || me]; return n; });
+    await ladeProfilfotos(null, true);
+    return true;
   }
   useEffect(() => {
     if (phase !== "app" || !me) return;
@@ -1226,6 +1284,7 @@ export default function App() {
   const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
   Object.assign(appCtx, { appVersionen, darfBeschluss, beschlussVorlage, setBeschlussVorlage, beschlussAusSitzung, beschlussZurSitzung, geraeteStartId, setGeraeteStartId, ladeChatStatus, ladeUmfrageStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
+  Object.assign(appCtx, { profilfotos, darfProfilfoto, profilfotoHochladen, profilfotoEntfernen, profilfotoBusy, oeffneProfilfoto: setProfilfotoDialog });
   appCtx.roster = aktiveMitglieder;
   appCtx.confirmBlock = confirmBlock; appCtx.setConfirmBlock = setConfirmBlock; appCtx.setMemberBlocked = setMemberBlocked;
 
@@ -1352,7 +1411,7 @@ export default function App() {
           </div>
         </div>
         <div style={styles.headerMe}>
-          <User size={12} /> Angemeldet als <strong>{me}</strong>
+          <Avatar name={me} size={24} onClick={() => setProfilfotoDialog(me)} testId="kopf-avatar" /> Angemeldet als <strong>{me}</strong>
           {isAdmin && <span style={styles.adminTagHeader}>Admin</span>}
           <button style={styles.switchLink} onClick={() => setPhase("name")}>wechseln</button>
           <button style={styles.switchLink} onClick={logout}>abmelden</button>
@@ -1966,7 +2025,7 @@ export default function App() {
           <div style={styles.confirmDialog} onClick={(e) => e.stopPropagation()} className="card-enter">
             <ShieldAlert size={22} color="#C1272D" style={{ marginBottom: 8 }} />
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{confirmDeleteName} wirklich entfernen?</div>
-            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Das kann nicht rückgängig gemacht werden. Die Personalakte samt Nachweisen wird dabei ebenfalls gelöscht.</div>
+            <div style={{ fontSize: 12, color: "#8A8C86", marginBottom: 14 }}>Das kann nicht rückgängig gemacht werden. Die Personalakte samt Nachweisen und das Profilfoto werden dabei ebenfalls gelöscht.</div>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setConfirmDeleteName(null)}>Abbrechen</button>
               <button style={{ ...styles.saveBtn, flex: 1 }} onClick={() => { removeMember(confirmDeleteName); setConfirmDeleteName(null); }}>Entfernen</button>
@@ -1974,6 +2033,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {profilfotoDialog && <ProfilfotoDialog name={profilfotoDialog} onClose={() => setProfilfotoDialog(null)} />}
     </div>
     </AppContext.Provider>
   );

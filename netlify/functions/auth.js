@@ -5,6 +5,7 @@
 
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { kvAendern, profilOrdner, PROFIL_BUCKET } from "./person.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -298,6 +299,13 @@ export async function handler(event) {
       const folder = name.replace(/[^a-z0-9]+/gi, "_");
       const { data: files } = await db.storage.from("personalakte").list(folder, { limit: 1000 });
       if (files && files.length) await db.storage.from("personalakte").remove(files.map((f) => `${folder}/${f.name}`));
+      // Seit 2.35: Profilfoto mit löschen (Eintrag + Datei); fehlt der Speicher noch, ist das egal.
+      try {
+        await kvAendern("profilfotos", (m) => { const n = { ...((m && typeof m === "object") ? m : {}) }; delete n[name]; return n; }, {});
+        const pOrdner = profilOrdner(name);
+        const { data: pf } = await db.storage.from(PROFIL_BUCKET).list(pOrdner, { limit: 100 });
+        if (pf && pf.length) await db.storage.from(PROFIL_BUCKET).remove(pf.map((f) => `${pOrdner}/${f.name}`));
+      } catch (e) { /* Profilfoto-Speicher noch nicht eingerichtet */ }
       return json(200, { ok: true });
     }
 

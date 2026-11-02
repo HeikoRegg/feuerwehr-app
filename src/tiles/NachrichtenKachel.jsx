@@ -6,6 +6,7 @@ import { matchesSearch } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { SearchBox } from "../components/Shared";
 import { useApp } from "../AppContext";
+import { Avatar } from "../components/Profilfoto";
 
 // Kachel Nachrichten: Direktnachrichten Kamerad ↔ Ausschuss / Kommandantschaft / Entwickler.
 // Jeder Kamerad hat pro Gruppe seine eigene Unterhaltung; untereinander schreiben ist nicht möglich.
@@ -126,7 +127,7 @@ export default function NachrichtenKachel() {
                 {ts.length === 0 && <div style={{ fontSize: 12, color: "#A5A79F" }}>Noch keine Nachrichten.</div>}
                 {ts.map((t) => (
                   <button key={t.id} style={{ ...styles.rosterItem, marginBottom: 6, alignItems: "center", gap: 10 }} onClick={() => setOffen({ gruppe: t.gruppe, kamerad: t.kamerad })}>
-                    <MessageCircle size={16} color={t.ungelesen > 0 ? "#C1272D" : "#A5A79F"} />
+                    <Avatar name={t.kamerad} size={34} />
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                         <span style={{ fontWeight: t.ungelesen > 0 ? 700 : 600 }}>{t.kamerad}</span>
@@ -237,8 +238,10 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
           const nameZeigen = !eigen && (i === 0 || nachrichten[i - 1].von !== m.von);
           return (
             <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: eigen ? "flex-end" : "flex-start", marginBottom: 6 }}>
-              {nameZeigen && <div style={{ fontSize: 10.5, color: "#8A8C86", margin: "4px 6px 2px" }}>{m.von}</div>}
-              <div style={{ maxWidth: "82%", padding: "8px 11px", borderRadius: 12, borderBottomRightRadius: eigen ? 3 : 12, borderBottomLeftRadius: eigen ? 12 : 3, background: eigen ? "#C1272D" : "white", color: eigen ? "white" : "#2C2F2A", border: eigen ? "none" : "1px solid #E2DFD6", fontSize: 13.5, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {nameZeigen && <div style={{ fontSize: 10.5, color: "#8A8C86", margin: "4px 6px 2px 38px" }}>{m.von}</div>}
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, width: "100%", justifyContent: "flex-start", flexDirection: eigen ? "row-reverse" : "row" }}>
+              {!eigen && (nameZeigen ? <Avatar name={m.von} size={30} /> : <span style={{ width: 30, flexShrink: 0 }} />)}
+              <div style={{ maxWidth: eigen ? "82%" : "calc(82% - 36px)", padding: "8px 11px", borderRadius: 12, borderBottomRightRadius: eigen ? 3 : 12, borderBottomLeftRadius: eigen ? 12 : 3, background: eigen ? "#C1272D" : "white", color: eigen ? "white" : "#2C2F2A", border: eigen ? "none" : "1px solid #E2DFD6", fontSize: 13.5, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                 {m.text}
                 <div style={{ fontSize: 9.5, marginTop: 3, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4, color: eigen ? "rgba(255,255,255,0.75)" : "#A5A79F" }}>
                   <span>{zeitText(m.ts)}</span>
@@ -246,6 +249,7 @@ function Unterhaltung({ gruppe, kamerad, ich, onBack, callAuthed, flashError }) 
                     ? <span aria-label="gelesen" title="Gelesen" style={{ display: "inline-flex" }}><CheckCheck size={13} color="#9BE7FF" strokeWidth={2.6} /></span>
                     : <span aria-label="gesendet" title="Gesendet" style={{ display: "inline-flex" }}><Check size={13} color="rgba(255,255,255,0.8)" strokeWidth={2.4} /></span>)}
                 </div>
+              </div>
               </div>
             </div>
           );

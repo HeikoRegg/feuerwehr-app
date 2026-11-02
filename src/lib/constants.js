@@ -3,10 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.34";
+export const APP_VERSION = "2.35";
 export const CHANGELOG = [
-  "Personalakte der Jugendfeuerwehr: Platz für einen zweiten Notfallkontakt (optional)",
-  "Die Erziehungsberechtigten anrufen können nur noch der Jugendwart und der Admin",
+  "Neu: Profilfoto – tipp oben auf das runde Bild neben deinem Namen und stell ein Foto von dir ein",
+  "Die Fotos sehen alle angemeldeten Mitglieder: in der Personalakte, im Chat, in der Mannschaft des Einsatzberichts und in der Mitgliederliste",
+  "Wer kein Foto hat, bekommt das Feuerwehr-Gesicht mit Helm",
+  "Für die Jugendfeuerwehr gibt es kein Profilfoto; Admins können unpassende Fotos löschen",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.
