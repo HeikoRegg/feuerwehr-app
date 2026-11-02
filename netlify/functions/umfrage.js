@@ -17,6 +17,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { handler as sendPush } from "./send-push.js";
 import { kvAendern, profilfotoStand } from "./person.js";
+import { offeneAufgabenZahl } from "./projekte.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BEREICHE = ["einsatzabteilung", "jugendfeuerwehr", "wettkampfgruppe", "altersabteilung", "atemschutz", "fuehrungskraefte"];
@@ -339,7 +340,9 @@ export async function handler(event) {
       // Seit 2.35: Prüfwert der Profilfotos – die App holt die Foto-Links nur, wenn er sich geändert hat.
       let fotoStand = null;
       try { fotoStand = await profilfotoStand(lage.roster, lage.users); } catch (e) { fotoStand = null; }
-      return json(200, { offen, beschluesse, kacheln, pushAus, fotoStand, ...(versionen ? { versionen } : {}) });
+      // Seit 2.36: Zahl meiner offenen Aufgaben (Projekte/To-do) für die Kachel „To-do“.
+      const aufgaben = kachelnAus.includes("todo") && kachelnAus.includes("projekte") ? 0 : await offeneAufgabenZahl(ich);
+      return json(200, { offen, beschluesse, kacheln, pushAus, fotoStand, aufgaben, ...(versionen ? { versionen } : {}) });
     }
     if (kachelnAus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));

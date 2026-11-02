@@ -3,12 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.35";
+export const APP_VERSION = "2.36";
 export const CHANGELOG = [
-  "Neu: Profilfoto – tipp oben auf das runde Bild neben deinem Namen und stell ein Foto von dir ein",
-  "Die Fotos sehen alle angemeldeten Mitglieder: in der Personalakte, im Chat, in der Mannschaft des Einsatzberichts und in der Mitgliederliste",
-  "Wer kein Foto hat, bekommt das Feuerwehr-Gesicht mit Helm",
-  "Für die Jugendfeuerwehr gibt es kein Profilfoto; Admins können unpassende Fotos löschen",
+  "Neu: Kachel „To-do“ – Aufgaben für dich selbst aufschreiben und abhaken, mit Termin und Erinnerung am Vortag",
+  "Neu: Kachel „Projekte“ – Projekte planen und verfolgen: Aufgaben mit Zuständigem und Termin, Phase und Fortschritt, Dokumente und Fotos, Verlauf, Budget (optional) und Archiv",
+  "Aufgaben aus Projekten erscheinen automatisch im To-do der zuständigen Person – abhaken an einer Stelle gilt überall",
+  "Kommandant, stellv. Kommandant, Ausschuss, Gerätewart und Admins können Aufgaben an andere vergeben; der Ersteller bekommt Bescheid, wenn sie erledigt ist",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.
@@ -25,9 +25,9 @@ export const KACHEL_FARBEN = {
 // Standard: Einsatz & Technik rot, Organisation blau, Personal grün, Kommunikation gelb, Verwaltung grau
 export const KACHEL_STANDARD_FARBEN = {
   einsatz: "rot", geraete: "rot", hydranten: "rot", atemschutz: "rot", fuehrerschein: "rot", bewegung: "rot",
-  ausschuss: "blau", beschluesse: "blau", umfragen: "blau", statistik: "blau",
+  ausschuss: "blau", beschluesse: "blau", umfragen: "blau", statistik: "blau", projekte: "blau",
   personalakte: "gruen", jugend: "gruen",
-  chat: "gelb",
+  chat: "gelb", todo: "gelb",
   einstellungen: "grau",
 };
 
