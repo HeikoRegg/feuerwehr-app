@@ -14,12 +14,15 @@
 //  - Aufgaben anderen zuweisen: Admin, Ausschuss, Kommandant, stellv. Kommandant, Gerätewart – im eigenen Projekt
 //                             auch Verwalter. Für sich selbst darf jeder Aufgaben anlegen.
 //  - Einzelaufgaben (ohne Projekt) sehen nur Ersteller und Zuständiger.
-// Push: neue Zuweisung → Zuständiger; erledigt → Ersteller; Vortag der Fälligkeit ab 18 Uhr → Zuständiger
+// Push: neue Zuweisung → Zuständiger; erledigt → Ersteller; Erinnerung ab 18 Uhr am gewählten Tag → Zuständiger
 // (stündlich über umfrage-erinnerung.js → pruefeAufgabenErinnerungen).
+// Seit 2.37: Erinnerung je Aufgabe wählbar (keine / am Fälligkeitstag / 1, 2, 3, 7 Tage vorher / eigenes Datum);
+// Zahl an der Kachel = neue (seit dem letzten Öffnen des To-do zugewiesene) + überfällige Aufgaben.
 
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { handler as sendPush } from "./send-push.js";
+import { kvAendern } from "./person.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BUCKET = "projekte";
@@ -49,6 +52,25 @@ export function betrag(v) {
 }
 const berlin = (d, opt) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", ...opt }).format(d);
 const heuteBerlin = (d = new Date()) => berlin(d, { year: "numeric", month: "2-digit", day: "2-digit" });
+const TAGE_VORHER = [0, 1, 2, 3, 7];
+const tagMinus = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+const tageZwischen = (von, bis) => Math.round((Date.parse(bis + "T12:00:00Z") - Date.parse(von + "T12:00:00Z")) / 86400000);
+// Erinnerung einer Aufgabe säubern. Ohne Fälligkeit gibt es keine „Tage vorher“.
+function sauberErinnerung(e, faellig) {
+  const x = e && typeof e === "object" ? e : null;
+  if (!x) return faellig ? { art: "tage", tage: 1 } : { art: "keine" };
+  if (x.art === "datum" && istDatum(x.datum)) return { art: "datum", datum: x.datum };
+  if (x.art === "tage" && faellig && TAGE_VORHER.includes(Number(x.tage))) return { art: "tage", tage: Number(x.tage) };
+  return { art: "keine" };
+}
+// An welchem Tag wird erinnert? (Aufgaben von vor 2.37 ohne Feld: 1 Tag vor der Fälligkeit, wie bisher)
+export function erinnerungsTag(a) {
+  const e = a.erinnerung;
+  if (!e) return istDatum(a.faellig) ? tagMinus(a.faellig, 1) : "";
+  if (e.art === "datum") return istDatum(e.datum) ? e.datum : "";
+  if (e.art === "tage" && istDatum(a.faellig)) return tagMinus(a.faellig, Number(e.tage) || 0);
+  return "";
+}
 const datumDe = (iso) => (istDatum(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
 
 async function getKv(key) {
@@ -124,34 +146,40 @@ async function push(an, title, text, wichtig = false) {
   try { await sendPush({ httpMethod: "POST", intern: true, body: JSON.stringify({ an: liste, title, text, sender: "", wichtig, url: TODO_URL }) }); } catch (e) { /* Push ist Zusatz */ }
 }
 
-// Zahl offener Aufgaben, für die `name` zuständig ist (für die Zahl an der Kachel – über umfrage → anzahl).
-// Aufgaben in archivierten Projekten zählen nicht. Fehlen die Tabellen noch, ist das Ergebnis 0.
-export async function offeneAufgabenZahl(name) {
+// Zahl für die Kachel „To-do“ (über umfrage → anzahl): neue Aufgaben (seit dem letzten Öffnen des To-do von anderen
+// zugewiesen) und überfällige Aufgaben (Fälligkeit vor heute). Aufgaben in archivierten Projekten zählen nicht.
+// Fehlen die Tabellen noch, ist das Ergebnis 0.
+export async function offeneAufgabenZahl(name, jetzt = new Date()) {
   try {
-    const { data, error } = await db.from("aufgaben").select("id,projekt,data").eq("data->>zustaendig", name);
+    const [{ data, error }, gesehenAlle] = await Promise.all([db.from("aufgaben").select("id,projekt,data").eq("data->>zustaendig", name), getKv("todoGesehen")]);
     if (error) return 0;
-    const offen = (data || []).map(alsAufgabe).filter((a) => !a.erledigt);
-    if (!offen.length) return 0;
-    const projektIds = [...new Set(offen.map((a) => a.projekt).filter(Boolean))];
+    const gesehen = String(((gesehenAlle && typeof gesehenAlle === "object") ? gesehenAlle : {})[name] || "");
+    const heute = heuteBerlin(jetzt);
+    const zaehlt = (data || []).map(alsAufgabe).filter((a) => !a.erledigt && (
+      (istDatum(a.faellig) && a.faellig < heute) ||
+      (a.erstelltVon !== name && String(a.zugewiesenAm || a.erstelltAm || "") > gesehen)
+    ));
+    if (!zaehlt.length) return 0;
+    const projektIds = [...new Set(zaehlt.map((a) => a.projekt).filter(Boolean))];
     let archiviert = new Set();
     if (projektIds.length) {
       const { data: ps } = await db.from("projekte").select("id,data").in("id", projektIds);
       archiviert = new Set((ps || []).filter((p) => (p.data || {}).archiviert).map((p) => p.id));
     }
-    return offen.filter((a) => !a.projekt || !archiviert.has(a.projekt)).length;
+    return zaehlt.filter((a) => !a.projekt || !archiviert.has(a.projekt)).length;
   } catch (e) { return 0; }
 }
 
-// Stündlich (umfrage-erinnerung.js): Am Vortag der Fälligkeit ab 18 Uhr eine Erinnerung an den Zuständigen.
+// Stündlich (umfrage-erinnerung.js): Am gewählten Erinnerungstag ab 18 Uhr eine Erinnerung an den Zuständigen (einmal).
 export async function pruefeAufgabenErinnerungen(jetzt = new Date()) {
   const config = (await getKv("config")) || {};
   const aus = Array.isArray(config.kachelnAus) ? config.kachelnAus : [];
   if (aus.includes("todo") && aus.includes("projekte")) return { erinnert: 0 };
   if (Number(berlin(jetzt, { hour: "2-digit", hour12: false })) < 18) return { erinnert: 0 };
-  const morgen = heuteBerlin(new Date(jetzt.getTime() + 24 * 3600 * 1000));
-  const { data, error } = await db.from("aufgaben").select("id,projekt,data").eq("data->>faellig", morgen);
+  const heute = heuteBerlin(jetzt);
+  const { data, error } = await db.from("aufgaben").select("id,projekt,data");
   if (error) return { erinnert: 0 };
-  const faellig = (data || []).map(alsAufgabe).filter((a) => !a.erledigt && a.zustaendig && a.erinnertFuer !== morgen);
+  const faellig = (data || []).map(alsAufgabe).filter((a) => !a.erledigt && a.zustaendig && erinnerungsTag(a) === heute && a.erinnertFuer !== heute);
   if (!faellig.length) return { erinnert: 0 };
   const projektIds = [...new Set(faellig.map((a) => a.projekt).filter(Boolean))];
   const projekte = {};
@@ -163,9 +191,14 @@ export async function pruefeAufgabenErinnerungen(jetzt = new Date()) {
   for (const a of faellig) {
     const p = a.projekt ? projekte[a.projekt] : null;
     if (a.projekt && (!p || p.archiviert)) continue;
-    await push([a.zustaendig], "⏰ Aufgabe ist morgen fällig", `${a.text}${p ? ` (Projekt: ${p.name})` : ""}`);
+    let titel = "🔔 Erinnerung an eine Aufgabe";
+    if (istDatum(a.faellig)) {
+      const n = tageZwischen(heute, a.faellig);
+      titel = n < 0 ? "⏰ Aufgabe ist überfällig" : n === 0 ? "⏰ Aufgabe ist heute fällig" : n === 1 ? "⏰ Aufgabe ist morgen fällig" : `⏰ Aufgabe ist in ${n} Tagen fällig`;
+    }
+    await push([a.zustaendig], titel, `${a.text}${istDatum(a.faellig) ? ` (bis ${datumDe(a.faellig)})` : ""}${p ? ` · Projekt: ${p.name}` : ""}`);
     const { id, projekt, ...daten } = a;
-    await db.from("aufgaben").update({ data: { ...daten, erinnertFuer: morgen }, updated_at: new Date().toISOString() }).eq("id", id);
+    await db.from("aufgaben").update({ data: { ...daten, erinnertFuer: heute }, updated_at: new Date().toISOString() }).eq("id", id);
     erinnert++;
   }
   return { erinnert };
@@ -322,6 +355,8 @@ export async function handler(event) {
 
     // ---------------- Aufgaben ----------------
     if (action === "todo") {
+      // Kachel geöffnet: neue Aufgaben gelten jetzt als gesehen (für die Zahl an der Kachel)
+      try { await kvAendern("todoGesehen", (m) => ({ ...((m && typeof m === "object") ? m : {}), [ich]: new Date().toISOString() }), {}); } catch (e) { /* nur für die Zahl */ }
       // Meine Aufgaben: zuständig oder selbst angelegt (Aufgaben in archivierten Projekten nicht)
       const [{ data: z, error: e1 }, { data: e, error: e2 }] = await Promise.all([
         db.from("aufgaben").select("id,projekt,data").eq("data->>zustaendig", ich),
@@ -360,11 +395,14 @@ export async function handler(event) {
       const neuZugewiesen = zustaendig !== ich && (!alt || alt.zustaendig !== zustaendig);
       if (neuZugewiesen && !(lage.darfZuweisen(ich) || (p && istVerwalter(p, ich, lage)))) throw fehler(403, "Aufgaben an andere vergeben dürfen Kommandant, stellv. Kommandant, Ausschuss, Gerätewart und Admins (im eigenen Projekt auch der Verantwortliche).");
       const faellig = datum(x.faellig);
+      // Erinnerung: neu gewählt, sonst die bisherige behalten (alte Aufgaben ohne Feld: 1 Tag vorher)
+      const erinnerung = sauberErinnerung("erinnerung" in x ? x.erinnerung : (alt ? (alt.erinnerung || (alt.faellig ? { art: "tage", tage: 1 } : null)) : undefined), faellig);
       const data = {
         ...(alt ? (({ id, projekt, ...r }) => r)(alt) : { erstelltVon: ich, erstelltAm: jetzt, erledigt: false }),
-        text, notiz: kurz(x.notiz, 1000), zustaendig, faellig, geaendertAm: jetzt,
-        ...(alt && alt.faellig !== faellig ? { erinnertFuer: "" } : {}),
+        text, notiz: kurz(x.notiz, 1000), zustaendig, faellig, erinnerung, geaendertAm: jetzt,
+        ...(neuZugewiesen ? { zugewiesenAm: jetzt } : {}),
       };
+      if (alt && erinnerungsTag(alt) !== erinnerungsTag(data)) data.erinnertFuer = "";
       const id = alt ? alt.id : neueId();
       const { error } = await db.from("aufgaben").upsert({ id, projekt: projektId, data, updated_at: jetzt, ...(alt ? {} : { created_at: jetzt }) });
       if (error) throw tabellenFehler(error);

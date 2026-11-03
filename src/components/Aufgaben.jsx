@@ -1,7 +1,7 @@
 // Aufgaben (seit 2.36) – gemeinsame Bausteine für die Kacheln „To-do“ und „Projekte“.
 // Eine Aufgabe in einem Projekt ist dieselbe wie im To-do der zuständigen Person (Tabelle "aufgaben").
 import React, { useState } from "react";
-import { Circle, CircleCheckBig, FolderKanban, Trash2, X } from "lucide-react";
+import { Bell, Circle, CircleCheckBig, FolderKanban, Trash2, X } from "lucide-react";
 import { useApp } from "../AppContext";
 import { styles } from "../lib/styles";
 import { Avatar } from "./Profilfoto";
@@ -21,6 +21,20 @@ export function faelligInfo(iso, erledigt) {
   if (t === 1) return { text: "morgen fällig", farbe: "#9A5B00", hinter: "#FBF1E1" };
   return { text: `bis ${datumDe(iso)}`, farbe: "#5C5F58", hinter: "#F3F1EC" };
 }
+// Erinnerung (seit 2.37): { art: "keine" | "tage" | "datum", tage, datum }. Aufgaben ohne Feld: 1 Tag vor Fälligkeit.
+export const ERINNERUNG_TAGE = [[0, "Am Fälligkeitstag"], [1, "1 Tag vorher"], [2, "2 Tage vorher"], [3, "3 Tage vorher"], [7, "1 Woche vorher"]];
+const istIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
+const tagMinus = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+export function erinnerungsTag(a) {
+  const e = a.erinnerung;
+  if (!e) return istIso(a.faellig) ? tagMinus(a.faellig, 1) : "";
+  if (e.art === "datum") return istIso(e.datum) ? e.datum : "";
+  if (e.art === "tage" && istIso(a.faellig)) return tagMinus(a.faellig, Number(e.tage) || 0);
+  return "";
+}
+const WOCHENTAG = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+export const tagKurz = (iso) => (istIso(iso) ? `${WOCHENTAG[new Date(iso + "T12:00:00").getDay()]} ${iso.slice(8, 10)}.${iso.slice(5, 7)}.` : "");
+
 // Sortierung: offene vor erledigten, dann nach Fälligkeit (ohne Datum zuletzt), dann nach Anlage.
 export function sortiereAufgaben(liste) {
   return [...liste].sort((a, b) => (a.erledigt === b.erledigt ? 0 : a.erledigt ? 1 : -1)
@@ -47,6 +61,7 @@ export function AufgabeZeile({ a, ich, onToggle, onEdit, zeigeProjekt = false, o
             <Avatar name={a.zustaendig} size={18} rand={false} />{a.zustaendig === ich ? "du" : a.zustaendig}
           </span>
           {f && <span style={{ fontSize: 11, fontWeight: 600, color: f.farbe, background: f.hinter, borderRadius: 4, padding: "1px 6px" }}>{f.text}</span>}
+          {!a.erledigt && erinnerungsTag(a) && erinnerungsTag(a) >= heuteIso() && <span data-testid={`erinnerung-${a.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 3, ...klein }}><Bell size={11} color="#8A8C86" /> {tagKurz(erinnerungsTag(a))}</span>}
           {a.erstelltVon && a.erstelltVon !== a.zustaendig && <span style={klein}>· von {a.erstelltVon === ich ? "dir" : a.erstelltVon}</span>}
           {zeigeProjekt && a.projektName && (
             <button type="button" data-knopf="fest" onClick={(e) => { e.stopPropagation(); if (onProjekt && a.projektSichtbar) onProjekt(a.projekt); }}
@@ -64,7 +79,9 @@ export function AufgabeZeile({ a, ich, onToggle, onEdit, zeigeProjekt = false, o
 // Fenster zum Anlegen/Ändern einer Aufgabe. `start`: { id?, projekt?, text, notiz, zustaendig, faellig }
 export function AufgabeFormular({ start, darfZuweisen, projektName, onClose, onSaved }) {
   const { me, roster, callAuthed } = useApp();
-  const [f, setF] = useState(() => ({ text: "", notiz: "", faellig: "", ...start, zustaendig: start.zustaendig || me }));
+  const [f, setF] = useState(() => ({ text: "", notiz: "", faellig: "", ...start, zustaendig: start.zustaendig || me,
+    // neue Aufgaben: 1 Tag vorher; alte Aufgaben ohne Feld: so wie bisher (1 Tag vorher, wenn fällig)
+    erinnerung: start.erinnerung || (start.id && !start.faellig ? { art: "keine" } : { art: "tage", tage: 1 }) }));
   const [busy, setBusy] = useState(false);
   const [fehlerText, setFehlerText] = useState("");
   const [frage, setFrage] = useState(false);
@@ -74,7 +91,9 @@ export function AufgabeFormular({ start, darfZuweisen, projektName, onClose, onS
     setFehlerText("");
     if (!f.text.trim()) { setFehlerText("Bitte beschreiben, was zu tun ist."); return; }
     setBusy(true);
-    const r = await callAuthed("projekte", { action: "aufgabeSave", aufgabe: { id: f.id, projekt: f.projekt || null, text: f.text, notiz: f.notiz, zustaendig: f.zustaendig, faellig: f.faellig } });
+    if (f.erinnerung.art === "datum" && !/^\d{4}-\d{2}-\d{2}$/.test(f.erinnerung.datum || "")) { setFehlerText("Bitte ein Datum für die Erinnerung wählen."); return; }
+    const erinnerung = f.erinnerung.art === "tage" && !f.faellig ? { art: "keine" } : f.erinnerung;
+    const r = await callAuthed("projekte", { action: "aufgabeSave", aufgabe: { id: f.id, projekt: f.projekt || null, text: f.text, notiz: f.notiz, zustaendig: f.zustaendig, faellig: f.faellig, erinnerung } });
     setBusy(false);
     if (!r.ok) { if (r.data.error !== "abgebrochen") setFehlerText(r.data.error || "Speichern nicht möglich."); return; }
     onSaved();
@@ -110,7 +129,21 @@ export function AufgabeFormular({ start, darfZuweisen, projektName, onClose, onS
             <input style={{ ...styles.input, flex: 1 }} type="date" data-testid="aufgabe-faellig" value={f.faellig} onChange={(e) => set("faellig", e.target.value)} />
             {f.faellig && <button style={styles.tinyBtn} onClick={() => set("faellig", "")}>kein Datum</button>}
           </div>
-          {f.faellig && <div style={klein}>Erinnerung kommt am Vortag ab 18 Uhr.</div>}
+          <label style={styles.label}>Erinnerung (um 18 Uhr)</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }} data-testid="erinnerung-auswahl">
+            {[["keine", "Keine"], ...ERINNERUNG_TAGE.map(([t, l]) => [`tage:${t}`, l]), ["datum", "Datum wählen"]].map(([k, l]) => {
+              const gewaehlt = k === "keine" ? f.erinnerung.art === "keine" || (f.erinnerung.art === "tage" && !f.faellig) : k === "datum" ? f.erinnerung.art === "datum" : f.erinnerung.art === "tage" && !!f.faellig && `tage:${f.erinnerung.tage}` === k;
+              const aus = k.startsWith("tage:") && !f.faellig;
+              return (
+                <button key={k} type="button" data-testid={`erinnerung-${k}`} disabled={aus}
+                  onClick={() => set("erinnerung", k === "keine" ? { art: "keine" } : k === "datum" ? { art: "datum", datum: f.erinnerung.datum || f.faellig || heuteIso() } : { art: "tage", tage: Number(k.slice(5)) })}
+                  style={{ ...styles.categoryChip, fontSize: 12, padding: "5px 10px", opacity: aus ? 0.4 : 1, background: gewaehlt ? "#2C2F2A" : "#F3F1EC", color: gewaehlt ? "white" : "#5C5F58", borderColor: gewaehlt ? "#2C2F2A" : "#E2DFD6" }}>{l}</button>
+              );
+            })}
+          </div>
+          {f.erinnerung.art === "datum" && <input style={{ ...styles.input, marginTop: 6 }} type="date" data-testid="erinnerung-datum" value={f.erinnerung.datum || ""} onChange={(e) => set("erinnerung", { art: "datum", datum: e.target.value })} />}
+          {!f.faellig && <div style={{ ...klein, marginTop: 4 }}>„Tage vorher“ geht nur mit Fälligkeitsdatum.</div>}
+          {(() => { const tag = erinnerungsTag({ faellig: f.faellig, erinnerung: f.erinnerung.art === "tage" && !f.faellig ? { art: "keine" } : f.erinnerung }); return tag ? <div data-testid="erinnerung-hinweis" style={{ ...klein, marginTop: 4, color: tag < heuteIso() ? "#C1272D" : "#8A8C86" }}>{tag < heuteIso() ? "Dieser Tag ist schon vorbei – es kommt keine Erinnerung mehr." : `Erinnerung am ${tagKurz(tag)}${tag.slice(0, 4)} um 18 Uhr.`}</div> : null; })()}
           <label style={styles.label}>Notiz (optional)</label>
           <textarea style={{ ...styles.input, minHeight: 70, resize: "vertical" }} maxLength={1000} value={f.notiz} onChange={(e) => set("notiz", e.target.value)} />
           {fehlerText && <div style={styles.errorText}>{fehlerText}</div>}

@@ -24,7 +24,8 @@ export default function TodoKachel() {
     if (!r.ok) { if (r.data.error !== "abgebrochen") setFehler(r.data.error || "Die Aufgaben konnten nicht geladen werden."); return; }
     setFehler(""); setDaten(r.data); merke(schluessel, r.data);
   }
-  useEffect(() => { laden(); }, []);
+  // Beim Öffnen gelten neue Aufgaben als gesehen → Zahl an der Kachel neu holen (dann nur noch überfällige)
+  useEffect(() => { laden().then(() => { if (ladeUmfrageStatus) ladeUmfrageStatus(); }); }, []);
 
   async function haken(a) {
     setBusy(a.id);

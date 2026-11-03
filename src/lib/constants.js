@@ -3,12 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.36";
+export const APP_VERSION = "2.37";
 export const CHANGELOG = [
-  "Neu: Kachel „To-do“ – Aufgaben für dich selbst aufschreiben und abhaken, mit Termin und Erinnerung am Vortag",
-  "Neu: Kachel „Projekte“ – Projekte planen und verfolgen: Aufgaben mit Zuständigem und Termin, Phase und Fortschritt, Dokumente und Fotos, Verlauf, Budget (optional) und Archiv",
-  "Aufgaben aus Projekten erscheinen automatisch im To-do der zuständigen Person – abhaken an einer Stelle gilt überall",
-  "Kommandant, stellv. Kommandant, Ausschuss, Gerätewart und Admins können Aufgaben an andere vergeben; der Ersteller bekommt Bescheid, wenn sie erledigt ist",
+  "To-do: Erinnerung je Aufgabe wählbar – keine, am Fälligkeitstag, 1, 2, 3 oder 7 Tage vorher oder an einem eigenen Datum (immer um 18 Uhr)",
+  "To-do: Die rote Zahl an der Kachel zeigt neue Aufgaben (verschwindet beim Öffnen) und überfällige Aufgaben",
+  "Die Glocke an einer Aufgabe zeigt, wann erinnert wird",
 ];
 
 // Kachelfarben (seit 2.29): feste Palette heller Töne, damit Schrift und Zahlen lesbar bleiben.
