@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronDown, Plus } from "lucide-react";
 import { styles } from "../lib/styles";
 import { useApp } from "../AppContext";
 import { hole, merke } from "../lib/zwischenspeicher";
-import { AufgabeFormular, AufgabeZeile, klein, sortiereAufgaben } from "../components/Aufgaben";
+import { AufgabeDetail, AufgabeFormular, AufgabeZeile, klein, sortiereAufgaben } from "../components/Aufgaben";
 
 const abschnitt = { fontSize: 11, fontWeight: 700, color: "#8A8C86", letterSpacing: "0.05em", margin: "16px 0 4px" };
 
@@ -16,6 +16,7 @@ export default function TodoKachel() {
   const [daten, setDaten] = useState(() => hole(schluessel));
   const [fehler, setFehler] = useState("");
   const [formular, setFormular] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const [zeigeErledigt, setZeigeErledigt] = useState(false);
   const [busy, setBusy] = useState(null);
 
@@ -38,6 +39,7 @@ export default function TodoKachel() {
     if (ladeUmfrageStatus) ladeUmfrageStatus();
   }
   async function nachSpeichern() { setFormular(null); await laden(); if (ladeUmfrageStatus) ladeUmfrageStatus(); }
+  async function nachAenderung() { await laden(); if (ladeUmfrageStatus) ladeUmfrageStatus(); }
 
   const alle = (daten && daten.aufgaben) || [];
   const meine = sortiereAufgaben(alle.filter((a) => a.zustaendig === me && !a.erledigt));
@@ -46,14 +48,14 @@ export default function TodoKachel() {
   const darfZuweisen = !!(daten && daten.darfZuweisen);
   const zeile = (a) => (
     <AufgabeZeile key={a.id} a={a} ich={me} busy={busy === a.id} zeigeProjekt onToggle={haken}
-      onEdit={(x) => setFormular(x)} onProjekt={daten && daten.kachelProjekte && oeffneProjekt ? oeffneProjekt : undefined} />
+      onOpen={(x) => setDetailId(x.id)} onProjekt={daten && daten.kachelProjekte && oeffneProjekt ? oeffneProjekt : undefined} />
   );
 
   return (
     <div style={styles.fullscreenPage}>
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={closeKachelView}><ArrowLeft size={18} /> {kachelReturnTo === "tiles" ? "Funktionen" : "Kalender"}</button></div>
       <div style={styles.modalTitle}>To-do</div>
-      <div style={{ ...klein, marginTop: 2 }}>Deine Aufgaben – auch die aus Projekten. Antippen zum Ändern, Kreis antippen zum Abhaken.</div>
+      <div style={{ ...klein, marginTop: 2 }}>Deine Aufgaben – auch die aus Projekten. Antippen zum Öffnen (Status, Notiz, Erinnerung), Kreis antippen zum Abhaken.</div>
       {fehler && <div style={styles.errorText}>{fehler}</div>}
       <button style={{ ...styles.saveBtn, width: "100%", margin: "12px 0 4px", gap: 6 }} data-testid="neue-aufgabe" onClick={() => setFormular({ zustaendig: me })}><Plus size={16} /> Neue Aufgabe</button>
       {!daten && !fehler && <div style={{ ...klein, marginTop: 12 }}>Lädt …</div>}
@@ -79,6 +81,12 @@ export default function TodoKachel() {
           )}
         </>
       )}
+      {detailId && (() => {
+        const a = alle.find((x) => x.id === detailId);
+        if (!a) return null;
+        return <AufgabeDetail a={a} ich={me} projektName={a.projektName} onClose={() => setDetailId(null)} onChanged={nachAenderung}
+          onBearbeiten={(x) => { setDetailId(null); setFormular(x); }} />;
+      })()}
       {formular && (
         <AufgabeFormular start={formular} darfZuweisen={darfZuweisen} projektName={formular.projektName} onClose={() => setFormular(null)} onSaved={nachSpeichern} />
       )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, BellOff, FolderKanban, Gavel, ListTodo, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, BellOff, FolderKanban, Gavel, ListTodo, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ClipboardPlus, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { JF_KOPF, LION_KOPF } from "./lib/icons";
 import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -34,6 +34,7 @@ const kachelImporte = {
   umfragen: () => import("./tiles/UmfrageKachel"),
   projekte: () => import("./tiles/ProjekteKachel"),
   todo: () => import("./tiles/TodoKachel"),
+  verbandbuch: () => import("./tiles/VerbandbuchKachel"),
   beschluesse: () => import("./tiles/BeschlussbuchKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
@@ -50,9 +51,10 @@ const HydrantenKachel = lazy(kachelImporte.hydranten);
 const UmfrageKachel = lazy(kachelImporte.umfragen);
 const ProjekteKachel = lazy(kachelImporte.projekte);
 const TodoKachel = lazy(kachelImporte.todo);
+const VerbandbuchKachel = lazy(kachelImporte.verbandbuch);
 const BeschlussbuchKachel = lazy(kachelImporte.beschluesse);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
-const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" || k === "todo" ? k : null; } catch (e) { return null; } })();
+const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" || k === "todo" || k === "verbandbuch" ? k : null; } catch (e) { return null; } })();
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
@@ -117,6 +119,7 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [chatUngelesen, setChatUngelesen] = useState(0);
   const [umfrageOffen, setUmfrageOffen] = useState(0);
+  const [nachfragenOffen, setNachfragenOffen] = useState(0); // seit 2.38: offene Nachfragen „Geht es dir gut?“ (Kachel „Verbandbuch“)
   const [aufgabenOffen, setAufgabenOffen] = useState(0); // seit 2.36: meine offenen Aufgaben (Kachel „To-do“)
   const [kachelOrdnung, setKachelOrdnung] = useState(null); // eigene Reihenfolge der Kacheln (pro Person, Server)
   const [pushAus, setPushAus] = useState(false); // Push-Pause über die Glocke (pro Person, Server)
@@ -134,6 +137,7 @@ export default function App() {
   const [showUmfragen, setShowUmfragen] = useState(false);
   const [showProjekte, setShowProjekte] = useState(false);
   const [showTodo, setShowTodo] = useState(false);
+  const [showVerbandbuch, setShowVerbandbuch] = useState(false);
   const [projektStartId, setProjektStartId] = useState(null); // aus dem To-do direkt in ein Projekt springen
   const [showBeschluesse, setShowBeschluesse] = useState(false);
   const [beschlussVorlage, setBeschlussVorlage] = useState(null); // vorbefüllter Beschluss aus einer Sitzung
@@ -372,13 +376,14 @@ export default function App() {
   }
   // Zahl offener, noch nicht beantworteter Terminumfragen (Symbol „Funktionen“ und Kachel)
   async function ladeUmfrageStatus() {
-    if (!me || (!kachelAn("umfragen") && !kachelAn("beschluesse") && !kachelAn("todo") && !kachelAn("projekte"))) { setUmfrageOffen(0); setBeschlussNeu(0); setAufgabenOffen(0); if (me) ladeProfilfotos(); return; }
+    if (!me || (!kachelAn("umfragen") && !kachelAn("beschluesse") && !kachelAn("todo") && !kachelAn("projekte") && !kachelAn("verbandbuch"))) { setUmfrageOffen(0); setBeschlussNeu(0); setAufgabenOffen(0); setNachfragenOffen(0); if (me) ladeProfilfotos(); return; }
     const token = authTokenRef.current || loadToken(me);
     if (!token) return;
     const r = await callServer("umfrage", { action: "anzahl", token, version: APP_VERSION });
     if (r.ok && r.data && r.data.versionen) setAppVersionen(r.data.versionen);
     if (r.ok && r.data && typeof r.data.offen === "number") setUmfrageOffen(kachelAn("umfragen") ? r.data.offen : 0);
     if (r.ok && r.data && typeof r.data.aufgaben === "number") setAufgabenOffen(kachelAn("todo") ? r.data.aufgaben : 0);
+    if (r.ok && r.data && typeof r.data.nachfragen === "number") setNachfragenOffen(kachelAn("verbandbuch") ? r.data.nachfragen : 0);
     if (r.ok && r.data && typeof r.data.beschluesse === "number") setBeschlussNeu(kachelAn("beschluesse") ? r.data.beschluesse : 0);
     if (r.ok && r.data && "kacheln" in r.data) { setKachelOrdnung(r.data.kacheln || null); merkePerson({ kacheln: r.data.kacheln || null }); }
     if (r.ok && r.data && typeof r.data.pushAus === "boolean") { setPushAus(r.data.pushAus); merkePerson({ pushAus: r.data.pushAus }); }
@@ -456,6 +461,10 @@ export default function App() {
   }, [phase, me]);
   // Auf eine Umfrage-Benachrichtigung getippt: direkt in die Kachel (App gestartet mit ?kachel=umfragen oder schon offen → Nachricht vom Service Worker)
   function oeffneUmfragenAusPush(kachel = "umfragen") {
+    if (kachel === "verbandbuch") {
+      if (!kachelAn("verbandbuch")) { flashError("Die Kachel „Verbandbuch“ ist derzeit für die ganze Feuerwehr gesperrt."); return; }
+      closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowVerbandbuch(true); return;
+    }
     if (kachel === "todo") {
       if (!kachelAn("todo")) { flashError("Die Kachel „To-do“ ist derzeit für die ganze Feuerwehr gesperrt."); return; }
       closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowTodo(true); return;
@@ -476,7 +485,7 @@ export default function App() {
     const onMsg = (e) => {
       const d = e && e.data;
       if (d && d.type === "oeffne" && typeof d.url === "string" && oeffneUmfragenRef.current) {
-        const k = (d.url.match(/[?&]kachel=(umfragen|todo)\b/) || [])[1];
+        const k = (d.url.match(/[?&]kachel=(umfragen|todo|verbandbuch)\b/) || [])[1];
         if (k) oeffneUmfragenRef.current(k);
       }
     };
@@ -484,7 +493,7 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
   }, []);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowBeschluesse(false); setShowJugend(false); setShowChat(false); setShowProjekte(false); setShowTodo(false);
+    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowBeschluesse(false); setShowJugend(false); setShowChat(false); setShowProjekte(false); setShowTodo(false); setShowVerbandbuch(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
@@ -513,6 +522,7 @@ export default function App() {
   }
   function openTileUmfragen() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowUmfragen(true); }
   function openTileProjekte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowProjekte(true); }
+  function openTileVerbandbuch() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowVerbandbuch(true); }
   function openTileTodo() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowTodo(true); }
   // Aus dem To-do in ein Projekt springen (zurück geht es dann ins Kachelmenü)
   function oeffneProjekt(id) { if (!kachelAn("projekte")) return; setShowTodo(false); setProjektStartId(id); setKachelReturnTo("tiles"); setShowProjekte(true); }
@@ -1424,7 +1434,7 @@ export default function App() {
             {me && (
               <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={() => setShowTileMenu(true)} aria-label="Funktionen">
                 <LayoutGrid size={18} color="#8FA0A6" />
-                {umfrageOffen + beschlussNeu + aufgabenOffen > 0 ? <span data-testid="funktionen-zahl" style={styles.chatHeaderBadge}>{umfrageOffen + beschlussNeu + aufgabenOffen > 9 ? "9+" : umfrageOffen + beschlussNeu + aufgabenOffen}</span> : neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
+                {umfrageOffen + beschlussNeu + aufgabenOffen + nachfragenOffen > 0 ? <span data-testid="funktionen-zahl" style={styles.chatHeaderBadge}>{umfrageOffen + beschlussNeu + aufgabenOffen + nachfragenOffen > 9 ? "9+" : umfrageOffen + beschlussNeu + aufgabenOffen + nachfragenOffen}</span> : neueSitzungenCount > 0 && <span style={styles.tileHeaderDot} />}
               </button>
             )}
             {isAdmin && <button style={styles.settingsBtn} onClick={() => { setKachelReturnTo("calendar"); setShowSettings(true); }} aria-label="Einstellungen"><Settings size={18} color="#8FA0A6" /></button>}
@@ -1743,6 +1753,7 @@ export default function App() {
               kachelAn("beschluesse") && !!me && !(nurJugend && !canSeeAusschuss) && { key: "beschluesse", onClick: openTileBeschluesse, icon: <Gavel size={26} color="#2C2F2A" />, label: "Beschlussbuch", badge: beschlussNeu > 0 && <span data-testid="kachel-zahl-beschluesse" style={styles.tileBadge}>{beschlussNeu}</span> },
               kachelAn("umfragen") && !!me && { key: "umfragen", onClick: openTileUmfragen, icon: <CalendarCheck size={26} color="#2C2F2A" />, label: "Terminumfragen", badge: umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span> },
               kachelAn("todo") && !!me && { key: "todo", onClick: openTileTodo, icon: <ListTodo size={26} color="#2C2F2A" />, label: "To-do", badge: aufgabenOffen > 0 && <span data-testid="kachel-zahl-todo" style={styles.tileBadge}>{aufgabenOffen}</span> },
+              kachelAn("verbandbuch") && !!me && { key: "verbandbuch", onClick: openTileVerbandbuch, icon: <ClipboardPlus size={26} color="#2C2F2A" />, label: "Verbandbuch", badge: nachfragenOffen > 0 && <span data-testid="kachel-zahl-verbandbuch" style={styles.tileBadge}>{nachfragenOffen}</span> },
               kachelAn("projekte") && !!me && { key: "projekte", onClick: openTileProjekte, icon: <FolderKanban size={26} color="#2C2F2A" />, label: "Projekte" },
               kachelAn("jugend") && (isJugendwart || isAdmin) && { key: "jugend", onClick: openTileJugend, icon: <JFFlammeIcon size={28} />, label: "Jugendfeuerwehr" },
               kachelAn("bewegung") && canSeeBewegung && { key: "bewegung", onClick: openTileBewegung, icon: <Truck size={26} color="#2C2F2A" />, label: "Bewegungsfahrten" },
@@ -1787,6 +1798,7 @@ export default function App() {
       {showUmfragen && kachelAn("umfragen") && !!me && <Suspense fallback={<KachelLaden />}><UmfrageKachel /></Suspense>}
       {showProjekte && kachelAn("projekte") && !!me && <Suspense fallback={<KachelLaden />}><ProjekteKachel /></Suspense>}
       {showTodo && kachelAn("todo") && !!me && <Suspense fallback={<KachelLaden />}><TodoKachel /></Suspense>}
+      {showVerbandbuch && kachelAn("verbandbuch") && !!me && <Suspense fallback={<KachelLaden />}><VerbandbuchKachel /></Suspense>}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>

@@ -18,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 import { handler as sendPush } from "./send-push.js";
 import { kvAendern, profilfotoStand } from "./person.js";
 import { offeneAufgabenZahl } from "./projekte.js";
+import { offeneNachfragenZahl } from "./verbandbuch.js";
 
 const db = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BEREICHE = ["einsatzabteilung", "jugendfeuerwehr", "wettkampfgruppe", "altersabteilung", "atemschutz", "fuehrungskraefte"];
@@ -342,7 +343,9 @@ export async function handler(event) {
       try { fotoStand = await profilfotoStand(lage.roster, lage.users); } catch (e) { fotoStand = null; }
       // Seit 2.36: Zahl meiner offenen Aufgaben (Projekte/To-do) für die Kachel „To-do“.
       const aufgaben = kachelnAus.includes("todo") && kachelnAus.includes("projekte") ? 0 : await offeneAufgabenZahl(ich);
-      return json(200, { offen, beschluesse, kacheln, pushAus, fotoStand, aufgaben, ...(versionen ? { versionen } : {}) });
+      // Offene Nachfragen „Geht es dir gut?“ aus dem Verbandbuch (seit 2.38)
+      const nachfragen = kachelnAus.includes("verbandbuch") ? 0 : await offeneNachfragenZahl(ich);
+      return json(200, { offen, beschluesse, kacheln, pushAus, fotoStand, aufgaben, nachfragen, ...(versionen ? { versionen } : {}) });
     }
     if (kachelnAus.includes("umfragen")) return json(403, { error: "Diese Kachel ist derzeit für die ganze Feuerwehr gesperrt." });
     const meinBereiche = lage.admin ? BEREICHE : (lage.eintrag(ich).bereiche || []).filter((b) => BEREICHE.includes(b));

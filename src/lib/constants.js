@@ -3,8 +3,11 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.37";
+export const APP_VERSION = "2.38";
 export const CHANGELOG = [
+  "Neue Kachel „Verbandbuch“: Erste-Hilfe-Leistungen und Vorfälle dokumentieren, mit Ergänzungen, lückenlosem Protokoll, PDF je Eintrag, Jahresauszug, Auswertung ohne Namen und optionaler Nachfrage nach 3 Tagen (Testphase)",
+  "To-do: Aufgabe antippen zum Öffnen – Status (Offen / In Bearbeitung / Abgeschlossen) und Notiz für den Zuständigen; Push an den Auftraggeber erst bei „Abgeschlossen“",
+  "To-do: Erinnerung als freie Zahl „Tage vorher“ oder als Datum",
   "To-do: Erinnerung je Aufgabe wählbar – keine, am Fälligkeitstag, 1, 2, 3 oder 7 Tage vorher oder an einem eigenen Datum (immer um 18 Uhr)",
   "To-do: Die rote Zahl an der Kachel zeigt neue Aufgaben (verschwindet beim Öffnen) und überfällige Aufgaben",
   "Die Glocke an einer Aufgabe zeigt, wann erinnert wird",
@@ -23,7 +26,7 @@ export const KACHEL_FARBEN = {
 };
 // Standard: Einsatz & Technik rot, Organisation blau, Personal grün, Kommunikation gelb, Verwaltung grau
 export const KACHEL_STANDARD_FARBEN = {
-  einsatz: "rot", geraete: "rot", hydranten: "rot", atemschutz: "rot", fuehrerschein: "rot", bewegung: "rot",
+  einsatz: "rot", geraete: "rot", hydranten: "rot", atemschutz: "rot", fuehrerschein: "rot", bewegung: "rot", verbandbuch: "rot",
   ausschuss: "blau", beschluesse: "blau", umfragen: "blau", statistik: "blau", projekte: "blau",
   personalakte: "gruen", jugend: "gruen",
   chat: "gelb", todo: "gelb",

@@ -16,8 +16,11 @@
 //  - Einzelaufgaben (ohne Projekt) sehen nur Ersteller und Zuständiger.
 // Push: neue Zuweisung → Zuständiger; erledigt → Ersteller; Erinnerung ab 18 Uhr am gewählten Tag → Zuständiger
 // (stündlich über umfrage-erinnerung.js → pruefeAufgabenErinnerungen).
-// Seit 2.37: Erinnerung je Aufgabe wählbar (keine / am Fälligkeitstag / 1, 2, 3, 7 Tage vorher / eigenes Datum);
-// Zahl an der Kachel = neue (seit dem letzten Öffnen des To-do zugewiesene) + überfällige Aufgaben.
+// Seit 2.37: Erinnerung je Aufgabe wählbar; Zahl an der Kachel = neue (seit dem letzten Öffnen des To-do zugewiesene) + überfällige Aufgaben.
+// Seit 2.38: Der Zuständige öffnet seine Aufgabe, setzt den Status (offen / in Bearbeitung / erledigt), schreibt eine Notiz
+// und stellt seine Erinnerung selbst ein – Text, Beschreibung, Fälligkeit und Zuständigkeit ändert nur, wer dazu berechtigt ist.
+// Die Erinnerung ist jetzt frei: „Tage vorher“ (0 bis 365, nur mit Fälligkeit) oder ein Datum, leer = keine. Immer um 18 Uhr.
+// Push an den Ersteller nur, wenn die Aufgabe erledigt wird.
 
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -52,7 +55,7 @@ export function betrag(v) {
 }
 const berlin = (d, opt) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin", ...opt }).format(d);
 const heuteBerlin = (d = new Date()) => berlin(d, { year: "numeric", month: "2-digit", day: "2-digit" });
-const TAGE_VORHER = [0, 1, 2, 3, 7];
+const MAX_TAGE_VORHER = 365;
 const tagMinus = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
 const tageZwischen = (von, bis) => Math.round((Date.parse(bis + "T12:00:00Z") - Date.parse(von + "T12:00:00Z")) / 86400000);
 // Erinnerung einer Aufgabe säubern. Ohne Fälligkeit gibt es keine „Tage vorher“.
@@ -60,7 +63,7 @@ function sauberErinnerung(e, faellig) {
   const x = e && typeof e === "object" ? e : null;
   if (!x) return faellig ? { art: "tage", tage: 1 } : { art: "keine" };
   if (x.art === "datum" && istDatum(x.datum)) return { art: "datum", datum: x.datum };
-  if (x.art === "tage" && faellig && TAGE_VORHER.includes(Number(x.tage))) return { art: "tage", tage: Number(x.tage) };
+  if (x.art === "tage" && faellig && x.tage !== "" && x.tage !== null && Number.isInteger(Number(x.tage)) && Number(x.tage) >= 0 && Number(x.tage) <= MAX_TAGE_VORHER) return { art: "tage", tage: Number(x.tage) };
   return { art: "keine" };
 }
 // An welchem Tag wird erinnert? (Aufgaben von vor 2.37 ohne Feld: 1 Tag vor der Fälligkeit, wie bisher)
@@ -402,6 +405,7 @@ export async function handler(event) {
         text, notiz: kurz(x.notiz, 1000), zustaendig, faellig, erinnerung, geaendertAm: jetzt,
         ...(neuZugewiesen ? { zugewiesenAm: jetzt } : {}),
       };
+      if (alt && neuZugewiesen) { data.status = ""; data.zNotiz = ""; data.zNotizAm = ""; }
       if (alt && erinnerungsTag(alt) !== erinnerungsTag(data)) data.erinnertFuer = "";
       const id = alt ? alt.id : neueId();
       const { error } = await db.from("aufgaben").upsert({ id, projekt: projektId, data, updated_at: jetzt, ...(alt ? {} : { created_at: jetzt }) });
@@ -417,10 +421,63 @@ export async function handler(event) {
       const erledigt = body.erledigt !== false;
       const jetzt = new Date().toISOString();
       const { id, projekt, ...rest } = a;
-      const data = { ...rest, erledigt, erledigtAm: erledigt ? jetzt : "", erledigtVon: erledigt ? ich : "", geaendertAm: jetzt };
+      const data = { ...rest, erledigt, status: "", erledigtAm: erledigt ? jetzt : "", erledigtVon: erledigt ? ich : "", geaendertAm: jetzt };
       await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
-      if (erledigt && a.erstelltVon && a.erstelltVon !== ich) await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
+      if (erledigt && !a.erledigt && a.erstelltVon && a.erstelltVon !== ich) await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
       return json(200, { ok: true, erledigt });
+    }
+
+    // Status (offen / in Bearbeitung / erledigt): Zuständiger, Ersteller, Verwalter des Projekts. Push an den Ersteller nur bei „erledigt“.
+    if (action === "aufgabeStatus") {
+      const a = await aufgabeLaden(String(body.id || ""));
+      const p = a.projekt ? await projektLaden(a.projekt).catch(() => null) : null;
+      if (p && p.archiviert) throw fehler(409, "Das Projekt ist archiviert – bitte zuerst aus dem Archiv holen.");
+      if (!(a.zustaendig === ich || darfAufgabeAendern(a, p, ich, lage))) throw fehler(403, "Den Status setzen dürfen der Zuständige, der Ersteller und die Verwalter des Projekts.");
+      const st = String(body.status || "");
+      if (!["offen", "bearbeitung", "erledigt"].includes(st)) throw fehler(400, "Unbekannter Status.");
+      const erledigt = st === "erledigt";
+      const jetzt = new Date().toISOString();
+      const { id, projekt, ...rest } = a;
+      const data = { ...rest, erledigt, status: st === "bearbeitung" ? "bearbeitung" : "", erledigtAm: erledigt ? (a.erledigt ? a.erledigtAm : jetzt) : "", erledigtVon: erledigt ? (a.erledigt ? a.erledigtVon : ich) : "", geaendertAm: jetzt };
+      const { error } = await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
+      if (error) throw tabellenFehler(error);
+      if (erledigt && !a.erledigt && a.erstelltVon && a.erstelltVon !== ich) await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
+      return json(200, { ok: true, status: st });
+    }
+
+    // Notiz des Zuständigen (nur er selbst schreibt sie; Ersteller und Verwalter lesen mit)
+    if (action === "aufgabeNotiz") {
+      const a = await aufgabeLaden(String(body.id || ""));
+      const p = a.projekt ? await projektLaden(a.projekt).catch(() => null) : null;
+      if (p && p.archiviert) throw fehler(409, "Das Projekt ist archiviert – bitte zuerst aus dem Archiv holen.");
+      if (a.zustaendig !== ich) throw fehler(403, "Die Notiz schreibt nur der Zuständige.");
+      const jetzt = new Date().toISOString();
+      const text = kurz(body.text, 1000);
+      const { id, projekt, ...rest } = a;
+      const data = { ...rest, zNotiz: text, zNotizAm: text ? jetzt : "", geaendertAm: jetzt };
+      const { error } = await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
+      if (error) throw tabellenFehler(error);
+      return json(200, { ok: true });
+    }
+
+    // Erinnerung ändern: der Zuständige selbst (auch wenn er die Aufgabe nicht angelegt hat), außerdem Ersteller und Verwalter
+    if (action === "aufgabeErinnerung") {
+      const a = await aufgabeLaden(String(body.id || ""));
+      const p = a.projekt ? await projektLaden(a.projekt).catch(() => null) : null;
+      if (p && p.archiviert) throw fehler(409, "Das Projekt ist archiviert – bitte zuerst aus dem Archiv holen.");
+      if (!(a.zustaendig === ich || darfAufgabeAendern(a, p, ich, lage))) throw fehler(403, "Die Erinnerung ändern dürfen der Zuständige, der Ersteller und die Verwalter des Projekts.");
+      const e = body.erinnerung && typeof body.erinnerung === "object" ? body.erinnerung : null;
+      if (e && e.art === "datum" && !istDatum(e.datum)) throw fehler(400, "Bitte ein gültiges Datum für die Erinnerung wählen.");
+      if (e && e.art === "tage" && !istDatum(a.faellig)) throw fehler(400, "„Tage vorher“ geht nur, wenn die Aufgabe ein Fälligkeitsdatum hat.");
+      if (e && e.art === "tage" && !(Number.isInteger(Number(e.tage)) && Number(e.tage) >= 0 && Number(e.tage) <= MAX_TAGE_VORHER)) throw fehler(400, `Bitte eine ganze Zahl von 0 bis ${MAX_TAGE_VORHER} eingeben.`);
+      const erinnerung = sauberErinnerung(e, a.faellig);
+      const jetzt = new Date().toISOString();
+      const { id, projekt, ...rest } = a;
+      const data = { ...rest, erinnerung, geaendertAm: jetzt };
+      if (erinnerungsTag(a) !== erinnerungsTag(data)) data.erinnertFuer = "";
+      const { error } = await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
+      if (error) throw tabellenFehler(error);
+      return json(200, { ok: true });
     }
 
     if (action === "aufgabeDelete") {

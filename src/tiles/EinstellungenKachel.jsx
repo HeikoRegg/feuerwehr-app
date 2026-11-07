@@ -9,7 +9,7 @@ import { LION_ICON } from "../lib/icons";
 import { fmtDate } from "../lib/helpers";
 import { useApp } from "../AppContext";
 
-const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["umfragen", "Terminumfragen"], ["todo", "To-do"], ["projekte", "Projekte"], ["beschluesse", "Beschlussbuch"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
+const KACHELN = [["fuehrerschein", "Führerschein"], ["atemschutz", "Atemschutz"], ["ausschuss", "Ausschuss"], ["einsatz", "Einsatzberichte"], ["geraete", "Geräte"], ["hydranten", "Hydranten"], ["umfragen", "Terminumfragen"], ["todo", "To-do"], ["projekte", "Projekte"], ["verbandbuch", "Verbandbuch"], ["beschluesse", "Beschlussbuch"], ["jugend", "Jugendfeuerwehr"], ["bewegung", "Bewegungsfahrten"], ["statistik", "Statistik"], ["personalakte", "Personalakte"], ["chat", "Nachrichten"]];
 // Kachel Einstellungen (nur Admin): Mitglieder, Rechte, Auswahllisten, Zugangscode, Admins
 // Kachelfarben (nur Admins, gilt für alle): Farbpunkt je Kachel, feste Palette, Standard wiederherstellen.
 function KachelFarben({ config, persistConfig }) {

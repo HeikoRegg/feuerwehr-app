@@ -12,7 +12,7 @@ import { hole, merke } from "../lib/zwischenspeicher";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
 import { SearchBox } from "../components/Shared";
 import { Avatar } from "../components/Profilfoto";
-import { AufgabeFormular, AufgabeZeile, datumDe, faelligInfo, heuteIso, klein, sortiereAufgaben } from "../components/Aufgaben";
+import { AufgabeDetail, AufgabeFormular, AufgabeZeile, datumDe, faelligInfo, heuteIso, klein, sortiereAufgaben } from "../components/Aufgaben";
 
 export const PHASEN = [
   ["idee", "Idee", "#5C5F58", "#EEEDE8"],
@@ -161,6 +161,7 @@ function Detail({ id, onBack, onEdit, onChanged }) {
   const [d, setD] = useState(null);
   const [fehler, setFehler] = useState("");
   const [aufgabe, setAufgabe] = useState(null);
+  const [detailAufgabe, setDetailAufgabe] = useState(null);
   const [notiz, setNotiz] = useState("");
   const [busy, setBusy] = useState(false);
   const [frage, setFrage] = useState(null); // "archiv" | "loeschen"
@@ -237,7 +238,7 @@ function Detail({ id, onBack, onEdit, onChanged }) {
     const fenster = bereiteFensterVor();
     if (!oeffneBericht(projektBericht(d), fenster)) flashError("Bitte das Pop-up-Fenster zulassen.");
   }
-  const zeile = (a) => <AufgabeZeile key={a.id} a={a} ich={me} busy={busy} onToggle={haken} onEdit={(x) => setAufgabe({ ...x })} />;
+  const zeile = (a) => <AufgabeZeile key={a.id} a={a} ich={me} busy={busy} onToggle={haken} onOpen={(x) => setDetailAufgabe(x.id)} />;
 
   return (
     <div style={styles.fullscreenPage} data-testid="projekt-detail">
@@ -333,6 +334,13 @@ function Detail({ id, onBack, onEdit, onChanged }) {
           </div>
         )}
       </div>
+      {detailAufgabe && (() => {
+        const a = aufgaben.find((x) => x.id === detailAufgabe);
+        if (!a) return null;
+        return <AufgabeDetail a={a} ich={me} projektName={p.name} gesperrt={!aktiv} onClose={() => setDetailAufgabe(null)}
+          onChanged={async () => { await laden(); onChanged(); if (ladeUmfrageStatus) ladeUmfrageStatus(); }}
+          onBearbeiten={(x) => { setDetailAufgabe(null); setAufgabe({ ...x }); }} />;
+      })()}
       {aufgabe && <AufgabeFormular start={aufgabe} darfZuweisen={!!r.zuweisen} projektName={p.name} onClose={() => setAufgabe(null)} onSaved={async () => { setAufgabe(null); await laden(); onChanged(); if (ladeUmfrageStatus) ladeUmfrageStatus(); }} />}
     </div>
   );
