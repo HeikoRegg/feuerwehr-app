@@ -104,7 +104,14 @@ async function ladeLage(token) {
 // ---------- Projekte ----------
 function alsProjekt(row) { const d = row.data || {}; return { id: row.id, ...d, beteiligte: Array.isArray(d.beteiligte) ? d.beteiligte : [] }; }
 function istVerwalter(p, n, lage) { return !!n && (lage.admin(n) || p.erstelltVon === n || p.verantwortlich === n); }
-function istMitarbeiter(p, n, lage) { return istVerwalter(p, n, lage) || p.beteiligte.includes(n); }
+// Seit 2.39: Unterprojekte (eine Ebene). `p.elternProjekt` (nicht aufzählbar, damit es nie mitgespeichert wird) ist das Hauptprojekt.
+// Beteiligte und Verwalter des Hauptprojekts dürfen im Unterprojekt mitarbeiten und es sehen.
+function mitEltern(p, eltern) { if (eltern) Object.defineProperty(p, "elternProjekt", { value: eltern, enumerable: false, configurable: true }); return p; }
+function istMitarbeiter(p, n, lage) {
+  if (istVerwalter(p, n, lage) || p.beteiligte.includes(n)) return true;
+  const e = p.elternProjekt;
+  return !!e && (e.beteiligte.includes(n) || istVerwalter(e, n, lage));
+}
 function siehtProjekt(p, n, lage) {
   if (!n) return false;
   if (istMitarbeiter(p, n, lage)) return true;
@@ -117,7 +124,26 @@ async function projektLaden(id) {
   const { data, error } = await db.from("projekte").select("id,data").eq("id", id).maybeSingle();
   if (error) throw tabellenFehler(error);
   if (!data) throw fehler(404, "Dieses Projekt gibt es nicht (mehr).");
-  return alsProjekt(data);
+  const p = alsProjekt(data);
+  if (p.eltern && istId(p.eltern)) {
+    const { data: ed } = await db.from("projekte").select("id,data").eq("id", p.eltern).maybeSingle();
+    if (ed) mitEltern(p, alsProjekt(ed));
+  }
+  return p;
+}
+// Projekt samt Verlauf, Dokumenten und Aufgaben endgültig löschen.
+async function projektLoeschen(id) {
+  const { data: eRows } = await db.from("projekt_eintraege").select("id,data").eq("projekt", id);
+  const pfade = (eRows || []).map((r) => (r.data || {}).pfad).filter(Boolean);
+  if (pfade.length) { try { await db.storage.from(BUCKET).remove(pfade); } catch (e) { /* egal */ } }
+  await db.from("projekt_eintraege").delete().eq("projekt", id);
+  await db.from("aufgaben").delete().eq("projekt", id);
+  await db.from("projekte").delete().eq("id", id);
+}
+async function unterprojekteVon(id) {
+  const { data, error } = await db.from("projekte").select("id,data").eq("data->>eltern", id);
+  if (error) throw tabellenFehler(error);
+  return (data || []).map(alsProjekt);
 }
 function tabellenFehler(e) {
   const t = String((e && e.message) || e || "");
@@ -227,7 +253,11 @@ export async function handler(event) {
       if (error || e2) throw tabellenFehler(error || e2);
       const zahl = {};
       (aRows || []).forEach((r) => { if (!r.projekt) return; const z = (zahl[r.projekt] = zahl[r.projekt] || { gesamt: 0, erledigt: 0, meine: 0 }); z.gesamt++; if ((r.data || {}).erledigt) z.erledigt++; else if ((r.data || {}).zustaendig === ich) z.meine++; });
-      const projekte = (rows || []).map(alsProjekt).filter((p) => siehtProjekt(p, ich, lage)).map((p) => ({
+      const alle = (rows || []).map(alsProjekt);
+      const nachId = Object.fromEntries(alle.map((p) => [p.id, p]));
+      alle.forEach((p) => { if (p.eltern && nachId[p.eltern]) mitEltern(p, nachId[p.eltern]); });
+      const projekte = alle.filter((p) => siehtProjekt(p, ich, lage)).map((p) => ({
+        eltern: p.eltern && nachId[p.eltern] ? p.eltern : "", kosten: p.kosten ?? null, budget: p.budget ?? null,
         id: p.id, name: p.name, phase: p.phase, verantwortlich: p.verantwortlich || "", ziel: p.ziel || "", start: p.start || "",
         archiviert: !!p.archiviert, archiviertAm: p.archiviertAm || "", sicht: p.sicht, erstelltVon: p.erstelltVon, geaendertAm: p.geaendertAm || p.erstelltAm || "",
         aufgaben: zahl[p.id] || { gesamt: 0, erledigt: 0, meine: 0 }, verwalter: istVerwalter(p, ich, lage), beteiligt: istMitarbeiter(p, ich, lage),
@@ -251,7 +281,21 @@ export async function handler(event) {
         doks.forEach((d, i) => { d.url = links && links[i] && !links[i].error ? links[i].signedUrl : null; });
       }
       const verwalter = istVerwalter(p, ich, lage);
+      let unterprojekte = [];
+      if (!p.eltern) {
+        const kinder = (await unterprojekteVon(p.id)).map((k) => mitEltern(k, p)).filter((k) => siehtProjekt(k, ich, lage));
+        const ids = kinder.map((k) => k.id);
+        const { data: kA } = ids.length ? await db.from("aufgaben").select("id,projekt,data").in("projekt", ids) : { data: [] };
+        unterprojekte = kinder.map((k) => {
+          const as = (kA || []).filter((a) => a.projekt === k.id);
+          return { id: k.id, name: k.name, phase: k.phase, archiviert: !!k.archiviert, verantwortlich: k.verantwortlich || "", kosten: k.kosten ?? null, budget: k.budget ?? null,
+            aufgaben: { gesamt: as.length, erledigt: as.filter((a) => (a.data || {}).erledigt).length } };
+        }).sort((a, b) => String(a.name).localeCompare(String(b.name), "de"));
+      }
+      const kostenSumme = Math.round(((Number(p.kosten) || 0) + unterprojekte.reduce((s, k) => s + (Number(k.kosten) || 0), 0)) * 100) / 100;
+      const elternInfo = p.elternProjekt ? { id: p.elternProjekt.id, name: p.elternProjekt.name, archiviert: !!p.elternProjekt.archiviert, sichtbar: siehtProjekt(p.elternProjekt, ich, lage) } : null;
       return json(200, {
+        unterprojekte, kostenSumme, eltern: elternInfo,
         projekt: p, aufgaben: (aRows || []).map(alsAufgabe), eintraege,
         rechte: { verwalter, mitarbeiter: istMitarbeiter(p, ich, lage), loeschen: lage.admin(ich) || p.erstelltVon === ich, zuweisen: verwalter || lage.darfZuweisen(ich) },
       });
@@ -274,6 +318,13 @@ export async function handler(event) {
       if (!x.id) {
         if (!lage.darfAnlegen(ich)) throw fehler(403, "Projekte anlegen dürfen Kommandant, stellv. Kommandant, Ausschuss und Admins.");
         const id = neueId();
+        if (x.eltern) {
+          const e = await projektLaden(String(x.eltern));
+          if (e.eltern) throw fehler(400, "Ein Unterprojekt kann kein eigenes Unterprojekt haben – es gibt nur eine Ebene.");
+          if (e.archiviert) throw fehler(400, "Das Hauptprojekt ist archiviert.");
+          if (!istVerwalter(e, ich, lage)) throw fehler(403, "Unterprojekte legen Ersteller, Verantwortlicher und Admins des Hauptprojekts an.");
+          felder.eltern = e.id;
+        }
         const data = { ...felder, erstelltVon: ich, erstelltAm: jetzt, geaendertAm: jetzt, archiviert: false };
         const { error } = await db.from("projekte").upsert({ id, data, created_at: jetzt, updated_at: jetzt });
         if (error) throw tabellenFehler(error);
@@ -295,22 +346,36 @@ export async function handler(event) {
       if (!istVerwalter(p, ich, lage)) throw fehler(403, "Archivieren dürfen nur Ersteller, Verantwortlicher und Admins.");
       const an = body.archiviert !== false;
       const jetzt = new Date().toISOString();
+      if (!an && p.elternProjekt && p.elternProjekt.archiviert) throw fehler(400, "Das Hauptprojekt ist archiviert – bitte zuerst dieses aus dem Archiv holen.");
       const { id, ...rest } = p;
       const data = { ...rest, archiviert: an, archiviertAm: an ? jetzt : "", phase: an ? "erledigt" : rest.phase, geaendertAm: jetzt, geaendertVon: ich };
+      delete data.archiviertMitHaupt;
       await db.from("projekte").update({ data, updated_at: jetzt }).eq("id", id);
       await eintragSchreiben(id, ich, an ? "Projekt abgeschlossen und archiviert" : "Projekt aus dem Archiv geholt", "system");
+      // Hauptprojekt: Unterprojekte gehen mit ins Archiv; beim Zurückholen kommen die zurück, die mit ihm archiviert wurden.
+      if (!p.eltern) {
+        for (const k of await unterprojekteVon(id)) {
+          if (an && !k.archiviert) {
+            const { id: kid, ...kr } = k;
+            await db.from("projekte").update({ data: { ...kr, archiviert: true, archiviertAm: jetzt, archiviertMitHaupt: true, phase: "erledigt", geaendertAm: jetzt, geaendertVon: ich }, updated_at: jetzt }).eq("id", kid);
+            await eintragSchreiben(kid, ich, "Mit dem Hauptprojekt archiviert", "system");
+          } else if (!an && k.archiviert && k.archiviertMitHaupt) {
+            const { id: kid, ...kr } = k;
+            const kd = { ...kr, archiviert: false, archiviertAm: "", geaendertAm: jetzt, geaendertVon: ich };
+            delete kd.archiviertMitHaupt;
+            await db.from("projekte").update({ data: kd, updated_at: jetzt }).eq("id", kid);
+            await eintragSchreiben(kid, ich, "Mit dem Hauptprojekt aus dem Archiv geholt", "system");
+          }
+        }
+      }
       return json(200, { ok: true });
     }
 
     if (action === "delete") {
       const p = await projektLaden(String(body.id || ""));
       if (!(lage.admin(ich) || p.erstelltVon === ich)) throw fehler(403, "Löschen dürfen nur der Ersteller und Admins.");
-      const { data: eRows } = await db.from("projekt_eintraege").select("id,data").eq("projekt", p.id);
-      const pfade = (eRows || []).map((r) => (r.data || {}).pfad).filter(Boolean);
-      if (pfade.length) { try { await db.storage.from(BUCKET).remove(pfade); } catch (e) { /* egal */ } }
-      await db.from("projekt_eintraege").delete().eq("projekt", p.id);
-      await db.from("aufgaben").delete().eq("projekt", p.id);
-      await db.from("projekte").delete().eq("id", p.id);
+      if (!p.eltern) for (const k of await unterprojekteVon(p.id)) await projektLoeschen(k.id);
+      await projektLoeschen(p.id);
       return json(200, { ok: true });
     }
 

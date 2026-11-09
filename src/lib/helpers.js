@@ -20,8 +20,12 @@ export function daysSince(iso) { return -daysUntil(iso); }
 export function addDays(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 export function fmtDate(iso) { if (!iso) return "—"; const { day } = formatDateParts(iso); const d = new Date(iso + "T00:00:00"); return `${day}.${(d.getMonth()+1).toString().padStart(2,"0")}.${d.getFullYear()}`; }
 
+// Seit 2.39 kann ein Termin für mehrere Bereiche gelten (ev.bereiche); ev.bereich bleibt der erste Bereich (alte Termine haben nur ev.bereich).
+export const eventBereiche = (ev) => (ev && Array.isArray(ev.bereiche) && ev.bereiche.length ? ev.bereiche : ev && ev.bereich ? [ev.bereich] : []);
+export const eventImBereich = (ev, bereiche) => eventBereiche(ev).some((b) => bereiche.includes(b));
+
 export const emptyDraft = (bereich) => ({
-  id: null, title: "", date: todayISO(), time: bereich === "jugendfeuerwehr" ? "18:00" : "20:00", location: "", category: "uebung", notes: "", bereich: bereich || "",
+  id: null, title: "", date: todayISO(), time: bereich === "jugendfeuerwehr" ? "18:00" : "20:00", location: "", category: "uebung", notes: "", bereich: bereich || "", bereiche: bereich ? [bereich] : [],
   capacityMode: false, capacityNeeded: 3, namesVisible: true, gruppenfuehrer: "",
   anmeldeschluss: "", anmeldeschlussReminderDays: 3,
 });
@@ -192,9 +196,9 @@ export function totalHeadcount(ev) {
   return Object.entries(responses).filter(([, v]) => v === "zu").reduce((sum, [n]) => sum + 1 + (guests[n] || 0), 0);
 }
 
-// Fotos vor dem Hochladen verkleinern: längste Seite max. 1600 px, JPEG in guter Qualität.
+// Fotos vor dem Hochladen verkleinern: längste Seite max. 1920 px (seit 2.39, damit Bilder auf Beamer/Leinwand besser aussehen), JPEG in guter Qualität.
 // Andere Dateien (PDF usw.) und Fotos, die sich nicht lesen lassen, bleiben unverändert.
-export async function compressImage(file, maxSize = 1600, quality = 0.82) {
+export async function compressImage(file, maxSize = 1920, quality = 0.82) {
   try {
     if (!file || !file.type || !file.type.startsWith("image/") || /gif|svg/.test(file.type)) return file;
     let bitmap;

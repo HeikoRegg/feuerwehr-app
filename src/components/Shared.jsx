@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { ChevronDown, Clock, EyeOff, HandHelping, Landmark, Lock, MapPin, Pencil, Plus, RotateCcw, Search, UserCheck, UserCog, UserX, Users, X } from "lucide-react";
 import { BEREICHE, BEREICH_KEYS, CATEGORIES, GRUPPENFUEHRER_CATEGORIES } from "../lib/constants";
 import { BereichIcon } from "./BereichIcon";
-import { currentYear, daysUntil, fmtDate, formatDateParts, todayISO, totalHeadcount, weiblichVorschlag } from "../lib/helpers";
+import { AUTO_BEREICHE } from "../lib/zugehoerigkeit";
+import { currentYear, daysUntil, eventBereiche, fmtDate, formatDateParts, todayISO, totalHeadcount, weiblichVorschlag } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { Avatar } from "./Profilfoto";
 
@@ -146,7 +147,7 @@ export function FuehrerscheinLine({ label, icon, data, isSelf, onConfirm, onTogg
   );
 }
 
-export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onProfilfoto, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleAtemschutz, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
+export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onProfilfoto, onResetPin, onRequestRemove, onRequestBlock, onToggleBereich, onTogglePerm, onToggleHydrantenwart, onToggleGruppenfuehrer, onToggleAusschuss, onToggleAusschussRecht }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={styles.rosterManageItemFull}>
@@ -164,7 +165,7 @@ export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onPro
           <div style={{ fontSize: 10.5, fontWeight: 700, color: "#8A8C86", marginBottom: 5 }}>BEREICHE</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
             {BEREICH_KEYS.map((b) => (
-              <button key={b} onClick={() => onToggleBereich(b)} style={{ ...styles.categoryChip, fontSize: 11, padding: "4px 9px", background: r.bereiche.includes(b) ? BEREICHE[b].color : "#F3F1EC", color: r.bereiche.includes(b) ? "white" : "#5C5F58", borderColor: r.bereiche.includes(b) ? BEREICHE[b].color : "#E2DFD6" }}><BereichIcon bereich={b} size={11} /> {BEREICHE[b].label}</button>
+              <button key={b} data-testid={`bereich-${r.name}-${b}`} disabled={AUTO_BEREICHE.includes(b)} title={AUTO_BEREICHE.includes(b) ? "Ergibt sich automatisch aus der Personalakte" : undefined} onClick={() => onToggleBereich(b)} style={{ ...styles.categoryChip, fontSize: 11, padding: "4px 9px", background: r.bereiche.includes(b) ? BEREICHE[b].color : "#F3F1EC", color: r.bereiche.includes(b) ? "white" : "#5C5F58", borderColor: r.bereiche.includes(b) ? BEREICHE[b].color : "#E2DFD6", opacity: AUTO_BEREICHE.includes(b) ? 0.85 : 1, cursor: AUTO_BEREICHE.includes(b) ? "default" : "pointer" }}><BereichIcon bereich={b} size={11} /> {BEREICHE[b].label}{AUTO_BEREICHE.includes(b) ? " (auto)" : ""}</button>
             ))}
             <button onClick={onToggleAusschuss} style={{ ...styles.categoryChip, fontSize: 11, padding: "4px 9px", background: r.ausschuss ? "#4A6670" : "#F3F1EC", color: r.ausschuss ? "white" : "#5C5F58", borderColor: r.ausschuss ? "#4A6670" : "#E2DFD6" }}><Landmark size={11} /> Ausschuss</button>
           </div>
@@ -185,12 +186,12 @@ export function RosterAdminRow({ r, version, aktuelleVersion, isAdminName, onPro
               <label style={{ display: "flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={r.ausschussRechte.protokoll} onChange={() => onToggleAusschussRecht("protokoll")} /> Protokoll führen</label>
             </div>
           )}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" checked={r.atemschutz} onChange={onToggleAtemschutz} /> Atemschutzträger (G26.3-Pflicht)</label>
+          <div style={{ fontSize: 10.5, color: "#A5A79F", marginBottom: 6 }}>Bereiche „Atemschutz“ und „Führungskräfte“ ergeben sich automatisch aus der Personalakte (Atemschutzgeräteträger-Lehrgang, Gruppenführer/Zugführer; Kommandanten immer).</div>
           {onToggleHydrantenwart && (
             <label style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 6, fontSize: 12, color: "#5C5F58" }}><input type="checkbox" aria-label={`${r.name} Hydranten-Verantwortlicher`} checked={!!r.hydrantenwart} onChange={onToggleHydrantenwart} /> <span>Hydranten-Verantwortlicher<span style={{ display: "block", fontSize: 10.5, color: "#A5A79F" }}>darf Hydranten anlegen, ändern, löschen und bekommt Mängel-Benachrichtigungen</span></span></label>
           )}
           <div style={{ marginTop: 8, fontSize: 11.5, color: "#5C5F58" }}>
-            Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.geraetewart && "Gerätewart", r.jugendwart && "Jugendwart", r.maschinist && "Maschinist (Lehrgang)"].filter(Boolean).join(", ") || "—"}
+            Funktionen: {[r.gruppenfuehrer && "Gruppenführer", r.geraetewart && "Gerätewart", r.jugendwart && "Jugendwart", r.maschinist && "Maschinist (Lehrgang)", r.atemschutz && "Atemschutzgeräteträger (Lehrgang, G26-Pflicht)"].filter(Boolean).join(", ") || "—"}
             <div style={{ fontSize: 10.5, color: "#A5A79F", marginTop: 2 }}>Wird in der Personalakte gepflegt.</div>
           </div>
         </div>
@@ -269,7 +270,7 @@ export function CapacityCounter({ ev, canEdit }) {
 export function EventBadge({ label }) { if (!label) return null; const bg = label === "Neu" ? "#E8A33D" : "#4A6670"; return <span style={{ fontSize: 9, fontWeight: 700, color: "white", background: bg, padding: "2px 6px", borderRadius: 3, textTransform: "uppercase" }}>{label}</span>; }
 
 export function GruppenfuehrerTag({ ev }) {
-  const applicable = ev.bereich === "einsatzabteilung" && GRUPPENFUEHRER_CATEGORIES.includes(ev.category);
+  const applicable = eventBereiche(ev).includes("einsatzabteilung") && GRUPPENFUEHRER_CATEGORIES.includes(ev.category);
   if (!applicable) return null;
   if (ev.gruppenfuehrer) return <span style={styles.gfTagSet}><UserCog size={11} /> {ev.gruppenfuehrer}</span>;
   return <span style={styles.gfTagMissing} title="Gruppenführer noch nicht festgelegt"><UserCog size={11} /></span>;
@@ -292,7 +293,7 @@ export function HeroCard({ ev, me, onRespond, onSignup, onSetGuests, showBereich
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
             <span style={styles.heroRel}>{relLabel} · {weekday}</span>
             <EventBadge label={badgeLabel} />
-            {showBereich && <span style={styles.miniBereichTagDark}><BereichIcon bereich={ev.bereich} size={11} /> {BEREICHE[ev.bereich].short}</span>}
+            {showBereich && eventBereiche(ev).map((b) => <span key={b} style={styles.miniBereichTagDark}><BereichIcon bereich={b} size={11} /> {BEREICHE[b].short}</span>)}
           </div>
           <div style={styles.heroTitle}>{ev.title}</div>
           <div style={styles.heroMeta}><span style={styles.heroMetaItem}><Clock size={12} /> {ev.time} Uhr</span>{ev.location && <span style={styles.heroMetaItem}><MapPin size={12} /> {ev.location}</span>}<GruppenfuehrerTag ev={ev} /></div>
@@ -337,7 +338,7 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span style={styles.eventTitle}>{ev.title}</span>
               <EventBadge label={badgeLabel} />
-              {showBereich && <span style={styles.miniBereichTag}><BereichIcon bereich={ev.bereich} size={11} /> {BEREICHE[ev.bereich].short}</span>}
+              {showBereich && eventBereiche(ev).map((b) => <span key={b} style={styles.miniBereichTag}><BereichIcon bereich={b} size={11} /> {BEREICHE[b].short}</span>)}
             </div>
             <span data-testid="termin-kategorie" style={{ ...styles.eventBadge, background: cat.color, color: "white" }}>{cat.label}</span>
           </div>
@@ -373,13 +374,13 @@ export function EventCard({ ev, me, canEdit, expanded, onToggleExpand, onRespond
           </button>
           {showAttendance && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
-              {roster.filter((r) => r.bereiche.includes(ev.bereich)).map((r) => (
+              {roster.filter((r) => eventBereiche(ev).some((b) => r.bereiche.includes(b))).map((r) => (
                 <label key={r.name} style={styles.attendanceRow}>
                   <input type="checkbox" style={styles.attendanceCheckbox} checked={!!anwesenheit[r.name]} onChange={() => onToggleAttendance(ev.id, r.name)} />
                   <span>{r.name}</span>
                 </label>
               ))}
-              {roster.filter((r) => r.bereiche.includes(ev.bereich)).length === 0 && <div style={{ fontSize: 11.5, color: "#8A8C86" }}>Niemand diesem Bereich zugeordnet.</div>}
+              {roster.filter((r) => eventBereiche(ev).some((b) => r.bereiche.includes(b))).length === 0 && <div style={{ fontSize: 11.5, color: "#8A8C86" }}>Niemand diesem Bereich zugeordnet.</div>}
             </div>
           )}
         </div>

@@ -162,6 +162,45 @@ async function migrate() {
     }
     if (alleOk) { migrationen.g26Privat = new Date().toISOString(); migrationenGeaendert = true; }
   }
+  // Version 2.39: Atemschutzträger und die Bereiche „Atemschutz“/„Führungskräfte“ ergeben sich aus der Personalakte.
+  // Einmalig: bisherige Atemschutzträger (Häkchen) bekommen den Lehrgang „Atemschutzgeräteträger“ (aktiv) in ihrer Akte,
+  // danach werden Flag und beide Bereiche für alle aus den Akten abgeleitet (Kommandant/stellv. immer in beiden Bereichen).
+  // Dieselbe Regel steht in src/lib/zugehoerigkeit.js.
+  if (!migrationen.atemschutzAusAkte239) {
+    const klein = (x) => String(x || "").trim().toLowerCase();
+    const istAS = (t) => /^atemschutzger(ä|ae)tetr(ä|ae)ger(in)?$/.test(klein(t));
+    const istFK = (n) => /^(gruppenf(ü|ue)hrer|zugf(ü|ue)hrer)(in)?$/.test(klein(n));
+    const AUTO = ["atemschutz", "fuehrungskraefte"];
+    try {
+      const { data: akten, error: ae } = await db.from("personalakten").select("name,data");
+      if (ae) throw ae;
+      const nachName = new Map((akten || []).map((row) => [row.name, row.data || {}]));
+      for (const r of cleaned) {
+        if (!r || !r.atemschutz) continue;
+        const akte = nachName.get(r.name) || {};
+        const lehrgaenge = akte.lehrgaenge || [];
+        if (lehrgaenge.some((l) => l && istAS(l.titel))) continue;
+        const neu = { ...akte, lehrgaenge: [...lehrgaenge, { id: newToken().slice(0, 10), titel: "Atemschutzgeräteträger", datum: "", photoPath: null, status: "aktiv", adSeit: "" }] };
+        const { error: ue } = await db.from("personalakten").upsert({ name: r.name, data: neu, updated_at: new Date().toISOString() });
+        if (ue) throw ue;
+        nachName.set(r.name, neu);
+      }
+      const aktuell = (await getKv("roster")) || [];
+      const neuRoster = aktuell.map((r) => {
+        if (!r || !r.name) return r;
+        const akte = nachName.get(r.name) || {};
+        const traeger = (akte.lehrgaenge || []).some((l) => l && istAS(l.titel) && l.status !== "ad");
+        const fuehrung = (akte.funktionen || []).some((f) => (typeof f === "string" ? istFK(f) : f && istFK(f.name) && f.status !== "ad"));
+        const kommando = !!(r.kommandant || r.stellvKommandant);
+        const alt = r.bereiche || [];
+        const soll = [...(traeger || kommando ? ["atemschutz"] : []), ...(fuehrung || kommando ? ["fuehrungskraefte"] : [])];
+        const bereiche = [...alt.filter((b) => !AUTO.includes(b) || soll.includes(b)), ...soll.filter((b) => !alt.includes(b))];
+        return { ...r, atemschutz: traeger, bereiche };
+      });
+      await setKv("roster", neuRoster);
+      migrationen.atemschutzAusAkte239 = new Date().toISOString(); migrationenGeaendert = true;
+    } catch (e) { /* beim nächsten Aufruf erneut versuchen */ }
+  }
   if (migrationenGeaendert) await setKv("migrationen", migrationen);
 
   // Admin-Rechte einmalig aus der Konfiguration übernehmen (danach gilt nur noch app_users).

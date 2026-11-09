@@ -5,11 +5,13 @@ import { JF_KOPF, LION_KOPF } from "./lib/icons";
 import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
 import { allesVergessen, hole, merke } from "./lib/zwischenspeicher";
 import { AtemschutzIcon, BereichIcon, HydrantIcon, JFFlammeIcon } from "./components/BereichIcon";
-import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
+import { atemschutzStatus, bewegungKandidaten, callServer, compressImage, currentYear, daysSince, daysUntil, emptyDraft, eventBereiche, eventImBereich, emptyNoticeDraft, emptyRosterEntry, emptySitzungDraft, emptyVehicle, erstelleMonatsplan, fmtDate, formatDateParts, matchesSearch, monatKey, monatLabel, normalizeBewegung, normalizeConfig, normalizeEvent, normalizeRosterEntry, normalizeSitzung, normalizeVehicle, nowTs, storageGetSafe, storageSetWithRetry, todayISO, uid } from "./lib/helpers";
 import { styles } from "./lib/styles";
 import { EventCard, HeroCard, SearchBox, TabBtn, ArztKontakt } from "./components/Shared";
 import { Avatar, ProfilfotoDialog, profilfotoZuschneiden } from "./components/Profilfoto";
 import { AppContext } from "./AppContext";
+import { AUTO_BEREICHE, bereicheAbleiten } from "./lib/zugehoerigkeit";
+import { BereichWahl } from "./components/BereichWahl";
 import { oeffneBericht, registriereBerichtAnzeige, setzeDruckLogo } from "./lib/bericht";
 import { terminlisteModell, termineDesJahres } from "./lib/terminliste";
 import BerichtAnsicht from "./components/BerichtAnsicht";
@@ -227,6 +229,8 @@ export default function App() {
   function canEditCalendarFor(bereich) { if (isAdmin) return true; if (!myEntry || !bereich) return false; return !!(myEntry.rechte[bereich] && myEntry.rechte[bereich].calendar); }
   function canEditNewsFor(bereich) { if (isAdmin) return true; if (!myEntry || !bereich) return false; return !!(myEntry.rechte[bereich] && myEntry.rechte[bereich].news); }
   const editableCalendarBereiche = myBereiche.filter((b) => canEditCalendarFor(b));
+  // Termin für mehrere Bereiche (seit 2.39): ändern/löschen darf, wer für mindestens einen der Bereiche das Kalender-Recht hat.
+  const canEditEvent = (ev) => eventBereiche(ev).some((b) => canEditCalendarFor(b));
   const editableNewsBereiche = myBereiche.filter((b) => canEditNewsFor(b));
   const canEditAtemschutzUnterweisung = isAdmin || canEditCalendarFor("atemschutz");
 
@@ -703,9 +707,8 @@ export default function App() {
     persistConfig({ ...config, adminNames: makeAdmin ? [...config.adminNames, name] : config.adminNames.filter((n) => n !== name) });
   }
   function togglePermission(name, bereich, field) { updateRosterEntry(name, (r) => ({ ...r, rechte: { ...r.rechte, [bereich]: { ...r.rechte[bereich], [field]: !r.rechte[bereich][field] } } })); }
-  function toggleBereichAssignment(name, bereich) { updateRosterEntry(name, (r) => ({ ...r, bereiche: r.bereiche.includes(bereich) ? r.bereiche.filter((b) => b !== bereich) : [...r.bereiche, bereich] })); }
-  function toggleAtemschutz(name) { updateRosterEntry(name, (r) => ({ ...r, atemschutz: !r.atemschutz })); }
-  // Neues Mitglied mit Bereichen anlegen (Jugendwart: Jugendliche). Gibt zurück, ob es geklappt hat.
+  function toggleBereichAssignment(name, bereich) { if (AUTO_BEREICHE.includes(bereich)) return; /* seit 2.39 automatisch aus der Personalakte */ updateRosterEntry(name, (r) => ({ ...r, bereiche: r.bereiche.includes(bereich) ? r.bereiche.filter((b) => b !== bereich) : [...r.bereiche, bereich] })); }
+    // Neues Mitglied mit Bereichen anlegen (Jugendwart: Jugendliche). Gibt zurück, ob es geklappt hat.
   async function addMemberMitBereichen(name, bereiche) {
     const trimmed = name.trim(); if (!trimmed) return false;
     if (roster.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) { flashError("Diesen Namen gibt es schon."); return false; }
@@ -734,8 +737,8 @@ export default function App() {
     callServer("send-push", { an, title, text, art: art || "", token }).catch(() => {});
   }
   // Aus der Personalakte übernommene Funktionen (nur Ja/Nein) in der Mitgliederliste setzen.
-  function setFunktionsFlags(name, flags) {
-    updateRosterEntry(name, (r) => ({ ...r, ...flags }));
+  function setFunktionsFlags(name, flags, auto) {
+    updateRosterEntry(name, (r) => { const n = { ...r, ...flags }; return auto ? { ...n, bereiche: bereicheAbleiten(n, auto) } : n; });
   }
   async function persistVehicles(next) { lastEditRef.current.vehicles = Date.now(); setVehicles(next); const r = await storageSetWithRetry("vehicles", JSON.stringify(next), true); if (!r.ok) flashError("Fahrzeugliste evtl. nicht dauerhaft gespeichert."); }
 
@@ -747,20 +750,27 @@ export default function App() {
   }
 
   function openNew() { if (editableCalendarBereiche.length === 0) return; setDraft(emptyDraft(editableCalendarBereiche[0])); setShowForm(true); setFormError(""); }
-  function openEdit(ev) { if (!canEditCalendarFor(ev.bereich)) return; setDraft({ capacityMode: false, capacityNeeded: 3, namesVisible: true, ...ev }); setShowForm(true); setFormError(""); }
-  function saveDraft() {
-    if (!draft.bereich || !canEditCalendarFor(draft.bereich)) { setFormError("Keine Berechtigung für diesen Bereich."); return; }
+  function openEdit(ev) { if (!canEditEvent(ev)) return; setDraft({ capacityMode: false, capacityNeeded: 3, namesVisible: true, ...ev, bereiche: eventBereiche(ev) }); setShowForm(true); setFormError(""); }
+  const [bereichFrage, setBereichFrage] = useState(null);
+  function saveDraft(bestaetigt = false) {
+    const bs = eventBereiche({ bereich: draft.bereich, bereiche: draft.bereiche });
+    if (!bs.length || !bs.some(canEditCalendarFor)) { setFormError("Keine Berechtigung für diesen Bereich."); return; }
+    if (!draft.id && !bs.every(canEditCalendarFor)) { setFormError("Keine Berechtigung für alle gewählten Bereiche."); return; }
+    // Sicherheitsabfrage: ein Termin für mehrere Bereiche soll nicht versehentlich entstehen
+    if (bs.length > 1 && bestaetigt !== true) { setBereichFrage(bs); return; }
+    setBereichFrage(null);
     if (!draft.title.trim()) { setFormError("Bitte einen Titel eingeben."); return; }
     if (!draft.date) { setFormError("Bitte ein Datum wählen."); return; }
     if (draft.capacityMode && (!draft.capacityNeeded || draft.capacityNeeded < 1)) { setFormError("Bitte eine gültige Anzahl benötigter Personen angeben."); return; }
     const ts = nowTs();
     let next;
-    if (draft.id) next = events.map((ev) => (ev.id === draft.id ? { ...ev, ...draft, updatedAt: ts } : ev));
-    else next = [...events, { ...draft, id: uid(), responses: {}, signups: {}, createdAt: ts, updatedAt: ts }];
+    const gespeichert = { ...draft, bereiche: bs, bereich: bs[0] };
+    if (draft.id) next = events.map((ev) => (ev.id === draft.id ? { ...ev, ...gespeichert, updatedAt: ts } : ev));
+    else next = [...events, { ...gespeichert, id: uid(), responses: {}, signups: {}, createdAt: ts, updatedAt: ts }];
     next.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     persistEvents(next); setShowForm(false);
   }
-  function deleteEvent(id) { const ev = events.find((e) => e.id === id); if (!ev || !canEditCalendarFor(ev.bereich)) return; persistEvents(events.filter((e) => e.id !== id)); }
+  function deleteEvent(id) { const ev = events.find((e) => e.id === id); if (!ev || !canEditEvent(ev)) return; persistEvents(events.filter((e) => e.id !== id)); }
   // Zusagen, Gäste, Anmeldungen, Anwesenheit (seit 2.28): sofort auf dem Handy anzeigen, gespeichert wird über den
   // Server nur der eine Eintrag (netlify/functions/person.js) – so überschreiben sich gleichzeitige Zusagen nicht mehr.
   async function terminAktion(eventId, lokal, anfrage) {
@@ -778,7 +788,7 @@ export default function App() {
     }
   }
   function toggleAttendance(eventId, name) {
-    const ev = events.find((e) => e.id === eventId); if (!ev || !canEditCalendarFor(ev.bereich)) return;
+    const ev = events.find((e) => e.id === eventId); if (!ev || !canEditEvent(ev)) return;
     terminAktion(eventId, (e) => {
       const anwesenheit = { ...(e.anwesenheit || {}) };
       if (anwesenheit[name]) delete anwesenheit[name]; else anwesenheit[name] = true;
@@ -1137,7 +1147,7 @@ export default function App() {
   // --- derived data ---
   const bereichAndCategoryFiltered = useMemo(() => {
     return events
-      .filter((ev) => effectiveBereiche.includes(ev.bereich))
+      .filter((ev) => eventImBereich(ev, effectiveBereiche))
       .filter((ev) => filter === "alle" || ev.category === filter)
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   }, [events, filter, effectiveBereiche]);
@@ -1159,7 +1169,7 @@ export default function App() {
 
   const categoryDots = useMemo(() => {
     const dots = {};
-    events.filter((ev) => effectiveBereiche.includes(ev.bereich)).forEach((ev) => {
+    events.filter((ev) => eventImBereich(ev, effectiveBereiche)).forEach((ev) => {
       const age = daysSince(new Date((ev.updatedAt || ev.createdAt || 0)).toISOString().slice(0, 10));
       if (age <= 28 && !seenCategories[ev.category]) dots[ev.category] = true;
     });
@@ -1208,7 +1218,7 @@ export default function App() {
     if (!me) return [];
     return events.filter((ev) => {
       if (ev.category !== "sonstiges" || !ev.anmeldeschluss) return false;
-      if (!effectiveBereiche.includes(ev.bereich)) return false;
+      if (!eventImBereich(ev, effectiveBereiche)) return false;
       const d = daysUntil(ev.anmeldeschluss);
       if (d < 0 || d > (ev.anmeldeschlussReminderDays || 0)) return false;
       return !((ev.responses || {})[me]);
@@ -1311,7 +1321,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [phase, config, lkwFahrzeuge, bewegung, aktiveMitglieder]);
 
-  const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
+  const appCtx = { phase, setPhase, config, setConfig, codeInput, setCodeInput, adminNameInput, setAdminNameInput, adminPinInput, setAdminPinInput, gateError, setGateError, gateBusy, setGateBusy, roster, setRoster, me, setMe, nameInput, setNameInput, pendingName, setPendingName, pinInput, setPinInput, pinConfirm, setPinConfirm, pinError, setPinError, events, setEvents, notices, setNotices, filter, setFilter, selectedBereiche, setSelectedBereiche, seenCategories, setSeenCategories, showForm, setShowForm, draft, setDraft, formError, setFormError, showNoticeForm, setShowNoticeForm, noticeDraft, setNoticeDraft, noticeError, setNoticeError, showSettings, setShowSettings, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, confirmDeleteName, setConfirmDeleteName, showAdvanced, setShowAdvanced, loginSearch, setLoginSearch, confirmTargetSearch, setConfirmTargetSearch, confirmTargetType, setConfirmTargetType, confirmVehicleSearch, setConfirmVehicleSearch, confirmVehicleTarget, setConfirmVehicleTarget, newVehicleName, setNewVehicleName, newVehicleType, setNewVehicleType, confirmDeleteVehicleId, setConfirmDeleteVehicleId, confirmDeleteSitzungId, setConfirmDeleteSitzungId, editVehicleId, setEditVehicleId, editVehicleName, setEditVehicleName, editVehicleType, setEditVehicleType, showSitzungen, setShowSitzungen, sitzungen, setSitzungen, vehicles, setVehicles, showSitzungForm, setShowSitzungForm, sitzungDraft, setSitzungDraft, sitzungError, setSitzungError, expandedSitzung, setExpandedSitzung, showSitzungArchiv, setShowSitzungArchiv, showEventArchiv, setShowEventArchiv, printSitzungId, setPrintSitzungId, confirmResetG26Name, setConfirmResetG26Name, confirmResetVote, setConfirmResetVote, voteStartDraft, setVoteStartDraft, confirmDeleteEventId, setConfirmDeleteEventId, confirmDeleteNoticeId, setConfirmDeleteNoticeId, expandedEvent, setExpandedEvent, saveBanner, setSaveBanner, dismissedReminders, setDismissedReminders, showKontrollen, setShowKontrollen, showTileMenu, setShowTileMenu, kachelReturnTo, setKachelReturnTo, seenSitzungIds, setSeenSitzungIds, g26EditOpen, setG26EditOpen, g26DateInput, setG26DateInput, lightboxSrc, setLightboxSrc, showPersonalakte, setShowPersonalakte, myEntry, isAdmin, isMainAdmin, myBereiche, inEinsatzabteilung, isAtemschutz, canSeeAusschuss, canEditSitzung, canEditProtokoll, canEditCalendarFor, canEditNewsFor, editableCalendarBereiche, editableNewsBereiche, canEditAtemschutzUnterweisung, configRef, rosterRef, eventsRef, noticesRef, sitzungenRef, vehiclesRef, lastEditRef, EDIT_COOLDOWN_MS, fetchAllData, saveAuth, clearAuth, logout, authTokenRef, loadToken, saveToken, pinPrompt, setPinPrompt, pinPromptResolveRef, requestPinConfirm, submitPinPrompt, cancelPinPrompt, callAuthed, closeKachelView, openTileFuehrerschein, openTileAtemschutz, openTileAusschuss, openTilePersonalakte, openTileSettings, manualRefreshing, setManualRefreshing, showWhatsNew, setShowWhatsNew, dismissWhatsNew, manualRefresh, flashError, submitGate, persistRoster, persistEvents, persistNotices, persistConfig, updateMyRosterEntry, updateRosterEntry, pickRosterEntry, startNewName, pinBusy, setPinBusy, submitPinEntry, submitPinSetup, resetPin, removeMember, toggleAdmin, togglePermission, toggleBereichAssignment, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, persistSitzungen, persistVehicles, effectiveBereiche, toggleBereichFilter, openNew, openEdit, saveDraft, deleteEvent, toggleAttendance, setResponse, setMyGuestCount, toggleSignup, openNewNotice, openEditNotice, saveNoticeDraft, deleteNotice, openNewSitzung, openEditSitzung, saveSitzungDraft, deleteSitzung, setAnwesenheit, saveProtokollText, eligibleVoters, voteResult, startAbstimmung, castVote, finalizeAbstimmung, resetAbstimmung, triggerPrint, escapeHtml, exportSitzungFile, requestFuehrerscheinConfirmation, cancelFuehrerscheinRequest, confirmFuehrerschein, reportFuehrerscheinProblem, dismissFuehrerscheinProblem, toggleHasLicense, setLkwAblauf, setFuehrerscheinKlassen, fuehrerscheinDue, addVehicle, deleteVehicle, renameVehicle, getVehicleStatus, requestVehicleConfirmation, cancelVehicleRequest, confirmVehicleInstruction, setStreckendurchgang, resetStreckendurchgang, setAtemschutzUebung, resetAtemschutzUebung, setAtemschutzUnterweisung, resetAtemschutzUnterweisung, saveG26Date, adminConfirmG26, resetG26Date, g26PhotoUploading, setG26PhotoUploading, attachmentUploading, setAttachmentUploading, uploadG26Photo, removeG26Photo, uploadSitzungAttachment, removeSitzungAttachmentDraft, g26ReminderActive, urlBase64ToUint8Array, subscribeToPush, notifyAboutNotice, exportCSV, exportFuehrerschein, exportAtemschutz, bereichAndCategoryFiltered, filtered, archivedEvents, archivedGrouped, grouped, nextEvent, activeNotices, categoryDots, isRecent, eventBadgeLabel, myReminders, anmeldeschlussReminders, adminPendingG26, incomingFsRequests, incomingVehicleRequests, neueSitzungenCount, upcomingSitzungenTeaser, myRelevantVehicles, isIOSDevice, isStandaloneApp, iosHintDismissed, setIosHintDismissed, dismissIosHint, showIosPushHint, fontImport };
   Object.assign(appCtx, { appVersionen, darfBeschluss, beschlussVorlage, setBeschlussVorlage, beschlussAusSitzung, beschlussZurSitzung, geraeteStartId, setGeraeteStartId, ladeChatStatus, ladeUmfrageStatus, bewegung, persistBewegung, notifyPersons, isMaschinist, isGeraetewart, isHydrantenwart, isJugendwart, lkwFahrzeuge, alleMitgliederFuerPlan: aktiveMitglieder });
   appCtx.alleMitglieder = roster;
   Object.assign(appCtx, { projektStartId, setProjektStartId, oeffneProjekt, aufgabenOffen, profilfotos, darfProfilfoto, profilfotoHochladen, profilfotoEntfernen, profilfotoBusy, oeffneProfilfoto: setProfilfotoDialog });
@@ -1598,7 +1608,7 @@ export default function App() {
           <div key={monthYear} style={{ marginBottom: 22 }}>
             <div style={styles.monthLabel}>{monthYear}</div>
             {evs.map((ev) => (
-              <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} />
+              <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditEvent(ev)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={eventBadgeLabel(ev)} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} />
             ))}
           </div>
         ))}
@@ -1612,7 +1622,7 @@ export default function App() {
               <div key={monthYear} style={{ marginBottom: 22, marginTop: 12 }}>
                 <div style={styles.monthLabel}>{monthYear}</div>
                 {evs.map((ev) => (
-                  <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditCalendarFor(ev.bereich)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} isArchived />
+                  <EventCard key={ev.id} ev={ev} me={me} canEdit={canEditEvent(ev)} expanded={expandedEvent === ev.id} onToggleExpand={() => setExpandedEvent(expandedEvent === ev.id ? null : ev.id)} onRespond={setResponse} onSignup={toggleSignup} onSetGuests={setMyGuestCount} onEdit={() => openEdit(ev)} showBereich={myBereiche.length > 1} badgeLabel={null} roster={aktiveMitglieder} onToggleAttendance={toggleAttendance} isArchived />
                 ))}
               </div>
             ))}
@@ -1632,11 +1642,8 @@ export default function App() {
             <div style={styles.formBody}>
               {editableCalendarBereiche.length > 1 && (<>
                 <label style={styles.label}>Bereich</label>
-                <div style={styles.categoryPicker}>
-                  {editableCalendarBereiche.map((b) => (
-                    <button key={b} type="button" onClick={() => setDraft({ ...draft, bereich: b, time: !draft.id ? (b === "jugendfeuerwehr" ? "18:00" : "20:00") : draft.time })} style={{ ...styles.categoryChip, background: draft.bereich === b ? BEREICHE[b].color : "#F3F1EC", color: draft.bereich === b ? "white" : "#5C5F58", borderColor: draft.bereich === b ? BEREICHE[b].color : "#E2DFD6" }}>{BEREICHE[b].label}</button>
-                  ))}
-                </div>
+                <BereichWahl erlaubt={editableCalendarBereiche} wert={eventBereiche({ bereich: draft.bereich, bereiche: draft.bereiche })}
+                  onChange={(bs) => setDraft({ ...draft, bereiche: bs, bereich: bs[0], time: !draft.id && bs.length === 1 ? (bs[0] === "jugendfeuerwehr" ? "18:00" : "20:00") : draft.time })} />
               </>)}
               <label style={styles.label}>Titel</label>
               <input style={styles.input} placeholder="z. B. Atemschutzübung" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
@@ -1658,7 +1665,7 @@ export default function App() {
                   <div style={{ marginTop: 10 }}>
                     <label style={styles.label}>Benötigte Personen</label>
                     <input style={{ ...styles.input, width: 90 }} type="number" min="1" value={draft.capacityNeeded} onChange={(e) => { const v = e.target.value; setDraft({ ...draft, capacityNeeded: v === "" ? "" : parseInt(v) || "" }); }} onBlur={(e) => { if (!e.target.value) setDraft({ ...draft, capacityNeeded: 1 }); }} />
-                    {!["wettkampfgruppe", "atemschutz"].includes(draft.bereich) && (
+                    {!eventBereiche({ bereich: draft.bereich, bereiche: draft.bereiche }).every((b) => ["wettkampfgruppe", "atemschutz"].includes(b)) && (
                       <label style={{ ...styles.checkboxRow, marginTop: 10 }}><input type="checkbox" checked={draft.namesVisible} onChange={(e) => setDraft({ ...draft, namesVisible: e.target.checked })} /><span>{draft.namesVisible ? <Eye size={13} style={{ verticalAlign: -2 }} /> : <EyeOff size={13} style={{ verticalAlign: -2 }} />} Namen für alle sichtbar</span></label>
                     )}
                   </div>
@@ -1679,7 +1686,7 @@ export default function App() {
                 </div>
               )}
 
-              {draft.bereich === "einsatzabteilung" && GRUPPENFUEHRER_CATEGORIES.includes(draft.category) && (
+              {eventBereiche({ bereich: draft.bereich, bereiche: draft.bereiche }).includes("einsatzabteilung") && GRUPPENFUEHRER_CATEGORIES.includes(draft.category) && (
                 <div style={{ marginTop: 12 }}>
                   <label style={styles.label}><UserCog size={13} style={{ verticalAlign: -2 }} /> Gruppenführer</label>
                   <select style={styles.input} value={draft.gruppenfuehrer || ""} onChange={(e) => setDraft({ ...draft, gruppenfuehrer: e.target.value })}>
@@ -1696,8 +1703,21 @@ export default function App() {
               {formError && <div style={styles.errorText}>{formError}</div>}
               <div style={styles.formActions}>
                 {draft.id && <button style={styles.deleteBtn} onClick={() => setConfirmDeleteEventId(draft.id)}><Trash2 size={15} /> Löschen</button>}
-                <button style={styles.saveBtn} onClick={saveDraft}>{draft.id ? "Speichern" : "Termin anlegen"}</button>
+                <button style={styles.saveBtn} data-testid="termin-speichern" onClick={() => saveDraft()}>{draft.id ? "Speichern" : "Termin anlegen"}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bereichFrage && (
+        <div style={{ ...styles.modalBackdrop, zIndex: 120, alignItems: "center", justifyContent: "center", padding: 20 }} data-testid="bereich-frage">
+          <div style={{ background: "white", borderRadius: 12, padding: "18px 18px 14px", maxWidth: 380, width: "100%" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Termin für {bereichFrage.length} Bereiche?</div>
+            <div style={{ fontSize: 13, color: "#5C5F58", marginBottom: 14 }}>Der Termin gilt für: <b>{bereichFrage.map((b) => BEREICHE[b].label).join(", ")}</b>. Alle Mitglieder dieser Bereiche sehen ihn und können zu- oder absagen. Wirklich so speichern?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center", borderColor: "#E2DFD6", color: "#2C2F2A" }} data-testid="bereich-frage-nein" onClick={() => setBereichFrage(null)}>Zurück</button>
+              <button style={{ ...styles.saveBtn, flex: 1 }} data-testid="bereich-frage-ja" onClick={() => saveDraft(true)}>Ja, speichern</button>
             </div>
           </div>
         </div>

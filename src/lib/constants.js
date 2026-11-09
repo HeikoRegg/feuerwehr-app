@@ -3,8 +3,13 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.38";
+export const APP_VERSION = "2.39";
 export const CHANGELOG = [
+  "Atemschutz: Der Lehrgang „Atemschutzgeräteträger“ in der Personalakte bestimmt Atemschutzträger (G26-Pflicht, Atemschutz-Kachel, Erinnerungen, Statistik) – mit „a.D.“ für außer Dienst; das Häkchen in den Einstellungen entfällt",
+  "Die Bereiche „Atemschutz“ und „Führungskräfte“ ergeben sich automatisch aus der Personalakte (Lehrgang bzw. Gruppenführer/Zugführer, dazu Kommandant, stellv. Kommandant und Admin)",
+  "Termine für mehrere Bereiche: Beim Anlegen einen weiteren Bereich gedrückt halten – mit Rückfrage vor dem Speichern; gemeinsame Zu-/Absageliste",
+  "Projekte: Unterprojekte (eine Ebene) mit Fortschritt, Kostensumme im Hauptprojekt, gemeinsamem Archivieren und Löschen; Beteiligte des Hauptprojekts erben ihre Rechte",
+  "Fotos werden jetzt mit bis zu 1920 Pixeln gespeichert (besser für Beamer und Leinwand)",
   "Neue Kachel „Verbandbuch“: Erste-Hilfe-Leistungen und Vorfälle dokumentieren, mit Ergänzungen, lückenlosem Protokoll, PDF je Eintrag, Jahresauszug, Auswertung ohne Namen und optionaler Nachfrage nach 3 Tagen (Testphase)",
   "To-do: Aufgabe antippen zum Öffnen – Status (Offen / In Bearbeitung / Abgeschlossen) und Notiz für den Zuständigen; Push an den Auftraggeber erst bei „Abgeschlossen“",
   "To-do: Erinnerung als freie Zahl „Tage vorher“ oder als Datum",
@@ -79,9 +84,11 @@ export const FESTE_FUNKTIONEN = ["Kommandant", "stellv. Kommandant", "Gruppenfü
 export const FUNKTION_FLAG = { "Kommandant": "kommandant", "stellv. Kommandant": "stellvKommandant", "Gruppenführer": "gruppenfuehrer", "Gerätewart": "geraetewart", "Jugendwart": "jugendwart" };
 // Maschinist ist ein Lehrgang: wer ihn in der Personalakte stehen hat, gilt als Maschinist (Bewegungsfahrten).
 export const MASCHINIST_LEHRGANG = "Maschinist";
-export const FESTE_LEHRGAENGE = [MASCHINIST_LEHRGANG];
+// Atemschutzgeräteträger ist ebenfalls ein Lehrgang (seit 2.39, mit „a.D.“): daraus ergibt sich die G26-Pflicht.
+export const ATEMSCHUTZ_LEHRGANG = "Atemschutzgeräteträger";
+export const FESTE_LEHRGAENGE = [MASCHINIST_LEHRGANG, ATEMSCHUTZ_LEHRGANG];
 // Weibliche Formen der festen Einträge (weitere pflegt der Admin in den Einstellungen).
-export const WEIBLICH_STANDARD = { "Kommandant": "Kommandantin", "stellv. Kommandant": "stellv. Kommandantin", "Gruppenführer": "Gruppenführerin", "Gerätewart": "Gerätewartin", "Jugendwart": "Jugendwartin", "Maschinist": "Maschinistin" };
+export const WEIBLICH_STANDARD = { "Atemschutzgeräteträger": "Atemschutzgeräteträgerin", "Kommandant": "Kommandantin", "stellv. Kommandant": "stellv. Kommandantin", "Gruppenführer": "Gruppenführerin", "Gerätewart": "Gerätewartin", "Jugendwart": "Jugendwartin", "Maschinist": "Maschinistin" };
 // Vorlagen für den Mitgliedsverlauf in der Personalakte (Freitext bleibt möglich).
 export const VERLAUF_VORLAGEN = ["Eintritt Jugendfeuerwehr", "Übertritt Einsatzabteilung", "Eintritt Einsatzabteilung", "Übertritt Altersabteilung", "Austritt", "Wiedereintritt"];
 

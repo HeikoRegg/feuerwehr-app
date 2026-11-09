@@ -82,7 +82,7 @@ function vevent(ev, jetzt) {
   }
   z.push(`SUMMARY:${esc(ev.title || "Termin")}`);
   if (ev.location) z.push(`LOCATION:${esc(ev.location)}`);
-  const beschreibung = [[KATEGORIE[ev.category] || "", BEREICH_NAME[ev.bereich] || ""].filter(Boolean).join(" · "), ev.notes || "", "Zu- und Absagen bitte in der Feuerwehr-App."].filter(Boolean).join("\n");
+  const beschreibung = [[KATEGORIE[ev.category] || "", eventBereiche(ev).map((b) => BEREICH_NAME[b]).filter(Boolean).join(", ")].filter(Boolean).join(" · "), ev.notes || "", "Zu- und Absagen bitte in der Feuerwehr-App."].filter(Boolean).join("\n");
   z.push(`DESCRIPTION:${esc(beschreibung)}`, `CATEGORIES:${esc(KATEGORIE[ev.category] || "Termin")}`, "END:VEVENT");
   return z;
 }
@@ -101,6 +101,8 @@ async function lage() {
   if (usersRes.error) throw usersRes.error;
   return { users: usersRes.data || [], roster: roster || [], versionen: versionen || {} };
 }
+// Termine können seit 2.39 für mehrere Bereiche gelten (ev.bereiche); alte Termine haben nur ev.bereich.
+const eventBereiche = (ev) => (ev && Array.isArray(ev.bereiche) && ev.bereiche.length ? ev.bereiche : ev && ev.bereich ? [ev.bereich] : []);
 function bereicheVon(l, name) {
   const u = l.users.find((x) => x.name === name);
   const r = l.roster.find((x) => x && x.name === name);
@@ -120,7 +122,7 @@ export async function handler(event) {
       if (!name) return text(404, "Dieser Kalender-Link ist ungültig oder wurde erneuert. Bitte in der Feuerwehr-App einen neuen Link holen.");
       const bereiche = bereicheVon(l, name);
       if (!bereiche) return text(403, "Kein Zugriff mehr.");
-      const events = ((await getKv("events")) || []).filter((e) => e && e.date && bereiche.includes(e.bereich));
+      const events = ((await getKv("events")) || []).filter((e) => e && e.date && eventBereiche(e).some((b) => bereiche.includes(b)));
       const kopf = { "Cache-Control": "no-cache, max-age=0" };
       if (q.termin) {
         const ev = events.find((e) => e.id === String(q.termin));

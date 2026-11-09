@@ -54,7 +54,7 @@ function KachelFarben({ config, persistConfig }) {
 
 export default function EinstellungenKachel() {
   const [logoUpload, setLogoUpload] = useState(false);
-  const { appVersionen, oeffneProfilfoto, flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, toggleAtemschutz, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
+  const { appVersionen, oeffneProfilfoto, flashError, alleMitglieder, setConfirmBlock, config, roster, newCode, setNewCode, rosterSearch, setRosterSearch, newMemberName, setNewMemberName, setConfirmDeleteName, showAdvanced, setShowAdvanced, kachelReturnTo, isMainAdmin, closeKachelView, persistConfig, resetPin, toggleAdmin, togglePermission, toggleBereichAssignment, adminAddMember, toggleGruppenfuehrer, toggleAusschuss, toggleAusschussRecht, updateRosterEntry } = useApp();
   // Ein Listen-Paar (Einträge + weibliche Formen) gemeinsam speichern.
   const listeSpeichern = (key) => (items, weiblich) => persistConfig({ ...config, [key]: items, weiblich });
   // Einträge ohne weibliche Form, für die es einen Vorschlag gibt (z. B. ältere Listen von vor Version 2.8).
@@ -101,7 +101,6 @@ export default function EinstellungenKachel() {
                     onRequestBlock={() => setConfirmBlock({ name: r.name, gesperrt: true })}
                     onToggleBereich={(b) => toggleBereichAssignment(r.name, b)}
                     onTogglePerm={(b, f) => togglePermission(r.name, b, f)}
-                    onToggleAtemschutz={() => toggleAtemschutz(r.name)}
                     onToggleHydrantenwart={() => updateRosterEntry(r.name, (x) => ({ ...x, hydrantenwart: !x.hydrantenwart }))}
                     onToggleAusschuss={() => toggleAusschuss(r.name)}
                     onToggleAusschussRecht={(f) => toggleAusschussRecht(r.name, f)}

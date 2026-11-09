@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ArrowLeft, ChevronRight, KeyRound, Lock, Plus, Printer, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, MASCHINIST_LEHRGANG, RUNDE_GEBURTSTAGE_EXTRA, VERLAUF_VORLAGEN } from "../lib/constants";
+import { ATEMSCHUTZ_LEHRGANG, FUEHRERSCHEIN_KLASSEN, FUNKTION_FLAG, JUBILAEUMS_JAHRE, MASCHINIST_LEHRGANG, RUNDE_GEBURTSTAGE_EXTRA, VERLAUF_VORLAGEN } from "../lib/constants";
+import { atemschutzAusLehrgaengen, bereicheAbleiten, fuehrungAusFunktionen, istAtemschutzLehrgang } from "../lib/zugehoerigkeit";
 import { callServer, compressImage, currentYear, dienstbeginn, dienstjahreImJahr, fmtDate, geschlechtsForm, matchesSearch, todayISO, uid } from "../lib/helpers";
 import { styles } from "../lib/styles";
 import { bereiteFensterVor, oeffneBericht } from "../lib/bericht";
@@ -291,8 +292,15 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
       // Maschinist ergibt sich aus dem Lehrgang.
       if (onSetFlags) {
         const entry = roster.find((x) => x.name === target);
-        const flags = { maschinist: hatMaschinistLehrgang(data.lehrgaenge), ...(darfAdminFelder ? funktionsFlags(data.funktionen) : {}) };
-        if (entry && Object.keys(flags).some((k) => !!entry[k] !== flags[k])) onSetFlags(target, flags);
+        // Seit 2.39: Atemschutzträger (Lehrgang, nicht a.D.) und Bereiche Atemschutz/Führungskräfte ergeben sich aus der Akte.
+        const traeger = atemschutzAusLehrgaengen(data.lehrgaenge);
+        const flags = { maschinist: hatMaschinistLehrgang(data.lehrgaenge), atemschutz: traeger, ...(darfAdminFelder ? funktionsFlags(data.funktionen) : {}) };
+        const auto = { atemschutz: traeger, fuehrung: darfAdminFelder ? fuehrungAusFunktionen(data.funktionen) : undefined };
+        if (entry) {
+          const neuBereiche = bereicheAbleiten({ ...entry, ...flags }, auto);
+          const bereicheAnders = neuBereiche.length !== (entry.bereiche || []).length || neuBereiche.some((b) => !(entry.bereiche || []).includes(b));
+          if (bereicheAnders || Object.keys(flags).some((k) => !!entry[k] !== flags[k])) onSetFlags(target, flags, auto);
+        }
       }
       return true;
     }
@@ -607,6 +615,17 @@ export default function PersonalakteView({ me, isAdmin, roster, config, callAuth
                   <input style={{ ...styles.input, width: 140, padding: "6px 8px", fontSize: 12.5 }} type="date" value={l.datum || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, datum: e.target.value } : x)) })} />
                   <button style={styles.tinyIconBtn} aria-label="Lehrgang entfernen" onClick={() => { if (window.confirm("Lehrgang samt Nachweis-Foto entfernen?")) upd({ lehrgaenge: akte.lehrgaenge.filter((x) => x.id !== l.id) }); }}><X size={12} /></button>
                 </div>
+                {istAtemschutzLehrgang(l.titel) && (
+                  <div data-testid={`as-status-${l.id}`} style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <button data-testid={`as-aktiv-${l.id}`} style={{ ...styles.tinyBtn, background: l.status !== "ad" ? "#1F6F5C" : "#F3F1EC", color: l.status !== "ad" ? "white" : "#5C5F58" }} onClick={() => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, status: "aktiv", adSeit: "" } : x)) })}>aktiv</button>
+                    <button data-testid={`as-ad-${l.id}`} style={{ ...styles.tinyBtn, background: l.status === "ad" ? "#5C5F58" : "#F3F1EC", color: l.status === "ad" ? "white" : "#5C5F58" }} onClick={() => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, status: "ad", adSeit: x.adSeit || todayISO() } : x)) })}>a.D.</button>
+                    {l.status === "ad" ? (<>
+                      <span style={{ fontSize: 11, color: "#8A8C86" }}>a.D. seit</span>
+                      <input style={{ ...styles.input, width: 135, padding: "4px 7px", fontSize: 12 }} type="date" value={l.adSeit || ""} onChange={(e) => upd({ lehrgaenge: akte.lehrgaenge.map((x) => (x.id === l.id ? { ...x, adSeit: e.target.value } : x)) })} />
+                      <span style={{ fontSize: 10.5, color: "#A5A79F", flexBasis: "100%" }}>Außer Dienst: keine G26-Pflicht mehr, nicht mehr im Bereich Atemschutz.</span>
+                    </>) : <span style={{ fontSize: 10.5, color: "#A5A79F" }}>Atemschutzträger: G26-Pflicht und Bereich Atemschutz.</span>}
+                  </div>
+                )}
                 <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                   {l.photoUrl && <img src={l.photoUrl} alt="Nachweis" style={{ width: 70, height: 50, objectFit: "cover", borderRadius: 4, border: "1px solid #E2DFD6", cursor: "zoom-in" }} onClick={() => onOpenPhoto(l.photoUrl)} />}
                   <label style={styles.smallAddBtn}>

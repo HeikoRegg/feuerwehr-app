@@ -160,7 +160,8 @@ export async function handler(event) {
       const name = String(body.name || "").slice(0, 80);
       if (!name) throw fehler(400, "Name fehlt.");
       const termin = await terminAendern(id, (ev) => {
-        if (!lage.kalenderRecht(ev.bereich)) throw fehler(403, "Anwesenheit dürfen nur Leute mit Kalender-Recht für diesen Bereich eintragen.");
+        const bs = Array.isArray(ev.bereiche) && ev.bereiche.length ? ev.bereiche : [ev.bereich];
+        if (!bs.some((b) => lage.kalenderRecht(b))) throw fehler(403, "Anwesenheit dürfen nur Leute mit Kalender-Recht für diesen Bereich eintragen.");
         const anwesenheit = { ...(ev.anwesenheit || {}) };
         if (anwesenheit[name]) delete anwesenheit[name]; else anwesenheit[name] = true;
         return { ...ev, anwesenheit };

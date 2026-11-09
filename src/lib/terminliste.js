@@ -1,6 +1,7 @@
 // Terminliste der Einsatzabteilung zum Ausdrucken bzw. Verschicken (z. B. WhatsApp) – nur Datum, Uhrzeit, Titel.
 // Wird als Bericht-Modell beschrieben (lib/bericht.js): PC = Druckfenster, Handy = Vorschau + PDF teilen.
 import { MONTHS, WEEKDAYS_SHORT } from "./constants";
+import { eventBereiche } from "./helpers";
 
 export const TERMINLISTE_FUSS = "Änderungen sind jederzeit möglich. Die aktuellen Termine stehen immer in der Feuerwehr-App.";
 
@@ -13,7 +14,7 @@ const datumKurz = (iso) => {
 // Termine eines Bereichs (Standard Einsatzabteilung; seit 2.31 auch Jugendfeuerwehr) im gewählten Jahr, nach Datum und Uhrzeit sortiert.
 export function termineDesJahres(events, jahr, bereich = "einsatzabteilung") {
   return (events || [])
-    .filter((ev) => ev && ev.bereich === bereich && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || "") && ev.date.startsWith(`${jahr}-`))
+    .filter((ev) => ev && eventBereiche(ev).includes(bereich) && /^\d{4}-\d{2}-\d{2}$/.test(ev.date || "") && ev.date.startsWith(`${jahr}-`))
     .slice()
     .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
 }

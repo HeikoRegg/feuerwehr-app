@@ -1,7 +1,7 @@
 // Berechnung aller Statistiken für die Statistik-Kachel und den Jahresbericht.
 // App-Ansicht und Druckbericht nutzen dieselben Ergebnisse, damit die Zahlen immer übereinstimmen.
 import { BEREICHE, BEREICH_KEYS, CATEGORIES } from "./constants";
-import { atemschutzStatus, todayISO } from "./helpers";
+import { atemschutzStatus, eventBereiche, todayISO } from "./helpers";
 import { zuMin, fmtHM, aufViertel } from "./zeit";
 
 export const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -178,7 +178,7 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
   const uebungenAlle = evJahr.filter((e) => e.category === "uebung" && e.date <= heute);
   const uebungen = uebungenAlle.filter((e) => Object.values(e.anwesenheit || {}).some(Boolean));
   const besuch = roster.map((r) => {
-    const relevant = uebungen.filter((e) => r.bereiche.includes(e.bereich));
+    const relevant = uebungen.filter((e) => eventBereiche(e).some((b) => r.bereiche.includes(b)));
     const da = relevant.filter((e) => (e.anwesenheit || {})[r.name]).length;
     return { name: r.name, relevant: relevant.length, da, quote: pct(da, relevant.length) };
   }).filter((x) => x.relevant > 0).sort((a, b) => b.quote - a.quote || b.da - a.da || a.name.localeCompare(b.name, "de"));
@@ -196,7 +196,7 @@ export function berechneStatistik({ jahr, roster, events, sitzungen, vehicles, b
       { id: "kategorien", title: `Termine ${jahr} nach Kategorie`, type: "bars",
         items: Object.entries(CATEGORIES).map(([k, c]) => ({ label: c.label, value: evJahr.filter((e) => e.category === k).length, color: c.color })) },
       { id: "bereiche", title: `Termine ${jahr} nach Bereich`, type: "bars",
-        items: BEREICH_KEYS.map((b) => ({ label: BEREICHE[b].label, value: evJahr.filter((e) => e.bereich === b).length, color: BEREICHE[b].color })).filter((x) => x.value > 0),
+        items: BEREICH_KEYS.map((b) => ({ label: BEREICHE[b].label, value: evJahr.filter((e) => eventBereiche(e).includes(b)).length, color: BEREICHE[b].color })).filter((x) => x.value > 0),
         empty: "Keine Termine in diesem Jahr." },
       { id: "besuch-verteilung", title: "Übungsbesuch (Verteilung)", type: "bars",
         items: [

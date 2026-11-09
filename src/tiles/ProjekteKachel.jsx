@@ -78,6 +78,7 @@ function Formular({ start, onClose, onSaved }) {
   return (
     <div style={styles.fullscreenPage} data-testid="projekt-formular">
       <div style={styles.fullscreenHeader}><button style={styles.fullscreenBackBtn} onClick={onClose}><ArrowLeft size={18} /> Abbrechen</button></div>
+      {f.eltern && !f.id && <div data-testid="unterprojekt-hinweis" style={{ fontSize: 12.5, color: "#4A6670", background: "#EEF2F3", borderRadius: 6, padding: "6px 9px", margin: "6px 0" }}>Unterprojekt von „{f.elternName || "Hauptprojekt"}“. Die Beteiligten des Hauptprojekts dürfen es automatisch sehen und mitarbeiten.</div>}
       <div style={styles.modalTitle}>{f.id ? "Projekt bearbeiten" : "Neues Projekt"}</div>
       <div style={styles.formBody}>
         <label style={styles.label}>Name</label>
@@ -120,7 +121,7 @@ function Formular({ start, onClose, onSaved }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}><label style={styles.label}>Budget € (optional)</label><input style={styles.input} inputMode="decimal" data-testid="projekt-budget" placeholder="leer lassen" value={f.budget} onChange={(e) => set("budget", e.target.value.replace(/[^0-9,.]/g, ""))} /></div>
-          <div style={{ flex: 1 }}><label style={styles.label}>Kosten bisher € (optional)</label><input style={styles.input} inputMode="decimal" placeholder="leer lassen" value={f.kosten} onChange={(e) => set("kosten", e.target.value.replace(/[^0-9,.]/g, ""))} /></div>
+          <div style={{ flex: 1 }}><label style={styles.label}>Kosten bisher € (optional)</label><input style={styles.input} data-testid="projekt-kosten" inputMode="decimal" placeholder="leer lassen" value={f.kosten} onChange={(e) => set("kosten", e.target.value.replace(/[^0-9,.]/g, ""))} /></div>
         </div>
         {fehlerText && <div style={styles.errorText}>{fehlerText}</div>}
         <button style={{ ...styles.saveBtn, marginTop: 16 }} disabled={busy} data-testid="projekt-speichern" onClick={speichern}>{busy ? "Speichert …" : "Speichern"}</button>
@@ -156,7 +157,7 @@ function projektBericht(d) {
 }
 
 // ---------------- Detail ----------------
-function Detail({ id, onBack, onEdit, onChanged }) {
+function Detail({ id, onBack, onEdit, onChanged, onOpen, onNeuUnter }) {
   const { me, callAuthed, flashError, ladeUmfrageStatus } = useApp();
   const [d, setD] = useState(null);
   const [fehler, setFehler] = useState("");
@@ -189,6 +190,8 @@ function Detail({ id, onBack, onEdit, onChanged }) {
   const fertig = aufgaben.filter((a) => a.erledigt);
   const doks = (d.eintraege || []).filter((e) => e.art === "dokument");
   const verlauf = (d.eintraege || []).filter((e) => e.art !== "dokument");
+  const unter = d.unterprojekte || [];
+  const unterOffen = unter.filter((k) => !k.archiviert).length;
 
   async function aktion(body, meldung) {
     setBusy(true);
@@ -247,6 +250,7 @@ function Detail({ id, onBack, onEdit, onChanged }) {
         <div style={styles.modalTitle}>{p.name}</div>
         <PhasePille phase={p.phase} />
       </div>
+      {d.eltern && <button data-knopf="fest" data-testid="zum-hauptprojekt" disabled={!d.eltern.sichtbar} onClick={() => onOpen(d.eltern.id)} style={{ ...klein, background: "transparent", border: "none", padding: "2px 0", cursor: d.eltern.sichtbar ? "pointer" : "default", textAlign: "left" }}>Unterprojekt von <b>{d.eltern.name}</b>{d.eltern.sichtbar ? " ›" : ""}</button>}
       {p.archiviert && <div data-testid="archiviert-hinweis" style={{ fontSize: 12, color: "#5C5F58", background: "#EEEDE8", borderRadius: 6, padding: "6px 9px", margin: "6px 0" }}>Abgeschlossen und archiviert{p.archiviertAm ? ` am ${datumDe(String(p.archiviertAm).slice(0, 10))}` : ""}. Zum Ändern zuerst aus dem Archiv holen.</div>}
       {p.beschreibung && <div style={{ fontSize: 13.5, color: "#2C2F2A", whiteSpace: "pre-wrap", margin: "8px 0", lineHeight: 1.45 }}>{p.beschreibung}</div>}
       <div style={{ margin: "8px 0 12px" }}><Fortschritt erledigt={fertig.length} gesamt={aufgaben.length} /></div>
@@ -259,9 +263,28 @@ function Detail({ id, onBack, onEdit, onChanged }) {
           {p.beteiligte.length > 0 && <><span style={klein}>Beteiligte</span><span>{p.beteiligte.join(", ")}</span></>}
           {p.budget !== null && p.budget !== undefined && <><span style={klein}>Budget</span><span>{euro(p.budget)}</span></>}
           {p.kosten !== null && p.kosten !== undefined && <><span style={klein}>Kosten bisher</span><span style={{ color: p.budget !== null && p.budget !== undefined && p.kosten > p.budget ? "#C1272D" : "inherit" }}>{euro(p.kosten)}{p.budget !== null && p.budget !== undefined ? ` (${Math.round((p.kosten / (p.budget || 1)) * 100)} %)` : ""}</span></>}
+          {unter.length > 0 && <><span style={klein}>Kosten gesamt</span><span data-testid="kosten-summe" style={{ fontWeight: 600 }}>{euro(d.kostenSumme)} <span style={{ ...klein, fontWeight: 400 }}>(mit Unterprojekten)</span></span></>}
           <span style={klein}>Angelegt</span><span>{p.erstelltVon}{p.erstelltAm ? `, ${datumDe(String(p.erstelltAm).slice(0, 10))}` : ""}</span>
         </div>
       </Abschnitt>
+
+      {!p.eltern && (unter.length > 0 || (aktiv && r.verwalter)) && (
+        <Abschnitt titel={`UNTERPROJEKTE (${unter.length})`} testId="projekt-unterprojekte"
+          rechts={aktiv && r.verwalter && <button style={styles.smallAddBtn} data-testid="unterprojekt-anlegen" onClick={() => onNeuUnter(p)}><Plus size={12} /> Unterprojekt</button>}>
+          {unter.length === 0 && <div style={{ ...klein, padding: "4px 0" }}>Noch keine Unterprojekte – zum Beispiel für einzelne Bauabschnitte.</div>}
+          {unter.map((k) => (
+            <button key={k.id} data-testid={`unterprojekt-${k.id}`} onClick={() => onOpen(k.id)} style={{ ...styles.rosterItem, flexDirection: "column", alignItems: "stretch", gap: 5, marginBottom: 6, opacity: k.archiviert ? 0.7 : 1 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>{k.name}</span>
+                <PhasePille phase={k.phase} />
+                <ChevronRight size={14} color="#A5A79F" />
+              </span>
+              <Fortschritt erledigt={k.aufgaben.erledigt} gesamt={k.aufgaben.gesamt} />
+              {(k.kosten !== null && k.kosten !== undefined) && <span style={klein}>Kosten bisher {euro(k.kosten)}</span>}
+            </button>
+          ))}
+        </Abschnitt>
+      )}
 
       <Abschnitt titel={`AUFGABEN (${offen.length} offen)`} testId="projekt-aufgaben"
         rechts={aktiv && r.mitarbeiter && <button style={styles.smallAddBtn} data-testid="projekt-neue-aufgabe" onClick={() => setAufgabe({ projekt: p.id, zustaendig: me })}><Plus size={12} /> Aufgabe</button>}>
@@ -313,10 +336,10 @@ function Detail({ id, onBack, onEdit, onChanged }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
         {aktiv && r.verwalter && <button style={{ ...styles.saveBtn, gap: 6 }} data-testid="projekt-bearbeiten" onClick={() => onEdit(p)}><Pencil size={15} /> Bearbeiten</button>}
         <button style={{ ...styles.exportBtn, justifyContent: "center", padding: "11px 14px", marginBottom: 0 }} onClick={drucken}><Printer size={15} /> Drucken / PDF</button>
-        {r.verwalter && frage !== "archiv" && <button style={{ ...styles.deleteBtn, justifyContent: "center", color: "#5C5F58", borderColor: "#D5D2C8" }} data-testid="projekt-archivieren" disabled={busy} onClick={() => (aktiv && offen.length ? setFrage("archiv") : archivieren())}>{aktiv ? <><Archive size={15} /> Abschließen und archivieren</> : <><ArchiveRestore size={15} /> Aus dem Archiv holen</>}</button>}
+        {r.verwalter && frage !== "archiv" && <button style={{ ...styles.deleteBtn, justifyContent: "center", color: "#5C5F58", borderColor: "#D5D2C8" }} data-testid="projekt-archivieren" disabled={busy} onClick={() => (aktiv && (offen.length || unterOffen) ? setFrage("archiv") : archivieren())}>{aktiv ? <><Archive size={15} /> Abschließen und archivieren</> : <><ArchiveRestore size={15} /> Aus dem Archiv holen</>}</button>}
         {frage === "archiv" && (
           <div style={{ background: "white", border: "1px solid #E2DFD6", borderRadius: 8, padding: "10px 11px" }} data-testid="archiv-frage">
-            <div style={{ fontSize: 12.5, marginBottom: 8 }}>Es sind noch {offen.length} Aufgabe{offen.length === 1 ? "" : "n"} offen. Sie verschwinden aus dem To-do der Zuständigen. Trotzdem abschließen?</div>
+            <div style={{ fontSize: 12.5, marginBottom: 8 }}>{offen.length > 0 ? `Es sind noch ${offen.length} Aufgabe${offen.length === 1 ? "" : "n"} offen. Sie verschwinden aus dem To-do der Zuständigen. ` : ""}{unterOffen > 0 ? `Die ${unterOffen} Unterprojekt${unterOffen === 1 ? "" : "e"} werden mit archiviert. ` : ""}Trotzdem abschließen?</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setFrage(null)}>Abbrechen</button>
               <button style={{ ...styles.saveBtn, flex: 1 }} data-testid="archiv-ja" onClick={archivieren}>Abschließen</button>
@@ -326,7 +349,7 @@ function Detail({ id, onBack, onEdit, onChanged }) {
         {r.loeschen && frage !== "loeschen" && <button style={{ ...styles.deleteBtn, justifyContent: "center" }} data-testid="projekt-loeschen" disabled={busy} onClick={() => setFrage("loeschen")}><Trash2 size={15} /> Projekt löschen</button>}
         {frage === "loeschen" && (
           <div style={{ background: "white", border: "1px solid #E2A9A9", borderRadius: 8, padding: "10px 11px" }}>
-            <div style={{ fontSize: 12.5, marginBottom: 8 }}>Projekt „{p.name}“ mit allen Aufgaben, Notizen und Dokumenten endgültig löschen? Das kann nicht rückgängig gemacht werden.</div>
+            <div data-testid="loeschen-text" style={{ fontSize: 12.5, marginBottom: 8 }}>Projekt „{p.name}“ {unter.length > 0 ? <b>und seine {unter.length} Unterprojekt{unter.length === 1 ? "" : "e"} </b> : null}mit allen Aufgaben, Notizen und Dokumenten endgültig löschen? Das kann nicht rückgängig gemacht werden.</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setFrage(null)}>Abbrechen</button>
               <button style={{ ...styles.saveBtn, flex: 1 }} data-testid="loeschen-ja" onClick={loeschen}>Endgültig löschen</button>
@@ -355,6 +378,8 @@ export default function ProjekteKachel() {
   const [formular, setFormular] = useState(null);
   const [nurMeine, setNurMeine] = useState(false);
   const [zeigeArchiv, setZeigeArchiv] = useState(false);
+  const [zu, setZu] = useState(() => new Set());
+  const umschalten = (id) => setZu((m) => { const n = new Set(m); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   async function laden() {
     const r = await callAuthed("projekte", { action: "list" });
@@ -369,8 +394,28 @@ export default function ProjekteKachel() {
   const archiv = useMemo(() => gefiltert.filter((p) => p.archiviert).sort((a, b) => String(b.archiviertAm || "").localeCompare(String(a.archiviertAm || ""))), [gefiltert]);
 
   if (formular) return <Formular start={formular} onClose={() => setFormular(null)} onSaved={async (id) => { setFormular(null); await laden(); setOffen(id); }} />;
-  if (offen) return <Detail id={offen} onBack={() => { setOffen(null); laden(); }} onEdit={(p) => setFormular({ ...p })} onChanged={laden} />;
+  if (offen) return <Detail id={offen} onBack={() => { setOffen(null); laden(); }} onEdit={(p) => setFormular({ ...p })} onChanged={laden} onOpen={setOffen} onNeuUnter={(h) => setFormular({ ...leer(), eltern: h.id, elternName: h.name, sicht: h.sicht || "alle", verantwortlich: "" })} />;
 
+  // Unterprojekte eingerückt unter ihrem Hauptprojekt (einklappbar); ohne sichtbares Hauptprojekt erscheinen sie einzeln.
+  const gruppe = (liste) => {
+    const ids = new Set(liste.map((p) => p.id));
+    return liste.filter((p) => !p.eltern || !ids.has(p.eltern)).map((p) => {
+      const kinder = liste.filter((k) => k.eltern === p.id).sort((a, b) => a.name.localeCompare(b.name, "de"));
+      return (
+        <div key={p.id}>
+          {karte(p)}
+          {kinder.length > 0 && (
+            <>
+              <button data-knopf="fest" data-testid={`unter-umschalten-${p.id}`} onClick={() => umschalten(p.id)} style={{ ...klein, background: "transparent", border: "none", padding: "0 0 6px 14px", marginTop: -2, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontWeight: 600 }}>
+                {kinder.length} Unterprojekt{kinder.length === 1 ? "" : "e"} <ChevronDown size={12} style={{ transform: zu.has(p.id) ? "none" : "rotate(180deg)" }} />
+              </button>
+              {!zu.has(p.id) && <div style={{ marginLeft: 16, borderLeft: "2px solid #D9D6CC", paddingLeft: 8 }}>{kinder.map(karte)}</div>}
+            </>
+          )}
+        </div>
+      );
+    });
+  };
   const karte = (p) => {
     const zielInfo = !p.archiviert && p.ziel && p.phase !== "erledigt" ? faelligInfo(p.ziel, false) : null;
     return (
@@ -407,13 +452,13 @@ export default function ProjekteKachel() {
             ))}
           </div>
           {laufend.length === 0 && <div style={{ ...klein, margin: "10px 0" }}>{nurMeine ? "Du bist an keinem laufenden Projekt beteiligt." : daten.darfAnlegen ? "Noch keine Projekte – leg das erste an." : "Noch keine Projekte, die du sehen darfst."}</div>}
-          {laufend.map(karte)}
+          {gruppe(laufend)}
           {archiv.length > 0 && (
             <>
               <button data-knopf="fest" data-testid="archiv-umschalten" style={{ fontSize: 11, fontWeight: 700, color: "#8A8C86", letterSpacing: "0.05em", background: "transparent", border: "none", padding: 0, margin: "14px 0 8px", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }} onClick={() => setZeigeArchiv((v) => !v)}>
                 ARCHIV ({archiv.length}) <ChevronDown size={13} style={{ transform: zeigeArchiv ? "rotate(180deg)" : "none" }} />
               </button>
-              {zeigeArchiv && archiv.map(karte)}
+              {zeigeArchiv && gruppe(archiv)}
             </>
           )}
         </>
