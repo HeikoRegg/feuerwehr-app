@@ -72,7 +72,8 @@ export function AufgabeZeile({ a, ich, onToggle, onOpen, zeigeProjekt = false, o
               <FolderKanban size={11} color="#4A6670" /> {a.projektName}
             </button>
           )}
-          {a.erledigt && a.erledigtVon && <span style={klein}>· erledigt von {a.erledigtVon === ich ? "dir" : a.erledigtVon}</span>}
+          {a.erledigt && a.status === "verworfen" ? <span data-testid={`verworfen-${a.id}`} style={{ fontSize: 11, fontWeight: 600, color: "#8A4B2A", background: "#FBF3EE", borderRadius: 4, padding: "1px 6px" }}>verworfen{a.verworfenVon ? ` von ${a.verworfenVon === ich ? "dir" : a.verworfenVon}` : ""}</span>
+            : a.erledigt && a.erledigtVon && <span style={klein}>· erledigt von {a.erledigtVon === ich ? "dir" : a.erledigtVon}</span>}
         </div>
       </div>
     </div>
@@ -114,8 +115,8 @@ export function ErinnerungsFeld({ faellig, wert, onChange, testPrefix = "" }) {
   );
 }
 
-const STATUS = [["offen", "Offen"], ["bearbeitung", "In Bearbeitung"], ["erledigt", "Abgeschlossen"]];
-const statusVon = (a) => (a.erledigt ? "erledigt" : a.status === "bearbeitung" ? "bearbeitung" : "offen");
+const STATUS = [["offen", "Offen"], ["bearbeitung", "In Bearbeitung"], ["erledigt", "Abgeschlossen"], ["verworfen", "Verworfen"]];
+const statusVon = (a) => (a.erledigt ? (a.status === "verworfen" ? "verworfen" : "erledigt") : a.status === "bearbeitung" ? "bearbeitung" : "offen");
 
 // Ansicht einer Aufgabe: lesen, Status setzen, Notiz (nur der Zuständige) und Erinnerung (Zuständiger). Text, Beschreibung,
 // Fälligkeit und Zuständigkeit ändert nur, wer die Aufgabe ändern darf (Knopf „Bearbeiten“).
@@ -126,7 +127,12 @@ export function AufgabeDetail({ a, ich, projektName, gesperrt = false, onClose, 
   const [notiz, setNotiz] = useState(a.zNotiz || "");
   const [erinnerung, setErinnerung] = useState(() => a.erinnerung || (a.faellig ? { art: "tage", tage: 1 } : { art: "keine" }));
   const [gespeichert, setGespeichert] = useState("");
+  const [grundOffen, setGrundOffen] = useState(false);
+  const [grund, setGrund] = useState("");
+  const [loeschFrage, setLoeschFrage] = useState(false);
   const istZustaendig = a.zustaendig === ich;
+  // Seit 2.40: Zuständiger löscht abgeschlossene Aufgaben selbst; verworfene löscht nur der Ersteller (bzw. Verwalter).
+  const darfLoeschen = !gesperrt && (!!a.darfAendern || (istZustaendig && !!a.erledigt && a.status !== "verworfen"));
   const darfStatus = !gesperrt && (istZustaendig || !!a.darfAendern);
   const darfErinnerung = darfStatus;
   async function aktion(body, ok) {
@@ -163,11 +169,25 @@ export function AufgabeDetail({ a, ich, projektName, gesperrt = false, onClose, 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }} data-testid="status-auswahl">
             {STATUS.map(([k, l]) => (
               <button key={k} type="button" data-testid={`status-${k}`} disabled={busy || !darfStatus || status === k}
-                onClick={() => aktion({ action: "aufgabeStatus", id: a.id, status: k }, k === "erledigt" ? "Als abgeschlossen gespeichert." : "Status gespeichert.")}
-                style={{ ...styles.categoryChip, fontSize: 12.5, padding: "7px 12px", opacity: !darfStatus && status !== k ? 0.5 : 1, background: status === k ? (k === "erledigt" ? "#2E7D4F" : "#2C2F2A") : "#F3F1EC", color: status === k ? "white" : "#5C5F58", borderColor: status === k ? "transparent" : "#E2DFD6" }}>{l}</button>
+                onClick={() => { if (k === "verworfen") { setGrundOffen(true); setGrund(""); return; } setGrundOffen(false); aktion({ action: "aufgabeStatus", id: a.id, status: k }, k === "erledigt" ? "Als abgeschlossen gespeichert." : "Status gespeichert."); }}
+                style={{ ...styles.categoryChip, fontSize: 12.5, padding: "7px 12px", opacity: !darfStatus && status !== k ? 0.5 : 1, background: status === k ? (k === "erledigt" ? "#2E7D4F" : k === "verworfen" ? "#8A4B2A" : "#2C2F2A") : "#F3F1EC", color: status === k ? "white" : "#5C5F58", borderColor: status === k ? "transparent" : "#E2DFD6" }}>{l}</button>
             ))}
           </div>
-          {a.erledigt && a.erledigtVon && <div style={{ ...klein, marginTop: 4 }}>Abgeschlossen von {a.erledigtVon === ich ? "dir" : a.erledigtVon}.</div>}
+          {grundOffen && (
+            <div data-testid="verwerfen-box" style={{ background: "#FBF3EE", border: "1px solid #E5C7B4", borderRadius: 8, padding: "9px 10px", marginTop: 8 }}>
+              <div style={{ fontSize: 12.5, marginBottom: 6 }}>Warum wird die Aufgabe verworfen (nicht machbar / nicht mehr nötig)? {a.erstelltVon && a.erstelltVon !== ich ? `${a.erstelltVon} bekommt eine Nachricht mit der Begründung.` : ""}</div>
+              <textarea style={{ ...styles.input, minHeight: 60, resize: "vertical" }} data-testid="verwerfen-grund" maxLength={1000} placeholder="Begründung (Pflicht)" value={grund} onChange={(e) => setGrund(e.target.value)} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setGrundOffen(false)}>Abbrechen</button>
+                <button style={{ ...styles.saveBtn, flex: 1 }} data-testid="verwerfen-ja" disabled={busy || !grund.trim()} onClick={async () => { if (await aktion({ action: "aufgabeStatus", id: a.id, status: "verworfen", grund }, "Als verworfen gespeichert.")) setGrundOffen(false); }}>Verwerfen</button>
+              </div>
+            </div>
+          )}
+          {a.erledigt && a.status === "verworfen" ? (
+            <div data-testid="detail-verworfen" style={{ fontSize: 12.5, marginTop: 6, background: "#FBF3EE", borderRadius: 6, padding: "6px 9px", color: "#6B3A20", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              <b>Verworfen</b>{a.verworfenVon ? ` von ${a.verworfenVon === ich ? "dir" : a.verworfenVon}` : ""}: {a.verworfenGrund || "–"}
+            </div>
+          ) : a.erledigt && a.erledigtVon && <div style={{ ...klein, marginTop: 4 }}>Abgeschlossen von {a.erledigtVon === ich ? "dir" : a.erledigtVon}.</div>}
 
           <label style={styles.label}>{istZustaendig ? "Deine Notiz" : `Notiz von ${a.zustaendig}`}</label>
           {istZustaendig && !gesperrt ? (
@@ -192,6 +212,19 @@ export function AufgabeDetail({ a, ich, projektName, gesperrt = false, onClose, 
           {gesperrt && <div style={{ ...klein, marginTop: 8 }}>Das Projekt ist archiviert – zum Ändern zuerst aus dem Archiv holen.</div>}
           {gespeichert && <div data-testid="detail-gespeichert" style={{ fontSize: 12.5, color: "#2E7D4F", marginTop: 8 }}>{gespeichert}</div>}
           {fehlerText && <div data-testid="detail-fehler" style={styles.errorText}>{fehlerText}</div>}
+          {darfLoeschen && !loeschFrage && (
+            <button style={{ ...styles.deleteBtn, width: "100%", justifyContent: "center", gap: 6, marginTop: 14 }} data-testid="detail-loeschen" onClick={() => setLoeschFrage(true)}><Trash2 size={14} /> Aufgabe löschen</button>
+          )}
+          {loeschFrage && (
+            <div style={{ background: "white", border: "1px solid #E2A9A9", borderRadius: 8, padding: "10px 11px", marginTop: 10 }}>
+              <div style={{ fontSize: 12.5, marginBottom: 8 }}>Aufgabe „{a.text}“ wirklich löschen?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={{ ...styles.deleteBtn, flex: 1, justifyContent: "center" }} onClick={() => setLoeschFrage(false)}>Abbrechen</button>
+                <button style={{ ...styles.saveBtn, flex: 1 }} disabled={busy} data-testid="detail-loeschen-ja" onClick={async () => { if (await aktion({ action: "aufgabeDelete", id: a.id })) onClose(); }}>Löschen</button>
+              </div>
+            </div>
+          )}
+          {!a.erledigt && istZustaendig && !a.darfAendern && !gesperrt && <div style={{ ...klein, marginTop: 10 }}>Löschen kannst du die Aufgabe, sobald sie abgeschlossen ist.</div>}
           {a.darfAendern && !gesperrt && (
             <button style={{ ...styles.deleteBtn, width: "100%", justifyContent: "center", gap: 6, marginTop: 14 }} data-testid="detail-bearbeiten" onClick={() => onBearbeiten && onBearbeiten(a)}><Pencil size={14} /> Text, Beschreibung, Datum oder Zuständigen ändern</button>
           )}

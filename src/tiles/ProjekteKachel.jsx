@@ -21,7 +21,24 @@ export const PHASEN = [
   ["erledigt", "Erledigt", "#2E7D4F", "#E6F2EA"],
 ];
 const PHASE = Object.fromEntries(PHASEN.map(([k, l, c, bg]) => [k, { label: l, color: c, bg }]));
-const SICHT = { alle: "Alle Mitglieder", ausschuss: "Nur Ausschuss", personen: "Nur Beteiligte" };
+const SICHT = { alle: "Alle Mitglieder", ausschuss: "Ausschuss", personen: "Beteiligte Personen" };
+// Seit 2.40: mehrere Gruppen wählbar (Liste). Alte Einzelwerte: "ausschuss" = Ausschuss + Beteiligte.
+const SICHT_KEYS = ["alle", "ausschuss", "personen"];
+export function sichtListe(s) {
+  const roh = Array.isArray(s) ? s : [s || "alle"];
+  const l = [...new Set(roh.filter((x) => SICHT_KEYS.includes(x)))];
+  if (!l.length || l.includes("alle")) return ["alle"];
+  if (l.includes("ausschuss") && !Array.isArray(s)) l.push("personen");
+  return SICHT_KEYS.filter((x) => l.includes(x));
+}
+const sichtText = (s) => sichtListe(s).map((k) => SICHT[k]).join(" + ");
+function sichtUmschalten(alt, k) {
+  const l = sichtListe(alt);
+  if (k === "alle") return ["alle"];
+  const ohne = l.filter((x) => x !== "alle");
+  const neu = ohne.includes(k) ? ohne.filter((x) => x !== k) : [...ohne, k];
+  return neu.length ? SICHT_KEYS.filter((x) => neu.includes(x)) : ["personen"];
+}
 const MAX_BYTES = 10 * 1024 * 1024;
 const istBild = (typ, name) => /^image\//.test(typ || "") || /\.(jpe?g|png|webp|heic|heif)$/i.test(name || "");
 const euro = (n) => (n === null || n === undefined || n === "" ? "" : Number(n).toLocaleString("de-DE", { style: "currency", currency: "EUR" }));
@@ -102,11 +119,12 @@ function Formular({ start, onClose, onSaved }) {
         </div>
         <label style={styles.label}>Wer sieht das Projekt?</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {Object.entries(SICHT).map(([k, l]) => (
-            <button key={k} data-testid={`sicht-${k}`} onClick={() => set("sicht", k)} style={{ ...styles.categoryChip, background: f.sicht === k ? "#2C2F2A" : "#F3F1EC", color: f.sicht === k ? "white" : "#5C5F58", borderColor: f.sicht === k ? "#2C2F2A" : "#E2DFD6" }}>{l}</button>
-          ))}
+          {Object.entries(SICHT).map(([k, l]) => {
+            const an = sichtListe(f.sicht).includes(k);
+            return <button key={k} data-testid={`sicht-${k}`} aria-pressed={an} onClick={() => set("sicht", sichtUmschalten(f.sicht, k))} style={{ ...styles.categoryChip, background: an ? "#2C2F2A" : "#F3F1EC", color: an ? "white" : "#5C5F58", borderColor: an ? "#2C2F2A" : "#E2DFD6" }}>{an && k !== "alle" ? "✓ " : ""}{l}</button>;
+          })}
         </div>
-        <div style={{ ...klein, marginTop: 4 }}>Verantwortlicher, Ersteller, Beteiligte und Admins sehen das Projekt immer.</div>
+        <div style={{ ...klein, marginTop: 4 }}>„Ausschuss“ und „Beteiligte Personen“ lassen sich zusammen anhaken. Verantwortlicher, Ersteller, Beteiligte und Admins sehen das Projekt immer.</div>
         <label style={styles.label}>Beteiligte ({f.beteiligte.length}) – dürfen Aufgaben, Notizen und Dokumente eintragen</label>
         {f.beteiligte.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
@@ -259,7 +277,7 @@ function Detail({ id, onBack, onEdit, onChanged, onOpen, onNeuUnter }) {
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "5px 12px", fontSize: 13, alignItems: "center" }}>
           <span style={klein}>Verantwortlich</span><span style={{ display: "flex", alignItems: "center", gap: 6 }}>{p.verantwortlich ? <><Avatar name={p.verantwortlich} size={22} />{p.verantwortlich}</> : "–"}</span>
           <span style={klein}>Zeitraum</span><span>{[p.start && `ab ${datumDe(p.start)}`, p.ziel && `bis ${datumDe(p.ziel)}`].filter(Boolean).join(" ") || "–"}</span>
-          <span style={klein}>Sichtbar für</span><span>{SICHT[p.sicht] || SICHT.alle}</span>
+          <span style={klein}>Sichtbar für</span><span data-testid="sicht-anzeige">{sichtText(p.sicht)}</span>
           {p.beteiligte.length > 0 && <><span style={klein}>Beteiligte</span><span>{p.beteiligte.join(", ")}</span></>}
           {p.budget !== null && p.budget !== undefined && <><span style={klein}>Budget</span><span>{euro(p.budget)}</span></>}
           {p.kosten !== null && p.kosten !== undefined && <><span style={klein}>Kosten bisher</span><span style={{ color: p.budget !== null && p.budget !== undefined && p.kosten > p.budget ? "#C1272D" : "inherit" }}>{euro(p.kosten)}{p.budget !== null && p.budget !== undefined ? ` (${Math.round((p.kosten / (p.budget || 1)) * 100)} %)` : ""}</span></>}
@@ -430,7 +448,7 @@ export default function ProjekteKachel() {
         <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, ...klein }}>
           {p.verantwortlich && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Avatar name={p.verantwortlich} size={18} rand={false} />{p.verantwortlich}</span>}
           {zielInfo && <span style={{ fontWeight: 600, color: zielInfo.farbe }}>Ziel {zielInfo.text.replace(/ fällig$/, "")}</span>}
-          {p.sicht !== "alle" && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Users size={11} /> {SICHT[p.sicht]}</span>}
+          {!sichtListe(p.sicht).includes("alle") && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Users size={11} /> {sichtText(p.sicht)}</span>}
           {p.aufgaben.meine > 0 && <span data-testid={`projekt-meine-${p.id}`} style={{ fontWeight: 700, color: "#C1272D" }}>{p.aufgaben.meine} für dich</span>}
         </span>
       </button>

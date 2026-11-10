@@ -1,0 +1,137 @@
+// netlify/functions/adventFragen.js
+// Fragenpool und Sprüche für den Adventskalender (seit 2.40). Bleibt auf dem Server – die Lösungen kommen nie vorab
+// aufs Handy. Der Admin wählt daraus die 24 Türchen (oder lässt auslosen) und kann eigene Fragen anlegen.
+// kat: "feuerwehr" | "weihnachten" · stufe: "leicht" | "mittel" | "schwer" · richtig: Index in antworten (0–2)
+
+export const STUFEN = {
+  leicht: { name: "leicht", sekunden: 40, punkte: 1 },
+  mittel: { name: "mittel", sekunden: 60, punkte: 2 },
+  schwer: { name: "anspruchsvoll", sekunden: 80, punkte: 3 },
+};
+
+const f = (id, kat, stufe, frage, antworten, richtig, info = "") => ({ id, kat, stufe, frage, antworten, richtig, info });
+
+export const FRAGEN = [
+  // ---------- Feuerwehr – leicht ----------
+  f("fl01", "feuerwehr", "leicht", "Welche Notrufnummer wählt man in Deutschland für die Feuerwehr?", ["110", "112", "116 117"], 1, "112 gilt europaweit für Feuerwehr und Rettungsdienst."),
+  f("fl02", "feuerwehr", "leicht", "Wofür steht die Abkürzung „HLF“?", ["Hilfeleistungslöschgruppenfahrzeug", "Hauptlöschfahrzeug", "Hochleistungsförderfahrzeug"], 0),
+  f("fl03", "feuerwehr", "leicht", "Was bedeutet das Kommando „Wasser marsch!“?", ["Wasser abgeben", "Schläuche einrollen", "Pumpe abstellen"], 0),
+  f("fl04", "feuerwehr", "leicht", "Zu welcher Brandklasse gehören brennbare Flüssigkeiten wie Benzin?", ["Brandklasse A", "Brandklasse B", "Brandklasse C"], 1),
+  f("fl05", "feuerwehr", "leicht", "Zu welcher Brandklasse gehören feste, glutbildende Stoffe wie Holz oder Papier?", ["Brandklasse A", "Brandklasse D", "Brandklasse F"], 0),
+  f("fl06", "feuerwehr", "leicht", "Aus wie vielen Einsatzkräften besteht eine Gruppe (1/8)?", ["6", "9", "12"], 1, "1 Gruppenführer + 8 Mann = 9."),
+  f("fl07", "feuerwehr", "leicht", "Was darf man bei einem brennenden Fett- oder Öltopf auf keinen Fall tun?", ["Deckel auflegen", "Mit Wasser löschen", "Herd ausschalten"], 1, "Wasser verdampft schlagartig und reißt brennendes Fett mit – Fettexplosion."),
+  f("fl08", "feuerwehr", "leicht", "Wie heißt das Kupplungssystem der deutschen Feuerwehrschläuche?", ["Storz", "Gardena", "Bajonett"], 0),
+  f("fl09", "feuerwehr", "leicht", "Welchen Durchmesser hat ein B-Schlauch?", ["52 mm", "75 mm", "110 mm"], 1),
+  f("fl10", "feuerwehr", "leicht", "Wer ist der Schutzpatron der Feuerwehr?", ["Der heilige Florian", "Der heilige Martin", "Der heilige Nikolaus"], 0, "Sein Gedenktag ist der 4. Mai."),
+  f("fl11", "feuerwehr", "leicht", "Was müssen Autofahrer tun, wenn ein Einsatzfahrzeug mit Blaulicht und Martinshorn kommt?", ["Sofort freie Bahn schaffen", "Geschwindigkeit beibehalten", "Nur den Warnblinker einschalten"], 0),
+  f("fl12", "feuerwehr", "leicht", "Womit wird Wasser aus einem offenen Gewässer angesaugt?", ["Mit dem Standrohr", "Mit Saugschlauch und Saugkorb", "Mit dem Strahlrohr"], 1),
+  f("fl13", "feuerwehr", "leicht", "Welches Gerät setzt man auf einen Unterflurhydranten, um Wasser zu entnehmen?", ["Standrohr", "Verteiler", "Zumischer"], 0),
+  f("fl14", "feuerwehr", "leicht", "Wofür steht die Abkürzung „TLF“?", ["Truppleiterfahrzeug", "Tanklöschfahrzeug", "Technisches Leitfahrzeug"], 1),
+  f("fl15", "feuerwehr", "leicht", "Was schützt beim Innenangriff zuverlässig vor Rauchgasen?", ["Eine Staubschutzmaske", "Ein Pressluftatmer (umluftunabhängig)", "Ein feuchtes Tuch"], 1),
+  f("fl16", "feuerwehr", "leicht", "Welche Farbe hat das Hinweisschild für einen Unterflurhydranten?", ["Weiß mit rotem Rand", "Blau mit weißer Schrift", "Gelb mit schwarzem Rand"], 0),
+
+  // ---------- Feuerwehr – mittel ----------
+  f("fm01", "feuerwehr", "mittel", "Aus wie vielen Atemschutzgeräteträgern besteht ein Trupp im Innenangriff mindestens?", ["1", "2", "4"], 1),
+  f("fm02", "feuerwehr", "mittel", "Zu welcher Brandklasse gehören brennbare Gase wie Propan?", ["Brandklasse B", "Brandklasse C", "Brandklasse D"], 1),
+  f("fm03", "feuerwehr", "mittel", "Zu welcher Brandklasse gehören brennende Metalle wie Magnesium?", ["Brandklasse A", "Brandklasse D", "Brandklasse F"], 1),
+  f("fm04", "feuerwehr", "mittel", "Wofür steht die Brandklasse F?", ["Feste Stoffe", "Speiseöle und -fette", "Flüssiggase"], 1),
+  f("fm05", "feuerwehr", "mittel", "Wofür steht die Merkregel „AAAA-C-EEEE“?", ["Gefahren an der Einsatzstelle", "Ablauf der Ersten Hilfe", "Reihenfolge der Fahrzeugaufstellung"], 0),
+  f("fm06", "feuerwehr", "mittel", "Welche Feuerwehr-Dienstvorschrift regelt den Atemschutz?", ["FwDV 3", "FwDV 7", "FwDV 100"], 1),
+  f("fm07", "feuerwehr", "mittel", "Bei welchem Flaschendruck meldet sich die Restdruck-Warneinrichtung eines Pressluftatmers etwa?", ["ca. 10 bar", "ca. 55 bar", "ca. 150 bar"], 1),
+  f("fm08", "feuerwehr", "mittel", "Was bedeutet die Gefahrnummer „33“ oben auf einer orangefarbenen Warntafel?", ["Leicht entzündbarer flüssiger Stoff", "Giftiger Stoff", "Ätzender Stoff"], 0),
+  f("fm09", "feuerwehr", "mittel", "Was bedeutet ein „X“ vor der Gefahrnummer auf der Warntafel?", ["Stoff ist explosiv", "Stoff reagiert gefährlich mit Wasser", "Stoff ist radioaktiv"], 1),
+  f("fm10", "feuerwehr", "mittel", "Wie lang ist ein B-Druckschlauch in der Regel?", ["10 m", "15 m", "20 m"], 2),
+  f("fm11", "feuerwehr", "mittel", "Was ist ein „Flashover“?", ["Die Durchzündung eines ganzen Raumes", "Funkenflug im Freien", "Ein Kurzschluss im Sicherungskasten"], 0),
+  f("fm12", "feuerwehr", "mittel", "Aus wie vielen Einsatzkräften besteht eine Staffel (1/5)?", ["5", "6", "8"], 1),
+  f("fm13", "feuerwehr", "mittel", "Welche Löschwirkung hat Wasser hauptsächlich?", ["Kühlen", "Ersticken", "Antikatalytische Wirkung"], 0),
+  f("fm14", "feuerwehr", "mittel", "Wofür steht die GAMS-Regel bei Gefahrstoffeinsätzen?", ["Gefahr erkennen, Absperren, Menschenrettung, Spezialkräfte nachfordern", "Gruppe, Angriff, Material, Sicherung", "Gasmessung, Abdichten, Melden, Sichern"], 0),
+  f("fm15", "feuerwehr", "mittel", "Welches dieser Gase ist schwerer als Luft und kann sich in Kellern sammeln?", ["Methan (Erdgas)", "Propan", "Wasserstoff"], 1),
+  f("fm16", "feuerwehr", "mittel", "Welches farb- und geruchlose Gas entsteht bei unvollständiger Verbrennung und blockiert den Sauerstofftransport im Blut?", ["Kohlenstoffmonoxid (CO)", "Stickstoff", "Kohlenstoffdioxid (CO₂)"], 0),
+
+  // ---------- Feuerwehr – anspruchsvoll ----------
+  f("fs01", "feuerwehr", "schwer", "Unter welchem Sauerstoffanteil der Umgebungsluft ist nach FwDV 7 Atemschutz zu tragen?", ["unter 21 Vol.-%", "unter 17 Vol.-%", "unter 10 Vol.-%"], 1),
+  f("fs02", "feuerwehr", "schwer", "In welchem Bereich etwa liegen die Explosionsgrenzen von Methan (Erdgas) in Luft?", ["ca. 1 bis 5 Vol.-%", "ca. 4 bis 17 Vol.-%", "ca. 20 bis 40 Vol.-%"], 1),
+  f("fs03", "feuerwehr", "schwer", "Wie viele Liter Atemluft enthält eine 6-Liter-Flasche bei 300 bar ungefähr?", ["600 l", "1.800 l", "3.000 l"], 1, "6 l × 300 bar = 1.800 l."),
+  f("fs04", "feuerwehr", "schwer", "Bis zu welcher Brüstungshöhe darf der zweite Rettungsweg über tragbare Leitern der Feuerwehr sichergestellt werden?", ["bis 8 m", "bis 12 m", "bis 23 m"], 0, "Darüber braucht es Hubrettungsfahrzeuge (z. B. Drehleiter)."),
+  f("fs05", "feuerwehr", "schwer", "Ab welcher Höhe des Fußbodens des obersten Geschosses gilt ein Gebäude in Deutschland als Hochhaus?", ["mehr als 13 m", "mehr als 22 m", "mehr als 30 m"], 1),
+  f("fs06", "feuerwehr", "schwer", "Welcher Mindestabstand gilt nach DIN VDE 0132 beim Löschen in Niederspannungsanlagen mit Vollstrahl (CM-Strahlrohr)?", ["1 m", "5 m", "10 m"], 1, "Mit Sprühstrahl sind es 1 m."),
+  f("fs07", "feuerwehr", "schwer", "Wann erinnert der Atemschutzüberwacher nach FwDV 7 an die Kontrolle der Behälterdrücke?", ["Nach 1/3 und 2/3 der erwarteten Einsatzzeit", "Alle 5 Minuten", "Nur am Ende des Einsatzes"], 0),
+  f("fs08", "feuerwehr", "schwer", "Um etwa das Wievielfache vergrößert sich das Volumen von Wasser, wenn es verdampft?", ["17-fach", "170-fach", "1.700-fach"], 2),
+  f("fs09", "feuerwehr", "schwer", "Welchen Flammpunkt hat Ottokraftstoff (Benzin) ungefähr?", ["unter −20 °C", "etwa +55 °C", "etwa +250 °C"], 0),
+  f("fs10", "feuerwehr", "schwer", "In welchem Jahr wurde in Berlin die erste Berufsfeuerwehr Deutschlands gegründet?", ["1799", "1851", "1901"], 1),
+  f("fs11", "feuerwehr", "schwer", "In welcher badischen Stadt wurde 1846 eine der ersten freiwilligen Feuerwehren Deutschlands gegründet?", ["Durlach", "Ulm", "Freiburg"], 0),
+  f("fs12", "feuerwehr", "schwer", "Was bedeutet die Bezeichnung „DLK 23/12“?", ["Drehleiter mit Korb, 23 m Nennrettungshöhe bei 12 m Nennausladung", "Drehleiter für 23 Personen und 12 t", "Drehleiter-Kombination aus 23 und 12 Leiterteilen"], 0),
+  f("fs13", "feuerwehr", "schwer", "Welche Feuerwehr-Dienstvorschrift regelt Führung und Leitung im Einsatz?", ["FwDV 3", "FwDV 10", "FwDV 100"], 2),
+  f("fs14", "feuerwehr", "schwer", "Aus welchen Schritten besteht der Führungsvorgang nach FwDV 100?", ["Lagefeststellung, Planung, Befehlsgebung", "Erkunden, Retten, Löschen", "Alarmieren, Ausrücken, Melden"], 0),
+  f("fs15", "feuerwehr", "schwer", "Wie nennt man die explosionsartige Verbrennung, wenn in einen heißen, sauerstoffarmen Raum plötzlich Luft gelangt?", ["Rollover", "Backdraft", "Flashover"], 1),
+  f("fs16", "feuerwehr", "schwer", "Wie viel Löschwasser muss ein genormtes LF 10 mindestens mitführen?", ["600 l", "1.200 l", "3.000 l"], 1),
+
+  // ---------- Weihnachten und Advent ----------
+  f("wl01", "weihnachten", "leicht", "Wie viele Kerzen hat ein klassischer Adventskranz?", ["3", "4", "7"], 1),
+  f("wl02", "weihnachten", "leicht", "An welchem Tag ist Nikolaus?", ["6. Dezember", "13. Dezember", "24. Dezember"], 0),
+  f("wl03", "weihnachten", "leicht", "Was tut man bei einem kleinen Brand am Adventskranz am besten?", ["Fenster aufreißen", "Mit Wasser oder Löschdecke löschen – bei Ausbreitung sofort 112", "Kräftig auspusten"], 1),
+  f("wl04", "weihnachten", "leicht", "Wer bringt in Süddeutschland traditionell die Geschenke an Heiligabend?", ["Der Osterhase", "Das Christkind", "Der heilige Martin"], 1),
+  f("wl05", "weihnachten", "leicht", "Was feiert man am 6. Januar?", ["Heilige Drei Könige", "Mariä Lichtmess", "Silvester"], 0),
+  f("wl06", "weihnachten", "leicht", "Welche Stadt ist für ihre Lebkuchen mit geschützter Herkunftsbezeichnung berühmt?", ["Nürnberg", "Hamburg", "Köln"], 0),
+  f("wl07", "weihnachten", "leicht", "Warum sollte ein Christbaum in einem Ständer mit Wasser stehen?", ["Damit er besser riecht", "Er bleibt frisch und brennt nicht so leicht", "Damit die Kugeln glänzen"], 1),
+  f("wl08", "weihnachten", "leicht", "Welche Baumart ist in Deutschland der beliebteste Weihnachtsbaum?", ["Nordmanntanne", "Kiefer", "Lärche"], 0),
+  f("wl09", "weihnachten", "leicht", "Wie viele Türchen hat ein Adventskalender meistens?", ["12", "24", "31"], 1),
+  f("wm01", "weihnachten", "mittel", "Wer gilt als Erfinder des Adventskranzes (1839)?", ["Martin Luther", "Johann Hinrich Wichern", "Bonifatius"], 1),
+  f("wm02", "weihnachten", "mittel", "Aus welchem Land kommt jedes Jahr der Weihnachtsbaum auf dem Londoner Trafalgar Square als Geschenk?", ["Schweden", "Norwegen", "Kanada"], 1),
+  f("wm03", "weihnachten", "mittel", "Wie schnell kann ein ausgetrockneter Christbaum vollständig in Flammen stehen?", ["In weniger als einer Minute", "Nach etwa 30 Minuten", "Erst nach Stunden"], 0),
+  f("wm04", "weihnachten", "mittel", "An welchem Tag schneidet man nach altem Brauch Barbarazweige?", ["1. Dezember", "4. Dezember", "8. Dezember"], 1),
+  f("wm05", "weihnachten", "mittel", "In welchem Land wurde Anfang des 20. Jahrhunderts der erste gedruckte Adventskalender hergestellt?", ["Deutschland", "USA", "Schweden"], 0),
+  f("wm06", "weihnachten", "mittel", "Wie heißt das schwedische Lichterfest am 13. Dezember?", ["Midsommar", "Luciafest", "Valborg"], 1),
+  f("wm07", "weihnachten", "mittel", "Wie viele Rentiere ziehen nach der klassischen Legende den Schlitten des Weihnachtsmanns (ohne Rudolph)?", ["4", "8", "12"], 1),
+  f("wm08", "weihnachten", "mittel", "Welche Stadt hat mit dem „Striezelmarkt“ einen der ältesten Weihnachtsmärkte Deutschlands?", ["Dresden", "München", "Bremen"], 0),
+  f("wm09", "weihnachten", "mittel", "Wie heiß kann eine brennende Wunderkerze werden?", ["ca. 100 °C", "ca. 1.000 °C", "ca. 10.000 °C"], 1),
+  f("wm10", "weihnachten", "mittel", "Wie nennt man die Nächte zwischen Weihnachten und Heilige Drei Könige?", ["Raunächte", "Lichtnächte", "Sternnächte"], 0),
+  f("ws01", "weihnachten", "schwer", "In welchem Jahr wurde „Stille Nacht, heilige Nacht“ zum ersten Mal gesungen?", ["1618", "1818", "1918"], 1, "An Heiligabend 1818 in Oberndorf bei Salzburg."),
+  f("ws02", "weihnachten", "schwer", "Welche Farbe hat in katholischer Tradition die dritte Kerze am Adventskranz?", ["Rosa", "Grün", "Blau"], 0, "Der 3. Advent heißt „Gaudete“ (Freut euch)."),
+  f("ws03", "weihnachten", "schwer", "Woran erkennt man, dass eine Lichterkette für draußen geeignet ist?", ["Am CE-Zeichen allein", "An der Schutzart mindestens IP44", "An der Farbe des Kabels"], 1),
+  f("ws04", "weihnachten", "schwer", "Wofür steht „C+M+B“, das die Sternsinger an die Tür schreiben?", ["Christus mansionem benedicat", "Caspar, Melchior, Bernhard", "Christ, Maria, Bethlehem"], 0, "„Christus segne dieses Haus“ – oft auch als Caspar, Melchior, Balthasar gedeutet."),
+  f("ws05", "weihnachten", "schwer", "Was ist der früheste mögliche Termin für den 1. Advent?", ["27. November", "30. November", "1. Dezember"], 0),
+];
+
+// Sprüche – je Türchen einer (die letzten sind Vorrat für das nächste Jahr).
+export const SPRUECHE = [
+  "Die schönste Kerze ist die, die man rechtzeitig ausbläst.",
+  "Kameradschaft ist das beste Mittel gegen kalte Wintertage.",
+  "Gott zur Ehr, dem Nächsten zur Wehr – auch im Advent.",
+  "Ein Rauchmelder ist das günstigste Geschenk mit der größten Wirkung.",
+  "Im Advent leuchten die Kerzen – bei uns zum Glück nur auf dem Kranz.",
+  "Wer im Dezember Bereitschaft hat, verschenkt das Wertvollste: seine Zeit.",
+  "Plätzchen backen ist wie eine Übung: Hitze im Griff, Rauch vermeiden.",
+  "Der Melder kennt keinen Feiertag – danke an alle, die trotzdem ausrücken.",
+  "Echte Kerzen und trockene Zweige lässt man nie allein zusammen.",
+  "Gemeinsam sind wir mehr als eine Gruppe – wir sind eine Wehr.",
+  "Advent heißt Ankunft. Für uns heißt es auch: sicher wieder heimkommen.",
+  "Der Glühwein schmeckt nach dem Dienst am besten – vorher bleibt’s beim Tee.",
+  "Die beste Übung ist die, nach der alle lachen und keiner friert.",
+  "Licht ins Dunkel bringen – das können wir das ganze Jahr.",
+  "Ein Kamerad, der hilft, wiegt mehr als jedes Geschenk unterm Baum.",
+  "Wer den Adventskranz löscht, bevor er ins Bett geht, hat den wichtigsten Einsatz schon gewonnen.",
+  "Stille Nacht ist schön – ein stiller Rauchmelder nicht. Batterie prüfen!",
+  "Zusammenhalt ist wie ein Schlauch: nur dicht hält er den Druck.",
+  "Die Feuerwehr verzichtet als Einzige gern auf Besuch zu Weihnachten.",
+  "Danke an alle Familien, die uns an den Feiertagen teilen, wenn der Alarm geht.",
+  "Kerzen gehören auf eine feuerfeste Unterlage – Kameraden auf sichere Wege.",
+  "Ein Jahr voller Einsätze, Übungen und Kameradschaft – darauf ein Lichtlein mehr.",
+  "Morgen ist Heiligabend: Baum gießen, Kerzen im Blick, Herz offen.",
+  "Frohe Weihnachten! Möge euer Melder heute Nacht schweigen.",
+  "Wer Wärme schenkt, braucht keinen offenen Kamin.",
+  "Schnee auf dem Gerätehaus – und drinnen ein warmes Wir-Gefühl.",
+  "Hinter jedem Einsatz steht eine Mannschaft, hinter jeder Mannschaft eine Familie.",
+  "Wer Tannennadeln rieseln hört, sollte den Baum gießen, nicht anzünden.",
+  "Der Advent ist kurz – die Kameradschaft hält das ganze Jahr.",
+  "Ein Licht im Fenster, ein Freund in der Wehr – mehr braucht der Winter nicht.",
+];
+
+export const REGELN_STANDARD = [
+  "Vom 1. bis 24. Dezember öffnet sich jeden Tag ein Türchen – mit einem Spruch, manchmal einem Foto und meistens einer Quizfrage.",
+  "Die Frage erscheint erst, wenn du auf „Frage starten“ tippst. Dann läuft die Zeit: leichte Fragen 40 Sekunden, mittlere 60 Sekunden, anspruchsvolle 80 Sekunden.",
+  "Jede Frage kann nur einmal gestartet werden. Wer die App schließt oder die Zeit verstreichen lässt, bekommt für diese Frage keine Punkte.",
+  "Punkte: leicht 1, mittel 2, anspruchsvoll 3 – aber nur, wenn du die Frage am Tag des Türchens beantwortest. Verpasste Türchen kannst du später noch öffnen und beantworten, dann ohne Punkte.",
+  "Es gibt zwei Ranglisten: Einsatzabteilung und Jugendfeuerwehr. Ab dem 25. Dezember stehen dort die Gewinner (bei Punktgleichheit mehrere).",
+  "Die Weihnachtsdeko in der App kannst du über die Glocke oben für dich ausschalten.",
+].join("\n\n");

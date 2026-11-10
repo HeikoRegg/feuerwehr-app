@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
-import { AlertTriangle, BellOff, FolderKanban, Gavel, ListTodo, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ClipboardPlus, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
+import { AlertTriangle, BellOff, FolderKanban, Gift, Gavel, ListTodo, ArrowLeft, Boxes, CalendarCheck, MessageCircle, BarChart3, Bell, Car, ClipboardPlus, ChevronDown, ChevronRight, ClipboardList, Eye, EyeOff, Flame, FolderOpen, KeyRound, Landmark, LayoutGrid, Lock, Megaphone, Pencil, Plus, Printer, RefreshCw, Settings, ShieldAlert, ShieldCheck, Sparkles, Stethoscope, Trash2, Truck, User, UserCog, Users, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { JF_KOPF, LION_KOPF } from "./lib/icons";
 import { KACHEL_STANDARD_FARBEN, APP_NAME, APP_VERSION, ATEMSCHUTZ_UEBUNG_TYPES, BEREICHE, BEREICH_KEYS, CAPACITY_DEFAULT_CATEGORIES, CATEGORIES, CHANGELOG, GRUPPENFUEHRER_CATEGORIES, LKW_KLASSEN, PKW_KLASSEN, PRIORITIES } from "./lib/constants";
@@ -18,6 +18,8 @@ import BerichtAnsicht from "./components/BerichtAnsicht";
 import KachelRaster from "./components/KachelRaster";
 import KalenderAbo from "./components/KalenderAbo";
 import { starteKnopfStil } from "./lib/knopfStil";
+import { KopfDeko, Schneefall } from "./components/Deko";
+import { istDezember, saison } from "./lib/jahreszeit";
 starteKnopfStil(); // einheitliche Knopf-Optik (orange/grün/rot, erhaben) und 3D-Kacheln
 
 // Kacheln werden erst geladen, wenn man sie öffnet – so startet die App immer gleich schnell.
@@ -38,6 +40,7 @@ const kachelImporte = {
   todo: () => import("./tiles/TodoKachel"),
   verbandbuch: () => import("./tiles/VerbandbuchKachel"),
   beschluesse: () => import("./tiles/BeschlussbuchKachel"),
+  advent: () => import("./tiles/AdventKachel"),
 };
 const FuehrerscheinKachel = lazy(kachelImporte.fuehrerschein);
 const AtemschutzKachel = lazy(kachelImporte.atemschutz);
@@ -55,8 +58,9 @@ const ProjekteKachel = lazy(kachelImporte.projekte);
 const TodoKachel = lazy(kachelImporte.todo);
 const VerbandbuchKachel = lazy(kachelImporte.verbandbuch);
 const BeschlussbuchKachel = lazy(kachelImporte.beschluesse);
+const AdventKachel = lazy(kachelImporte.advent);
 // Aufruf über einen QR-Code am Gerät (…/?geraet=KENNUNG): wird beim Start einmal gemerkt.
-const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" || k === "todo" || k === "verbandbuch" ? k : null; } catch (e) { return null; } })();
+const START_KACHEL = (() => { try { const k = new URLSearchParams(window.location.search).get("kachel"); return k === "umfragen" || k === "todo" || k === "verbandbuch" || k === "advent" ? k : null; } catch (e) { return null; } })();
 const START_GERAET = (() => { try { const g = new URLSearchParams(window.location.search).get("geraet"); return g && /^[a-z0-9]{4,20}$/i.test(g) ? g : null; } catch (e) { return null; } })();
 // Ladeanzeige deckt immer den ganzen Bildschirm ab, damit die Startseite nicht kurz durchblitzt.
 function KachelLaden() { return <div style={{ ...styles.fullscreenPage, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: "#8A8C86" }}>Lädt …</div>; }
@@ -140,6 +144,12 @@ export default function App() {
   const [showProjekte, setShowProjekte] = useState(false);
   const [showTodo, setShowTodo] = useState(false);
   const [showVerbandbuch, setShowVerbandbuch] = useState(false);
+  const [showAdvent, setShowAdvent] = useState(false);
+  // Seit 2.40: Jahreszeiten-Deko (pro Person auf diesem Handy ausschaltbar) und Adventskalender-Stand für die Kopfzeile
+  const [dekoAus, setDekoAus] = useState(false);
+  const [adventOffenHeute, setAdventOffenHeute] = useState(false);
+  const [schneeZeigen, setSchneeZeigen] = useState(false);
+  const schneeGezeigt = useRef(false);
   const [projektStartId, setProjektStartId] = useState(null); // aus dem To-do direkt in ein Projekt springen
   const [showBeschluesse, setShowBeschluesse] = useState(false);
   const [beschlussVorlage, setBeschlussVorlage] = useState(null); // vorbefüllter Beschluss aus einer Sitzung
@@ -161,8 +171,9 @@ export default function App() {
   // Persönliche Einstellungen dieses Handys sofort (Server-Stand kommt mit der Zahlen-Abfrage)
   useEffect(() => {
     if (!me) { setKachelOrdnung(null); setPushAus(false); return; }
-    try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); if (v && v.name === me) { setKachelOrdnung(Array.isArray(v.kacheln) ? v.kacheln : null); setPushAus(!!v.pushAus); } else { setKachelOrdnung(null); setPushAus(false); } } catch (e) { /* egal */ }
+    try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); if (v && v.name === me) { setKachelOrdnung(Array.isArray(v.kacheln) ? v.kacheln : null); setPushAus(!!v.pushAus); setDekoAus(!!v.dekoAus); } else { setKachelOrdnung(null); setPushAus(false); setDekoAus(false); } } catch (e) { /* egal */ }
   }, [me]);
+  function schalteDeko(aus) { setDekoAus(aus); merkePerson({ dekoAus: aus }); if (aus) setSchneeZeigen(false); }
   function merkePerson(teil) {
     try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); const alt = v && v.name === me ? v : { name: me }; localStorage.setItem("ffw_person", JSON.stringify({ ...alt, ...teil })); } catch (e) { /* egal */ }
   }
@@ -449,10 +460,22 @@ export default function App() {
     if (phase !== "app" || !me) return;
     const start = setTimeout(ladeChatStatus, 1500);
     const start2 = setTimeout(ladeUmfrageStatus, 2200);
-    const t = setInterval(() => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); } }, 180000);
-    const onVis = () => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); } };
+    const start3 = setTimeout(ladeAdventStatus, 2600);
+    const t = setInterval(() => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); ladeAdventStatus(); } }, 180000);
+    const onVis = () => { if (document.visibilityState === "visible") { ladeChatStatus(); ladeUmfrageStatus(); ladeAdventStatus(); } };
     document.addEventListener("visibilitychange", onVis);
-    return () => { clearTimeout(start); clearTimeout(start2); clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+    return () => { clearTimeout(start); clearTimeout(start2); clearTimeout(start3); clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [phase, me]);
+  // Adventskalender geschlossen: Türchen-Symbol in der Kopfzeile neu prüfen
+  const adventWarOffen = useRef(false);
+  useEffect(() => { if (showAdvent) adventWarOffen.current = true; else if (adventWarOffen.current) { adventWarOffen.current = false; ladeAdventStatus(); } }, [showAdvent]);
+  // Schnee kurz beim Öffnen der App (Dezember bis Februar), einmal je Start, nicht wenn die Deko ausgeschaltet ist
+  useEffect(() => {
+    if (phase !== "app" || !me || schneeGezeigt.current) return;
+    schneeGezeigt.current = true;
+    let aus = false;
+    try { const v = JSON.parse(localStorage.getItem("ffw_person") || "null"); aus = !!(v && v.name === me && v.dekoAus); } catch (e) { /* egal */ }
+    if (!aus && saison().schnee) setSchneeZeigen(true);
   }, [phase, me]);
   // QR-Code am Gerät gescannt: nach der Anmeldung direkt das Gerät öffnen.
   const startGeraetErledigt = useRef(false);
@@ -465,6 +488,10 @@ export default function App() {
   }, [phase, me]);
   // Auf eine Umfrage-Benachrichtigung getippt: direkt in die Kachel (App gestartet mit ?kachel=umfragen oder schon offen → Nachricht vom Service Worker)
   function oeffneUmfragenAusPush(kachel = "umfragen") {
+    if (kachel === "advent") {
+      if (!kachelAn("advent")) { flashError("Der Adventskalender ist derzeit ausgeschaltet."); return; }
+      closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowAdvent(true); return;
+    }
     if (kachel === "verbandbuch") {
       if (!kachelAn("verbandbuch")) { flashError("Die Kachel „Verbandbuch“ ist derzeit für die ganze Feuerwehr gesperrt."); return; }
       closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowVerbandbuch(true); return;
@@ -489,7 +516,7 @@ export default function App() {
     const onMsg = (e) => {
       const d = e && e.data;
       if (d && d.type === "oeffne" && typeof d.url === "string" && oeffneUmfragenRef.current) {
-        const k = (d.url.match(/[?&]kachel=(umfragen|todo|verbandbuch)\b/) || [])[1];
+        const k = (d.url.match(/[?&]kachel=(umfragen|todo|verbandbuch|advent)\b/) || [])[1];
         if (k) oeffneUmfragenRef.current(k);
       }
     };
@@ -497,7 +524,7 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
   }, []);
   function closeKachelView() {
-    setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowBeschluesse(false); setShowJugend(false); setShowChat(false); setShowProjekte(false); setShowTodo(false); setShowVerbandbuch(false);
+    setShowAdvent(false); setShowKontrollen(null); setG26EditOpen(false); setShowSitzungen(false); setShowSettings(false); setShowPersonalakte(false); setShowBewegung(false); setShowStatistik(false); setShowEinsatz(false); setShowGeraete(false); setShowHydranten(false); setShowUmfragen(false); setShowBeschluesse(false); setShowJugend(false); setShowChat(false); setShowProjekte(false); setShowTodo(false); setShowVerbandbuch(false);
     if (kachelReturnTo === "tiles") setShowTileMenu(true);
   }
   function openTileFuehrerschein() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowKontrollen("fuehrerschein"); }
@@ -526,6 +553,15 @@ export default function App() {
   }
   function openTileUmfragen() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowUmfragen(true); }
   function openTileProjekte() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowProjekte(true); }
+  function openTileAdvent() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowAdvent(true); }
+  function openAdventAusKopf() { closeKachelView(); setShowTileMenu(false); setKachelReturnTo("calendar"); setShowAdvent(true); }
+  async function ladeAdventStatus() {
+    if (!me || !kachelAn("advent") || !istDezember()) { setAdventOffenHeute(false); return; }
+    const token = authTokenRef.current || loadToken(me);
+    if (!token) return; // still im Hintergrund, ohne PIN-Abfrage
+    const r = await callServer("advent", { action: "status", token });
+    if (r.ok && r.data) setAdventOffenHeute(!!r.data.offenHeute);
+  }
   function openTileVerbandbuch() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowVerbandbuch(true); }
   function openTileTodo() { setShowTileMenu(false); setKachelReturnTo("tiles"); setShowTodo(true); }
   // Aus dem To-do in ein Projekt springen (zurück geht es dann ins Kachelmenü)
@@ -1427,10 +1463,16 @@ export default function App() {
           <div style={styles.headerBrand}>
             {nurJugend
               ? <img data-testid="kopf-jf" src={JF_KOPF} alt="" style={{ width: 36, height: 33, objectFit: "contain" }} />
-              : <img data-testid="kopf-loewe" src={LION_KOPF} alt="" style={{ width: 28, height: 36, objectFit: "contain" }} />}
+              : <KopfDeko motiv={dekoAus ? null : saison().motiv}><img data-testid="kopf-loewe" src={LION_KOPF} alt="" style={{ width: 28, height: 36, objectFit: "contain" }} /></KopfDeko>}
             <div><div style={styles.headerBrandText}>{nurJugend ? "JUGENDFEUERWEHR REGGLISWEILER" : APP_NAME.toUpperCase()}</div><div style={styles.headerBrandSub} data-testid="app-version">Terminplan · Version {APP_VERSION}</div></div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
+            {me && adventOffenHeute && kachelAn("advent") && (
+              <button style={{ ...styles.settingsBtn, position: "relative" }} onClick={openAdventAusKopf} aria-label="Heutiges Türchen öffnen" data-testid="kopf-advent">
+                <Gift size={18} color="#E8A33D" />
+                <span style={{ ...styles.chatHeaderBadge, background: "#2E7D4F" }}>{new Date().getDate()}</span>
+              </button>
+            )}
             <button style={styles.settingsBtn} onClick={manualRefresh} aria-label="Aktualisieren"><RefreshCw size={17} color="#8FA0A6" style={{ animation: manualRefreshing ? "spin 0.6s linear" : "none" }} /></button>
             <button style={styles.settingsBtn} onClick={() => setBellMenu((v) => !v)} aria-label="Benachrichtigungen und Kalender" data-testid="glocke">
               {pushAus ? <span data-testid="glocke-aus" style={{ display: "inline-flex" }}><BellOff size={17} color="#8FA0A6" /></span> : <Bell size={17} color={typeof Notification !== "undefined" && Notification.permission === "granted" ? "#E8A33D" : "#8FA0A6"} />}
@@ -1586,6 +1628,9 @@ export default function App() {
                 {me && (pushAus
                   ? <button data-knopf="fest" data-testid="push-ein" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(false); }}>🔔 <span>Benachrichtigungen wieder einschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Zurzeit aus – nur Dringendes und Mängel kommen</span></span></button>
                   : <button data-knopf="fest" data-testid="push-aus" style={zeile} onClick={() => { setBellMenu(false); schaltePushAus(true); }}>🔕 <span>Benachrichtigungen ausschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Dringende Mitteilungen und Mängel kommen trotzdem</span></span></button>)}
+                {me && (saison().motiv || saison().schnee) && (dekoAus
+                  ? <button data-knopf="fest" data-testid="deko-ein" style={zeile} onClick={() => { setBellMenu(false); schalteDeko(false); }}>✨ <span>Jahreszeiten-Deko einschalten</span></button>
+                  : <button data-knopf="fest" data-testid="deko-aus" style={zeile} onClick={() => { setBellMenu(false); schalteDeko(true); }}>✨ <span>Jahreszeiten-Deko ausschalten<br /><span style={{ fontSize: 11.5, color: "#8A8C86" }}>Nur für dich auf diesem Handy</span></span></button>)}
                 {me && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setKalenderAbo(true); }}>📅 <span>Termine im Handy-Kalender</span></button>}
                 {me && isAdmin && <button data-knopf="fest" style={zeile} onClick={() => { setBellMenu(false); setTerminDruckBereich("einsatzabteilung"); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Einsatzabteilung (PDF)</span></button>}
                 {me && (isAdmin || isJugendwart) && <button data-knopf="fest" data-testid="terminliste-jf" style={zeile} onClick={() => { setBellMenu(false); setTerminDruckBereich("jugendfeuerwehr"); setTerminDruck(currentYear()); }}>🖨️ <span>Terminliste Jugendfeuerwehr (PDF)</span></button>}
@@ -1774,6 +1819,7 @@ export default function App() {
               kachelAn("umfragen") && !!me && { key: "umfragen", onClick: openTileUmfragen, icon: <CalendarCheck size={26} color="#2C2F2A" />, label: "Terminumfragen", badge: umfrageOffen > 0 && <span data-testid="kachel-zahl-umfragen" style={styles.tileBadge}>{umfrageOffen}</span> },
               kachelAn("todo") && !!me && { key: "todo", onClick: openTileTodo, icon: <ListTodo size={26} color="#2C2F2A" />, label: "To-do", badge: aufgabenOffen > 0 && <span data-testid="kachel-zahl-todo" style={styles.tileBadge}>{aufgabenOffen}</span> },
               kachelAn("verbandbuch") && !!me && { key: "verbandbuch", onClick: openTileVerbandbuch, icon: <ClipboardPlus size={26} color="#2C2F2A" />, label: "Verbandbuch", badge: nachfragenOffen > 0 && <span data-testid="kachel-zahl-verbandbuch" style={styles.tileBadge}>{nachfragenOffen}</span> },
+              kachelAn("advent") && !!me && (isAdmin || istDezember()) && { key: "advent", onClick: openTileAdvent, icon: <Gift size={26} color="#2C2F2A" />, label: "Adventskalender", badge: adventOffenHeute && <span data-testid="kachel-zahl-advent" style={styles.tileBadge}>1</span> },
               kachelAn("projekte") && !!me && { key: "projekte", onClick: openTileProjekte, icon: <FolderKanban size={26} color="#2C2F2A" />, label: "Projekte" },
               kachelAn("jugend") && (isJugendwart || isAdmin) && { key: "jugend", onClick: openTileJugend, icon: <JFFlammeIcon size={28} />, label: "Jugendfeuerwehr" },
               kachelAn("bewegung") && canSeeBewegung && { key: "bewegung", onClick: openTileBewegung, icon: <Truck size={26} color="#2C2F2A" />, label: "Bewegungsfahrten" },
@@ -1819,6 +1865,8 @@ export default function App() {
       {showProjekte && kachelAn("projekte") && !!me && <Suspense fallback={<KachelLaden />}><ProjekteKachel /></Suspense>}
       {showTodo && kachelAn("todo") && !!me && <Suspense fallback={<KachelLaden />}><TodoKachel /></Suspense>}
       {showVerbandbuch && kachelAn("verbandbuch") && !!me && <Suspense fallback={<KachelLaden />}><VerbandbuchKachel /></Suspense>}
+      {showAdvent && kachelAn("advent") && !!me && <Suspense fallback={<KachelLaden />}><AdventKachel /></Suspense>}
+      {schneeZeigen && !dekoAus && <Schneefall />}
 
       {showSitzungForm && canEditSitzung && (
         <div style={styles.modalBackdrop} onClick={() => setShowSitzungForm(false)}>

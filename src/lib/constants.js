@@ -3,8 +3,12 @@ import React from "react";
 export const APP_NAME = "Feuerwehr Regglisweiler";
 // Offizielle Bezeichnung – steht auf allen Ausdrucken und PDFs.
 export const DRUCK_NAME = "Feuerwehr Dietenheim Abt. Regglisweiler";
-export const APP_VERSION = "2.39";
+export const APP_VERSION = "2.40";
 export const CHANGELOG = [
+  "Adventskalender: vom 1. bis 24. Dezember jeden Tag ein Türchen mit Spruch, Fotos und Quizfrage – mit Zeitlimit, Punkten und Ranglisten für Einsatzabteilung und Jugendfeuerwehr",
+  "Jahreszeiten-Deko: im Advent, an Ostern und in der Sommerpause ein kleines Motiv im Kopf, im Winter kurz Schnee beim Öffnen – über die Glocke für dich ausschaltbar",
+  "Projekte: Bei „Wer sieht das Projekt?“ lassen sich Ausschuss und Beteiligte Personen zusammen anhaken",
+  "Aufgaben: neuer Status „Verworfen“ mit Begründung (Nachricht an den Auftraggeber); abgeschlossene Aufgaben kann der Zuständige selbst löschen",
   "Atemschutz: Der Lehrgang „Atemschutzgeräteträger“ in der Personalakte bestimmt Atemschutzträger (G26-Pflicht, Atemschutz-Kachel, Erinnerungen, Statistik) – mit „a.D.“ für außer Dienst; das Häkchen in den Einstellungen entfällt",
   "Die Bereiche „Atemschutz“ und „Führungskräfte“ ergeben sich automatisch aus der Personalakte (Lehrgang bzw. Gruppenführer/Zugführer, dazu Kommandant, stellv. Kommandant und Admin)",
   "Termine für mehrere Bereiche: Beim Anlegen einen weiteren Bereich gedrückt halten – mit Rückfrage vor dem Speichern; gemeinsame Zu-/Absageliste",
@@ -33,7 +37,7 @@ export const KACHEL_FARBEN = {
 export const KACHEL_STANDARD_FARBEN = {
   einsatz: "rot", geraete: "rot", hydranten: "rot", atemschutz: "rot", fuehrerschein: "rot", bewegung: "rot", verbandbuch: "rot",
   ausschuss: "blau", beschluesse: "blau", umfragen: "blau", statistik: "blau", projekte: "blau",
-  personalakte: "gruen", jugend: "gruen",
+  personalakte: "gruen", jugend: "gruen", advent: "gruen",
   chat: "gelb", todo: "gelb",
   einstellungen: "grau",
 };

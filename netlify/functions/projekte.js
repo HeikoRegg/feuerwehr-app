@@ -32,6 +32,14 @@ const BUCKET = "projekte";
 const PHASEN = ["idee", "planung", "laeuft", "erledigt"];
 const PHASE_NAME = { idee: "Idee", planung: "Planung", laeuft: "Läuft", erledigt: "Erledigt" };
 const SICHT = ["alle", "ausschuss", "personen"];
+// Seit 2.40 mehrfach wählbar (Liste). Alte Einzelwerte bleiben gültig: "ausschuss" hieß schon immer „Ausschuss + Beteiligte“.
+export function sichtListe(s) {
+  const roh = Array.isArray(s) ? s : [s || "alle"];
+  const l = [...new Set(roh.filter((x) => SICHT.includes(x)))];
+  if (!l.length || l.includes("alle")) return ["alle"];
+  if (l.includes("ausschuss") && !Array.isArray(s)) l.push("personen");
+  return SICHT.filter((x) => l.includes(x));
+}
 const MAX_DOKUMENTE = 40;
 const TODO_URL = "/?kachel=todo";
 
@@ -115,8 +123,9 @@ function istMitarbeiter(p, n, lage) {
 function siehtProjekt(p, n, lage) {
   if (!n) return false;
   if (istMitarbeiter(p, n, lage)) return true;
-  if (p.sicht === "alle") return true;
-  if (p.sicht === "ausschuss") return lage.ausschuss(n);
+  const sl = sichtListe(p.sicht);
+  if (sl.includes("alle")) return true;
+  if (sl.includes("ausschuss")) return lage.ausschuss(n);
   return false;
 }
 async function projektLaden(id) {
@@ -168,6 +177,7 @@ async function aufgabeLaden(id) {
 }
 // Darf `n` die Aufgabe ändern/löschen? Ersteller, im Projekt auch Verwalter (Admins als Projekt-Verwalter).
 function darfAufgabeAendern(a, p, n, lage) { return a.erstelltVon === n || (!!p && istVerwalter(p, n, lage)); }
+function darfAufgabeLoeschen(a, p, n, lage) { return darfAufgabeAendern(a, p, n, lage) || (a.zustaendig === n && !!a.erledigt && a.status !== "verworfen"); }
 
 async function push(an, title, text, wichtig = false) {
   const liste = [...new Set((an || []).filter(Boolean))];
@@ -259,7 +269,7 @@ export async function handler(event) {
       const projekte = alle.filter((p) => siehtProjekt(p, ich, lage)).map((p) => ({
         eltern: p.eltern && nachId[p.eltern] ? p.eltern : "", kosten: p.kosten ?? null, budget: p.budget ?? null,
         id: p.id, name: p.name, phase: p.phase, verantwortlich: p.verantwortlich || "", ziel: p.ziel || "", start: p.start || "",
-        archiviert: !!p.archiviert, archiviertAm: p.archiviertAm || "", sicht: p.sicht, erstelltVon: p.erstelltVon, geaendertAm: p.geaendertAm || p.erstelltAm || "",
+        archiviert: !!p.archiviert, archiviertAm: p.archiviertAm || "", sicht: sichtListe(p.sicht), erstelltVon: p.erstelltVon, geaendertAm: p.geaendertAm || p.erstelltAm || "",
         aufgaben: zahl[p.id] || { gesamt: 0, erledigt: 0, meine: 0 }, verwalter: istVerwalter(p, ich, lage), beteiligt: istMitarbeiter(p, ich, lage),
       }));
       return json(200, { projekte, darfAnlegen: lage.darfAnlegen(ich), darfZuweisen: lage.darfZuweisen(ich) });
@@ -310,7 +320,7 @@ export async function handler(event) {
       const felder = {
         name, beschreibung: kurz(x.beschreibung, 3000), phase: PHASEN.includes(x.phase) ? x.phase : "idee",
         verantwortlich: person(x.verantwortlich), start: datum(x.start), ziel: datum(x.ziel),
-        sicht: SICHT.includes(x.sicht) ? x.sicht : "alle",
+        sicht: sichtListe(x.sicht),
         beteiligte: [...new Set((Array.isArray(x.beteiligte) ? x.beteiligte : []).map(person).filter(Boolean))].slice(0, 100),
         budget: betrag(x.budget), kosten: betrag(x.kosten),
       };
@@ -442,7 +452,7 @@ export async function handler(event) {
       }
       const aufgaben = liste.filter((a) => !a.projekt || (projekte[a.projekt] && !projekte[a.projekt].archiviert)).map((a) => {
         const p = a.projekt ? projekte[a.projekt] : null;
-        return { ...a, projektName: p ? p.name : "", projektSichtbar: p ? siehtProjekt(p, ich, lage) : false, darfAendern: darfAufgabeAendern(a, p, ich, lage) };
+        return { ...a, projektName: p ? p.name : "", projektSichtbar: p ? siehtProjekt(p, ich, lage) : false, darfAendern: darfAufgabeAendern(a, p, ich, lage), darfLoeschen: darfAufgabeLoeschen(a, p, ich, lage) };
       });
       return json(200, { aufgaben, darfZuweisen: lage.darfZuweisen(ich), kachelProjekte: !aus.includes("projekte") });
     }
@@ -486,7 +496,7 @@ export async function handler(event) {
       const erledigt = body.erledigt !== false;
       const jetzt = new Date().toISOString();
       const { id, projekt, ...rest } = a;
-      const data = { ...rest, erledigt, status: "", erledigtAm: erledigt ? jetzt : "", erledigtVon: erledigt ? ich : "", geaendertAm: jetzt };
+      const data = { ...rest, erledigt, status: "", verworfenGrund: "", verworfenAm: "", verworfenVon: "", erledigtAm: erledigt ? jetzt : "", erledigtVon: erledigt ? ich : "", geaendertAm: jetzt };
       await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
       if (erledigt && !a.erledigt && a.erstelltVon && a.erstelltVon !== ich) await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
       return json(200, { ok: true, erledigt });
@@ -499,14 +509,25 @@ export async function handler(event) {
       if (p && p.archiviert) throw fehler(409, "Das Projekt ist archiviert – bitte zuerst aus dem Archiv holen.");
       if (!(a.zustaendig === ich || darfAufgabeAendern(a, p, ich, lage))) throw fehler(403, "Den Status setzen dürfen der Zuständige, der Ersteller und die Verwalter des Projekts.");
       const st = String(body.status || "");
-      if (!["offen", "bearbeitung", "erledigt"].includes(st)) throw fehler(400, "Unbekannter Status.");
-      const erledigt = st === "erledigt";
+      if (!["offen", "bearbeitung", "erledigt", "verworfen"].includes(st)) throw fehler(400, "Unbekannter Status.");
+      // Seit 2.40: „verworfen“ (nicht machbar / nicht mehr nötig) mit Pflicht-Begründung. Zählt wie abgeschlossen (weg aus dem To-do).
+      const verworfen = st === "verworfen";
+      const grund = String(body.grund || "").trim().slice(0, 1000);
+      if (verworfen && !grund) throw fehler(400, "Bitte eine Begründung angeben, warum die Aufgabe verworfen wird.");
+      const erledigt = st === "erledigt" || verworfen;
+      const warVerworfen = a.status === "verworfen";
+      const gleichArt = a.erledigt && (warVerworfen === verworfen);
       const jetzt = new Date().toISOString();
       const { id, projekt, ...rest } = a;
-      const data = { ...rest, erledigt, status: st === "bearbeitung" ? "bearbeitung" : "", erledigtAm: erledigt ? (a.erledigt ? a.erledigtAm : jetzt) : "", erledigtVon: erledigt ? (a.erledigt ? a.erledigtVon : ich) : "", geaendertAm: jetzt };
+      const data = { ...rest, erledigt, status: st === "bearbeitung" ? "bearbeitung" : verworfen ? "verworfen" : "",
+        verworfenGrund: verworfen ? grund : "", verworfenAm: verworfen ? (warVerworfen ? a.verworfenAm || jetzt : jetzt) : "", verworfenVon: verworfen ? (warVerworfen ? a.verworfenVon || ich : ich) : "",
+        erledigtAm: erledigt ? (gleichArt ? a.erledigtAm : jetzt) : "", erledigtVon: erledigt ? (gleichArt ? a.erledigtVon : ich) : "", geaendertAm: jetzt };
       const { error } = await db.from("aufgaben").update({ data, updated_at: jetzt }).eq("id", id);
       if (error) throw tabellenFehler(error);
-      if (erledigt && !a.erledigt && a.erstelltVon && a.erstelltVon !== ich) await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
+      if (erledigt && !gleichArt && a.erstelltVon && a.erstelltVon !== ich) {
+        if (verworfen) await push([a.erstelltVon], "🚫 Aufgabe verworfen", `${ich}: ${a.text} – Grund: ${grund}${p ? ` · Projekt: ${p.name}` : ""}`);
+        else await push([a.erstelltVon], "✅ Aufgabe erledigt", `${ich}: ${a.text}${p ? ` · Projekt: ${p.name}` : ""}`);
+      }
       return json(200, { ok: true, status: st });
     }
 
@@ -548,7 +569,13 @@ export async function handler(event) {
     if (action === "aufgabeDelete") {
       const a = await aufgabeLaden(String(body.id || ""));
       const p = a.projekt ? await projektLaden(a.projekt).catch(() => null) : null;
-      if (!darfAufgabeAendern(a, p, ich, lage)) throw fehler(403, "Löschen dürfen nur der Ersteller der Aufgabe und die Verwalter des Projekts.");
+      // Seit 2.40: Der Zuständige darf seine Aufgabe löschen, sobald sie abgeschlossen ist – eine verworfene aber nicht (die löscht der Ersteller).
+      const zustaendigDarf = a.zustaendig === ich && a.erledigt && a.status !== "verworfen";
+      if (!darfAufgabeAendern(a, p, ich, lage) && !zustaendigDarf) {
+        throw fehler(403, a.zustaendig === ich
+          ? (a.status === "verworfen" ? "Eine verworfene Aufgabe löscht der Ersteller." : "Du kannst die Aufgabe löschen, sobald sie abgeschlossen ist.")
+          : "Löschen dürfen nur der Ersteller der Aufgabe und die Verwalter des Projekts.");
+      }
       await db.from("aufgaben").delete().eq("id", a.id);
       return json(200, { ok: true });
     }
